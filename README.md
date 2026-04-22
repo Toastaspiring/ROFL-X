@@ -111,8 +111,10 @@ Read in this order:
 | [docs/DOMAIN.md](docs/DOMAIN.md) | Entities and lifecycles, the shape of the thing we're parsing |
 | [docs/ROFL_FORMAT.md](docs/ROFL_FORMAT.md) | Byte-level format spec, every claim cited to evidence |
 | [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) | Proposed Rust crate layout for Phase 3 onwards |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-by-phase project plan with stop points |
 | `docs/PACKETS.md` | *(coming in Phase 4)* the packet catalog, one entry per opcode, including `UNKNOWN` |
-| `docs/COMPATIBILITY.md` | *(coming later)* per-patch coverage tracking |
+| `docs/COMPATIBILITY.md` | *(coming in Phase 4–5)* per-patch coverage + Zhu-dataset cross-reference |
+| `docs/DATASETS.md` | *(coming in Phase 5)* how to fetch and use Henry Zhu's Hugging Face corpus |
 
 ---
 

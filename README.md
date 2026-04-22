@@ -145,13 +145,13 @@ and prints the annotated structure used in `docs/SAMPLE_A_WALKTHROUGH.md`.
 
 ## License
 
-Undecided, Mowokuma's upstream has no LICENSE file, which makes its status
-"all rights reserved" by GitHub's default. Treating it as read-reference
-only and adopting a permissive licence for ROFL-X's original code is the
-likely direction, but this is pending.
+MIT, with a formal attribution section in the [LICENSE](LICENSE) file pointing
+to [CREDITS.md](CREDITS.md).
 
-See [docs/REFERENCE_MOWOKUMA.md](docs/REFERENCE_MOWOKUMA.md) for the open
-question in detail.
+Mowokuma's upstream ships with no LICENSE file, which would ordinarily make
+its status "all rights reserved". She has confirmed (April 2026) that she is
+happy for ROFL-X to port and extend her work on the condition that she is
+credited, which CREDITS.md does in detail.
 
 ---
 

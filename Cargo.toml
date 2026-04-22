@@ -3,6 +3,9 @@ name = "rofl-x"
 version = "0.1.0"
 edition = "2021"
 description = "Documented parser for League of Legends replay (.rofl) files"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Toastaspiring/RoflParserLeague"
 rust-version = "1.75"
 
 [lib]

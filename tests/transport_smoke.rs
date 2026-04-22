@@ -8,7 +8,7 @@
 //! and assert zero parse errors at every stage.
 //!
 //! When running locally, set e.g.
-//!   ROFL_X_SAMPLES_DIR="C:\Users\louis\Documents\League of Legends\replays"
+//!   ROFL_X_SAMPLES_DIR="%USERPROFILE%\Documents\League of Legends\replays"
 
 use std::fs;
 use std::path::PathBuf;

@@ -332,7 +332,7 @@ format's design intent:
 
 Phase 1 step 2 is complete. Remaining in Phase 1:
 
-- **Step 3:** pick one `.rofl` from `C:\Users\louis\Documents\League of Legends\replays\`,
+- **Step 3:** pick one `.rofl` from `%USERPROFILE%\Documents\League of Legends\replays\`,
   produce annotated hex walkthrough → `docs/SAMPLE_A_WALKTHROUGH.md`.
   - This will resolve the `// FIXME: very bad` header logic, confirm zstd
     magic bytes in chunk payloads, and verify the 4-byte-trailer metadata

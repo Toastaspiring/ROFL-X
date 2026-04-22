@@ -165,7 +165,7 @@ error messages.
 - `tests/opcode_coverage.rs`: reads `ROFL_X_SAMPLES_DIR`, parses every
   `.rofl` found, asserts the set of opcodes observed is a subset of
   the catalog. This is the patch-regression canary. For us it points
-  at the user's `C:\Users\louis\Documents\League of Legends\replays\`.
+  at Riot's default `%USERPROFILE%\Documents\League of Legends\replays\`.
 - `tests/proptest_block_framing.rs`: property-based test that block
   framing never panics on any byte sequence. Catches integer overflows
   and OOB reads in the transport layer.

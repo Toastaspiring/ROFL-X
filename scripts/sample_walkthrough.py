@@ -14,6 +14,7 @@ and prints them. It exists only to populate the walkthrough doc.
 Not committed to the repo as code; lives in scripts/ for reproducibility.
 """
 
+import argparse
 import json
 import os
 import re
@@ -26,7 +27,22 @@ try:
 except ImportError:
     zstd = None
 
-SAMPLE = r"C:\Users\louis\Documents\League of Legends\replays\EUW1-7828362936.rofl"
+# Default replay path for local dev. Override with --replay or via the
+# ROFL_X_SAMPLE env var. The default looks for Riot's standard install
+# location; individual filename is a placeholder (change to a file that
+# actually exists in your replays folder).
+DEFAULT_SAMPLE = os.environ.get("ROFL_X_SAMPLE") or os.path.join(
+    os.path.expanduser("~"),
+    "Documents",
+    "League of Legends",
+    "replays",
+    "EUW1-0000000000.rofl",
+)
+
+parser = argparse.ArgumentParser(description="Annotated walkthrough of one .rofl file")
+parser.add_argument("--replay", default=DEFAULT_SAMPLE, help="path to a .rofl file")
+args, _ = parser.parse_known_args()
+SAMPLE = args.replay
 
 
 def hex_dump(data: bytes, start: int = 0, length: int = 64, prefix: str = "  ") -> str:

@@ -544,7 +544,7 @@ Phase 1 step 1 is complete. The next steps are still:
 
 - **Step 2:** read Henry Zhu's [2025 write-up](https://maknee.github.io/blog/2025/League-Data-Scraping/) end-to-end and write
   `docs/REFERENCE_HENRY_ZHU.md`.
-- **Step 3:** pick one `.rofl` from `C:\Users\louis\Documents\League of Legends\replays\`,
+- **Step 3:** pick one `.rofl` from `%USERPROFILE%\Documents\League of Legends\replays\`,
   produce an annotated hex walkthrough of its header, metadata trailer,
   payload header, and the first chunk or two (post-decompression) in
   `docs/SAMPLE_A_WALKTHROUGH.md`.

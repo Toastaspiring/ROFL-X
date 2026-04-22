@@ -115,7 +115,7 @@ svg#map { width: 100%; height: 100%; max-width: 90vh; max-height: 90vh; backgrou
     <option value="60">60x</option>
   </select>
   <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" disabled>
-  <span id="time">—</span>
+  <span id="time">,</span>
 </header>
 
 <section id="map-container">
@@ -221,7 +221,7 @@ function wardColor(name) {
 }
 
 function fmtTime(s) {
-  if (!Number.isFinite(s)) return "—";
+  if (!Number.isFinite(s)) return ",";
   const m = Math.floor(s / 60);
   const ss = Math.floor(s % 60).toString().padStart(2, "0");
   return `${m}:${ss}`;

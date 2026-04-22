@@ -187,18 +187,106 @@ Seven values the mem-write hook needs to know about:
 10. If positions drift, re-check `mov_decrypt.rva_end` and the payload
     offsets.
 
+## Discoveries so far (patch 15.5 binary)
+
+### The packet dispatch table
+
+`.rdata` at image RVA `0x169b000` holds what appears to be a per-class
+descriptor table. Evidence:
+
+- Both known decoder RVAs (`0xe3d7b0` for ward-spawn, `0xe45710` for
+  mov/position) appear **exactly once** in the entire `.rdata` section,
+  as 8-byte little-endian values.
+- Each occurrence is at the same intra-entry offset of a recurring
+  48-byte-strided structure. The "entry" shape in the uniform part of
+  the table is 5 u64 fields plus an 8-byte sentinel
+  (`0xffff800885b9ffff`, a canonical-kernel-looking magic) at offset
+  `+0x28`:
+  ```
+  [0] primary function RVA (decoder in our cases)
+  [1] secondary function RVA (always in .text range)
+  [2] tertiary function RVA
+  [3] shared helper RVA (0x1c74c0 appears in every entry observed)
+  [4] quaternary function RVA
+  [5] sentinel 0xffff800885b9ffff
+  ```
+- Contiguous 48-byte-stride runs of this shape exist around the two
+  known entries (`0xe1060` MOV, `0xe1ab8` WARD). 457 of 588 sentinel
+  occurrences in the `0xe0000..0xf0000` window are at a 48-byte
+  spacing from the previous; most of the rest are at 40-byte spacing,
+  suggesting a secondary entry shape for some classes.
+
+### What this unlocks, what it doesn't
+
+- Unlocks: we now know the **general shape** of a class descriptor.
+  Every packet class has ~5 related function pointers colocated in
+  `.rdata`.
+- Does **not** unlock: there is no field inside an entry that stores
+  the `netid` of the class. The netid-to-class mapping must live
+  somewhere else (most likely a separate lookup structure the
+  packet-deserialise dispatcher uses). Without that mapping, finding
+  "which entry decodes netid N" still requires disassembly work.
+
+### The `rofl-x trace-decoder` tool
+
+Once you have a hypothesised decoder RVA and end RVA, you can skip
+static disassembly of struct offsets entirely:
+
+```
+rofl-x trace-decoder \
+  --replay <.rofl>  --netid <observed-netid> \
+  --patch-dir <dir-with-.patch-archive> \
+  --rva-start 0xNNNNN --rva-end 0xNNNNN  \
+  --samples 5
+```
+
+It hooks **all writes** to the output struct's 144-byte range while
+running the decoder on real payload bytes from the replay, and prints
+a per-offset frequency table. Columns:
+
+- `offset` of the field within the output struct
+- `size` of the biggest write landing at that offset
+- `count` total writes across samples
+- `avg` writes per sample
+
+Interpretation rules we've confirmed against Mowokuma's known config:
+
+- A field whose `count / samples` is ≈ 1 and whose size is 4 or 8 bytes
+  is typically a clean final-value write: a pointer, a u32 id, or a
+  length. Use the raw offset as-is.
+- Offsets that receive *many* small writes (1-byte, repeated) are
+  intermediate bytes being bit-sliced during the decryption. For these,
+  you need the **final** write; `x_write_count: 4` style config tells
+  the emulator to capture only the Nth write.
+- Verified on ward-spawn: the tool surfaces writes at 0x18
+  (owner_id_offset), 0x48 (id_offset), 0x60 (name_offset), 0x68
+  (name_len_offset) exactly as Mowokuma's `result.json` records them,
+  plus the 4-write cadence for the coordinate offsets.
+
+### Suggested workflow for a new decoder
+
+1. Pick a target packet class from Zhu's public schema, e.g.
+   `CreateHero` or `HeroDie`.
+2. Inspect the replay with `rofl-x inspect --histogram` to narrow down
+   which observed opcodes plausibly correspond (size and frequency
+   signals).
+3. Open the binary in Ghidra / IDA. Find the decoder function; the
+   table described above narrows the search to ~500 candidates.
+4. Feed the RVA range to `rofl-x trace-decoder` on a sample replay.
+5. Read off the field offsets for the data you want. Watch for
+   intermediate vs final writes.
+6. Add a catalog entry to `docs/PACKETS.md`, write a handler, commit.
+
 ## Things this document does not yet describe
 
 - An automated byte-pattern-matching workflow that takes a known-good
   15.5 archive and tries to find the same functions in a 16.8 binary.
-  This is a candidate future tool; manual inspection is the
-  conservative path for now.
+  `trace-decoder` replaces the struct-offset portion of this but not
+  the RVA-finding portion.
+- The netid-to-class mapping table. Finding it in the binary would
+  turn the above workflow from "manual hunt" into "table lookup".
 - Handling of patches where Riot restructures the decoder layout
   significantly. If the struct offsets cease to be stable across
   patches, we will need to track those separately per-patch.
-- Automated validation that a filled-in archive produces plausible
-  output. The end-to-end `file` subcommand plus cross-referencing
-  against a known replay is the current approximation.
 
-See `docs/COMPATIBILITY.md` (forthcoming in Phase 4) for the
-per-patch status table.
+See `docs/COMPATIBILITY.md` for the per-patch status table.

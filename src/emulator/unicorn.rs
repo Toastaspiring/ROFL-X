@@ -202,6 +202,52 @@ impl<'a> StubEmulator<'a> {
         })
     }
 
+    /// Trace every memory write inside the output-struct range while
+    /// executing a decoder function. Used to discover struct layouts of
+    /// unknown decoders, and to verify that a hypothesised decoder RVA
+    /// actually produces structured writes (rather than crashing or
+    /// touching random memory).
+    ///
+    /// Returns a Vec of (offset_in_struct, size_in_bytes, value) in the
+    /// exact order the writes occurred. Writes to offsets outside the
+    /// 0x90-byte hooked range are ignored.
+    pub fn trace_decoder_writes(
+        &mut self,
+        call_rva: u64,
+        end_rva: u64,
+    ) -> Result<Vec<(u16, u8, u64)>> {
+        let packet_addr = self.packet_addr;
+        let packet_size = self.packet_size;
+        let log: Arc<Mutex<Vec<(u16, u8, u64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let log_clone = Arc::clone(&log);
+
+        self.uc
+            .add_mem_hook(
+                HookType::MEM_WRITE,
+                packet_addr,
+                packet_addr + packet_size as u64,
+                move |_uc, _type, addr, size, value| {
+                    let offset = (addr - packet_addr) as u16;
+                    log_clone
+                        .lock()
+                        .unwrap()
+                        .push((offset, size as u8, value as u64));
+                    true
+                },
+            )
+            .map_err(|e| uc_setup_err("trace mem hook", e))?;
+
+        let _ = self.uc.emu_start(
+            self.rva_to_address(call_rva),
+            self.rva_to_address(end_rva),
+            0,
+            0,
+        );
+
+        let out = log.lock().unwrap().clone();
+        Ok(out)
+    }
+
     /// Call the movement-packet decrypt function, read back the pointer
     /// and size of the decoded payload from the output struct, and parse
     /// it into a `PathPacket`.

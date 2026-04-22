@@ -61,6 +61,35 @@ pub enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Trace every write to the output packet struct while running a
+    /// decoder function on a real payload. Used to discover the struct
+    /// layout of a decoder whose offsets aren't known yet.
+    TraceDecoder {
+        /// Replay whose blocks supply the payload bytes.
+        #[arg(short, long)]
+        replay: PathBuf,
+
+        /// The packet_id (netid) to sample from the replay.
+        #[arg(short, long)]
+        netid: u16,
+
+        /// Directory holding the `.patch` archive for this replay's patch.
+        #[arg(long, default_value = "./patch")]
+        patch_dir: PathBuf,
+
+        /// Hypothesised decoder start RVA in the patch binary, hex
+        /// (e.g. 0xe3d7b0 for ward_spawn on 15.5).
+        #[arg(long)]
+        rva_start: String,
+
+        /// Hypothesised decoder end RVA in the patch binary, hex.
+        #[arg(long)]
+        rva_end: String,
+
+        /// How many packets from the replay to trace (default 5).
+        #[arg(long, default_value_t = 5usize)]
+        samples: usize,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -72,7 +101,119 @@ pub fn run(cli: Cli) -> Result<()> {
         } => file(replay, output, patch_dir),
         Command::Inspect { replay, histogram } => inspect(replay, histogram),
         Command::ExtractPatch { binary, output } => extract_patch(binary, output),
+        Command::TraceDecoder {
+            replay,
+            netid,
+            patch_dir,
+            rva_start,
+            rva_end,
+            samples,
+        } => trace_decoder(replay, netid, patch_dir, &rva_start, &rva_end, samples),
     }
+}
+
+#[cfg(feature = "emulator")]
+fn trace_decoder(
+    replay: PathBuf,
+    netid: u16,
+    patch_dir: PathBuf,
+    rva_start: &str,
+    rva_end: &str,
+    samples: usize,
+) -> Result<()> {
+    use crate::emulator::{config::Config, StubEmulator};
+    use crate::replay_info::blocks_with_netid;
+    use crate::RoflError;
+    use std::collections::HashMap;
+
+    let rs = u64::from_str_radix(rva_start.trim_start_matches("0x"), 16)
+        .map_err(|e| RoflError::Io(std::io::Error::other(format!("rva_start: {e}"))))?;
+    let re = u64::from_str_radix(rva_end.trim_start_matches("0x"), 16)
+        .map_err(|e| RoflError::Io(std::io::Error::other(format!("rva_end: {e}"))))?;
+
+    let bytes = std::fs::read(&replay)?;
+    let parsed = crate::Replay::parse(&bytes)?;
+    let patch_tag = parsed.header.patch();
+    let patch_file = Config::resolve_patch_file(&patch_dir, patch_tag).ok_or_else(|| {
+        RoflError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no patch archive for {patch_tag:?}"),
+        ))
+    })?;
+    let config = Config::parse(&patch_file)?;
+
+    let hits = blocks_with_netid(&parsed, netid)?;
+    if hits.is_empty() {
+        eprintln!("no blocks with netid {netid} in this replay");
+        return Ok(());
+    }
+    let to_trace = hits.iter().take(samples).collect::<Vec<_>>();
+    eprintln!(
+        "tracing {} sample payload(s) of netid {} through RVA 0x{:x}..0x{:x}",
+        to_trace.len(),
+        netid,
+        rs,
+        re
+    );
+
+    // Per-offset statistics: how many times written, which write-counts
+    // produced which values, most-common byte-size.
+    let mut offset_writes: HashMap<u16, Vec<(u8, u64)>> = HashMap::new();
+
+    for (i, (ts, payload)) in to_trace.iter().enumerate() {
+        let mut emu = StubEmulator::new(config.clone());
+        emu.setup()?;
+        emu.setup_args(payload)?;
+        let log = emu.trace_decoder_writes(rs, re)?;
+        eprintln!(
+            "sample {}: timestamp={:.2}s payload_len={} total_writes={}",
+            i,
+            ts,
+            payload.len(),
+            log.len()
+        );
+        for (off, size, value) in log {
+            offset_writes.entry(off).or_default().push((size, value));
+        }
+    }
+
+    let mut offsets: Vec<u16> = offset_writes.keys().copied().collect();
+    offsets.sort();
+    println!();
+    println!(
+        "struct-layout summary ({} distinct offsets across {} samples):",
+        offsets.len(),
+        to_trace.len()
+    );
+    println!(
+        "  {:>6}  {:>6}  {:>5}  writes per sample (avg)",
+        "offset", "size", "count"
+    );
+    for off in offsets {
+        let writes = &offset_writes[&off];
+        let n = writes.len();
+        let avg_per_sample = n as f64 / to_trace.len() as f64;
+        let size = writes.iter().map(|w| w.0).max().unwrap_or(0);
+        println!(
+            "  0x{:04x}  {:>4}B  {:>5}  {:>5.1}",
+            off, size, n, avg_per_sample
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "emulator"))]
+fn trace_decoder(
+    _replay: PathBuf,
+    _netid: u16,
+    _patch_dir: PathBuf,
+    _rva_start: &str,
+    _rva_end: &str,
+    _samples: usize,
+) -> Result<()> {
+    Err(crate::RoflError::Io(std::io::Error::other(
+        "trace-decoder requires the `emulator` feature",
+    )))
 }
 
 fn extract_patch(binary: PathBuf, output: PathBuf) -> Result<()> {

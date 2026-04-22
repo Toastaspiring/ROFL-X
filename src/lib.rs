@@ -8,6 +8,7 @@
 pub mod cli;
 pub mod emulator;
 pub mod error;
+pub mod extract_patch;
 pub mod replay_info;
 pub mod rofl;
 

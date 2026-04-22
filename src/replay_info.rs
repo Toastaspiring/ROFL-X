@@ -216,6 +216,13 @@ fn role_label(r: Role) -> &'static str {
 /// require the Unicorn backend. Without the feature, use
 /// `build_output_json` directly once you've obtained the packet vectors
 /// from some other source.
+/// Matches Mowokuma's BATCH_SIZE in her `main.rs`. Every BATCH_SIZE packets
+/// we create a fresh `StubEmulator` so heap state from earlier packets in
+/// the same batch can affect decode, but not packets in later batches.
+/// Keeping this equal to hers is load-bearing for byte-identical parity.
+#[cfg(feature = "emulator")]
+const BATCH_SIZE: usize = 100;
+
 #[cfg(feature = "emulator")]
 pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     use crate::emulator::StubEmulator;
@@ -227,10 +234,10 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     let path_hits = blocks_with_netid(replay, mov_netid)?;
 
     let mut ward_packets: Vec<WardSpawnPacket> = Vec::with_capacity(ward_hits.len());
-    if !ward_hits.is_empty() {
+    for batch in ward_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload) in &ward_hits {
+        for (timestamp, payload) in batch {
             emu.setup_args(payload)?;
             let p = emu.call_decrypt_ward_spawn_packet(
                 config.ward_spawn_decrypt.rva,
@@ -243,10 +250,10 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     }
 
     let mut path_packets: Vec<PathPacket> = Vec::with_capacity(path_hits.len());
-    if !path_hits.is_empty() {
+    for batch in path_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload) in &path_hits {
+        for (timestamp, payload) in batch {
             emu.setup_args(payload)?;
             if let Ok(p) = emu.call_decrypt_pos_packet(
                 config.mov_decrypt.rva,

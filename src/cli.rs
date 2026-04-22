@@ -48,6 +48,19 @@ pub enum Command {
         #[arg(long)]
         histogram: bool,
     },
+    /// Extract `.text`/`.data`/`.rdata` from a League binary and write
+    /// a `.patch` archive skeleton. RVAs inside `result.json` are left
+    /// as `NEEDS_RE` placeholders; see `docs/RE_PATCH.md` for how to
+    /// fill them in.
+    ExtractPatch {
+        /// Path to `League of Legends.exe` for the target patch.
+        #[arg(short, long)]
+        binary: PathBuf,
+
+        /// Output `.patch` archive path.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -58,7 +71,24 @@ pub fn run(cli: Cli) -> Result<()> {
             patch_dir,
         } => file(replay, output, patch_dir),
         Command::Inspect { replay, histogram } => inspect(replay, histogram),
+        Command::ExtractPatch { binary, output } => extract_patch(binary, output),
     }
+}
+
+fn extract_patch(binary: PathBuf, output: PathBuf) -> Result<()> {
+    use crate::extract_patch::extract_skeleton;
+    let pe = extract_skeleton(&binary, &output)?;
+    eprintln!("parsed PE: machine=0x{:04x}, sections:", pe.machine);
+    for s in &pe.sections {
+        eprintln!(
+            "  {:10} rva=0x{:08x} virt_size={:>10} raw_size={:>10}",
+            s.name, s.rva, s.virt_size, s.raw_size
+        );
+    }
+    eprintln!("wrote {}", output.display());
+    eprintln!("Next step: fill in the RVAs in result.json by reverse-");
+    eprintln!("engineering the binary. See docs/RE_PATCH.md.");
+    Ok(())
 }
 
 #[cfg(feature = "emulator")]

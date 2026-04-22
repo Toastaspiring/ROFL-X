@@ -176,6 +176,13 @@ function gameToSvg(x, y) {
 let ddVersion = "14.24.1";
 const DD_BASE = "https://ddragon.leagueoflegends.com/cdn";
 
+// Current-era Summoner's Rift minimap (post-2023 jungle rework) comes
+// from CommunityDragon, which mirrors Riot's internal CDN. Data
+// Dragon's own map11.png is stuck at the 2014 layout and no longer
+// reflects the terrain.
+const SR_MINIMAP_URL =
+  "https://raw.communitydragon.org/latest/game/assets/maps/info/map11/2dlevelminimap_base_baron1.png";
+
 async function initDataDragon() {
   try {
     const res = await fetch("https://ddragon.leagueoflegends.com/api/versions.json");
@@ -184,16 +191,9 @@ async function initDataDragon() {
       ddVersion = list[0];
     }
   } catch (_) { /* keep fallback */ }
-  document.getElementById("map-image").setAttributeNS(
-    "http://www.w3.org/1999/xlink",
-    "href",
-    `${DD_BASE}/${ddVersion}/img/map/map11.png`
-  );
-  // SVG2 native href too, for broader browser support.
-  document.getElementById("map-image").setAttribute(
-    "href",
-    `${DD_BASE}/${ddVersion}/img/map/map11.png`
-  );
+  const mapImg = document.getElementById("map-image");
+  mapImg.setAttributeNS("http://www.w3.org/1999/xlink", "href", SR_MINIMAP_URL);
+  mapImg.setAttribute("href", SR_MINIMAP_URL);
 }
 
 // Mowokuma's `skin` field uses the game's internal champion name,

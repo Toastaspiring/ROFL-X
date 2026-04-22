@@ -121,7 +121,7 @@ svg#map { width: 100%; height: 100%; max-width: 90vh; max-height: 90vh; backgrou
 <section id="map-container">
   <div id="drop">Drop a rofl-x JSON output here, or use the file picker above.</div>
   <svg id="map" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" style="display:none">
-    <!-- Stylised Summoner's Rift: corners for bases, diagonal river band. -->
+    <!-- Stylised fallback backdrop (behind the Data Dragon map image). -->
     <defs>
       <linearGradient id="riverGrad" x1="0" y1="1" x2="1" y2="0">
         <stop offset="0"   stop-color="var(--river)" stop-opacity="0.0"/>
@@ -129,16 +129,14 @@ svg#map { width: 100%; height: 100%; max-width: 90vh; max-height: 90vh; backgrou
         <stop offset="0.65" stop-color="var(--river)" stop-opacity="0.55"/>
         <stop offset="1"   stop-color="var(--river)" stop-opacity="0.0"/>
       </linearGradient>
+      <clipPath id="iconClip">
+        <circle cx="0" cy="0" r="12"/>
+      </clipPath>
     </defs>
-
-    <!-- River band along the diagonal from bottom-right to top-left. -->
     <polygon points="1000,400 600,1000 0,1000 0,600 400,0 1000,0" fill="url(#riverGrad)"/>
 
-    <!-- Base markers (Blue bottom-left, Red top-right by default LoL orientation). -->
-    <rect x="20" y="820" width="160" height="160" fill="#1b3b66" stroke="#264e88" stroke-width="2" rx="8"/>
-    <rect x="820" y="20" width="160" height="160" fill="#662020" stroke="#883030" stroke-width="2" rx="8"/>
-    <text x="100" y="910" class="player-label" style="font-size:14px">Blue base</text>
-    <text x="900" y="110" class="player-label" style="font-size:14px">Red base</text>
+    <!-- Actual Summoner's Rift minimap from Data Dragon, loaded at runtime. -->
+    <image id="map-image" x="0" y="0" width="1000" height="1000" preserveAspectRatio="none"/>
 
     <!-- Groups populated by JS. -->
     <g id="wards-layer"></g>
@@ -170,6 +168,45 @@ function gameToSvg(x, y) {
     x: (x / MAP_UNITS) * SVG_SIZE,
     y: SVG_SIZE - (y / MAP_UNITS) * SVG_SIZE,
   };
+}
+
+// Data Dragon (Riot's public CDN) for champion icons and the SR
+// minimap image. Version is fetched at startup and cached; falls back
+// to a recent known version if the network request fails.
+let ddVersion = "14.24.1";
+const DD_BASE = "https://ddragon.leagueoflegends.com/cdn";
+
+async function initDataDragon() {
+  try {
+    const res = await fetch("https://ddragon.leagueoflegends.com/api/versions.json");
+    const list = await res.json();
+    if (Array.isArray(list) && list.length > 0) {
+      ddVersion = list[0];
+    }
+  } catch (_) { /* keep fallback */ }
+  document.getElementById("map-image").setAttributeNS(
+    "http://www.w3.org/1999/xlink",
+    "href",
+    `${DD_BASE}/${ddVersion}/img/map/map11.png`
+  );
+  // SVG2 native href too, for broader browser support.
+  document.getElementById("map-image").setAttribute(
+    "href",
+    `${DD_BASE}/${ddVersion}/img/map/map11.png`
+  );
+}
+
+// Mowokuma's `skin` field uses the game's internal champion name,
+// which is the same as Data Dragon's CamelCase key for the vast
+// majority of champions. A handful of cases diverge.
+const CHAMP_ALIAS = {
+  Wukong: "MonkeyKing",
+  FiddleSticks: "Fiddlesticks",
+};
+
+function championIconUrl(champ) {
+  const name = CHAMP_ALIAS[champ] || champ;
+  return `${DD_BASE}/${ddVersion}/img/champion/${name}.png`;
 }
 
 function teamColor(team) {
@@ -302,23 +339,40 @@ function render() {
   for (const pl of players) {
     const p = gameToSvg(pl.pos[0], pl.pos[1]);
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    c.setAttribute("cx", p.x);
-    c.setAttribute("cy", p.y);
-    c.setAttribute("r", 9);
-    c.setAttribute("fill", teamColor(pl.team));
-    c.setAttribute("stroke", "#000");
-    c.setAttribute("stroke-width", "1.5");
+    g.setAttribute("transform", `translate(${p.x},${p.y})`);
+
+    // Team-coloured ring behind the icon so side is obvious at a glance.
+    const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    ring.setAttribute("cx", 0);
+    ring.setAttribute("cy", 0);
+    ring.setAttribute("r", 14);
+    ring.setAttribute("fill", teamColor(pl.team));
+    ring.setAttribute("stroke", "#000");
+    ring.setAttribute("stroke-width", 1.2);
+    g.appendChild(ring);
+
+    // Champion icon from Data Dragon, clipped to a circle.
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "image");
+    icon.setAttribute("x", -12);
+    icon.setAttribute("y", -12);
+    icon.setAttribute("width", 24);
+    icon.setAttribute("height", 24);
+    icon.setAttribute("href", championIconUrl(pl.champ));
+    icon.setAttributeNS("http://www.w3.org/1999/xlink", "href", championIconUrl(pl.champ));
+    icon.setAttribute("clip-path", "url(#iconClip)");
+    g.appendChild(icon);
+
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
     title.textContent = `${pl.champ} (${pl.role}, ${pl.team})`;
-    c.appendChild(title);
-    g.appendChild(c);
+    g.appendChild(title);
+
     const tx = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    tx.setAttribute("x", p.x);
-    tx.setAttribute("y", p.y - 12);
+    tx.setAttribute("x", 0);
+    tx.setAttribute("y", -18);
     tx.setAttribute("class", "player-label");
     tx.textContent = pl.champ;
     g.appendChild(tx);
+
     playersLayer.appendChild(g);
   }
 
@@ -408,6 +462,8 @@ document.addEventListener("keydown", e => {
   else if (e.code === "ArrowLeft")  { state.t = Math.max(0, state.t - 5); render(); }
   else if (e.code === "ArrowRight") { state.t = Math.min(state.gameLen, state.t + 5); render(); }
 });
+
+initDataDragon();
 </script>
 </body>
 </html>

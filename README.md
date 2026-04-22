@@ -115,7 +115,7 @@ Read in this order:
 | [docs/PACKETS.md](docs/PACKETS.md) | Packet catalog, one entry per opcode, including `UNKNOWN` |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-patch coverage table |
 | [docs/RE_PATCH.md](docs/RE_PATCH.md) | How to build a `.patch` archive for a new League patch |
-| `docs/DATASETS.md` | *(Phase 5)* how to fetch and use Henry Zhu's Hugging Face corpus |
+| [docs/DATASETS.md](docs/DATASETS.md) | Fetch + profile Henry Zhu's public Hugging Face corpus |
 
 ---
 

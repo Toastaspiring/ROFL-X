@@ -105,22 +105,51 @@ the other variants.
 
 ## OBSERVED-ONLY
 
-Named by Henry Zhu in his 2025 write-up; we have not cross-mapped the
-class names to our numeric opcodes on any patch yet. Full details in
-[REFERENCE_HENRY_ZHU.md](REFERENCE_HENRY_ZHU.md) § 5.
+Named by Henry Zhu in his public dataset (Apache 2.0, `packets.py`
+schema on Hugging Face). 22 classes total, fields cross-referenced in
+[DATASETS.md](DATASETS.md) with measured frequencies from one batch of
+patch 12.22 replays. We have not cross-mapped the class names to our
+numeric opcodes on any current patch.
 
-| class name                  | summary                                                        |
-|-----------------------------|----------------------------------------------------------------|
-| `TakeDamagePacket`          | damage application (target id, damage f32, source id)          |
-| `BasicAttackAtTarget`       | melee/ranged basic attack with positions                       |
-| `CastSpell`                 | ability cast: caster, spell, level, src/tgt pos, windup, cd    |
-| `CreateSummoner`            | player init: time, champion id, name, summoner id              |
-| `CreateEntity`              | entity spawn (wards fall under this; likely same netid as our  |
-|                             | `WARD_SPAWN_OR_DESTROY` above, to be cross-checked)            |
-| `UpdateState`               | per-entity stat update (hp, movement speed, ...)               |
-| `Death`                     | entity death: victim id + timestamp                            |
-| `BecomeVisibleInFogOfWar`   | visibility on                                                  |
-| `LeaveFromFog`              | visibility off (noted by Zhu as ~2.8% redundant repeats)       |
+| class                       | share in S12 batch | summary                                                          |
+|-----------------------------|-------------------:|------------------------------------------------------------------|
+| `LeaveFog`                  | 65.4 %             | entity leaves vision (`net_id`, `time`)                          |
+| `Replication`               | 15.8 %             | per-entity property replication (`net_id_to_replication_datas`)  |
+| `UnitApplyDamage`           |  5.0 %             | damage (`source_net_id`, `target_net_id`, `damage`)              |
+| `WaypointGroup`             |  4.6 %             | movement waypoints keyed by entity id, positions as `{x, z}`      |
+| `EnterFog`                  |  3.8 %             | entity enters vision                                             |
+| `DoSetCooldown`             |  2.8 %             | ability cooldown update (`slot`, `cooldown`, `display_cooldown`) |
+| `CastSpellAns`              |  0.57 %            | spell cast answer: caster/targets/positions/spell/mana/cd        |
+| `BasicAttackPos`            |  0.52 %            | basic attack with source+target+spell metadata                   |
+| `BarrackSpawnUnit`          |  0.39 %            | minion wave spawn event                                          |
+| `NPCDieMapView`             |  0.38 %            | NPC death: killed+killer net ids                                 |
+| `SpawnMinion`               |  0.33 %            | individual minion spawn with position and targetability          |
+| `WaypointGroupWithSpeed`    |  0.11 %            | movement variant that carries speed per waypoint                 |
+| `CreateTurret`              |  0.08 %            | turret / likely ward / stationary owned entity                   |
+| `CreateNeutral`             |  0.06 %            | jungle-camp monster creation with position + camp id             |
+| `UseItem`                   |  0.04 %            | item activation                                                  |
+| `CreateHero`                |  0.04 %            | champion init (`champion`, `name`, `net_id`)                     |
+| `BuyItem`                   |  0.03 %            | item purchase with gold deltas                                   |
+| `RemoveItem`                |  0.01 %            | item sell or drop                                                |
+| `SwapItem`                  | 0.005 %            | inventory slot swap                                              |
+| `NPCDieMapViewBroadcast`    | <0.001 %           | broadcast variant of NPC death                                   |
+
+Cross-references to our decoded opcodes:
+
+- **`WaypointGroup`** (+ `WaypointGroupWithSpeed`) corresponds
+  semantically to our `MOVEMENT_PATH` entry. Zhu's Position uses
+  `{x, z}`; ours uses `{x, y}`. Our output is per-entity per-new-order;
+  Zhu bundles multiple entities per `time` into one dict.
+- **`WARD_SPAWN_OR_DESTROY`** rides on Zhu's `SpawnMinion`, confirmed
+  by probing names in one S12 batch: 1,654 `SightWard`, 739
+  `VisionWard`, 698 `JammerDevice`, 1,173 `PlantVision`, plus 5,683
+  `WardCorpse` destruction events (destruction name suffix matches
+  Mowokuma's corpse heuristic exactly). **Our decoded struct is
+  strictly richer than Zhu's `SpawnMinion`**: Mowokuma's
+  `ward_spawn_decrypt` captures `owner_id` (the placing player), a
+  field Zhu's `SpawnMinion` does not have. Any Zhu-compat adapter that
+  maps our output to his schema will drop `owner_id`; the reverse
+  direction cannot recover it.
 
 ---
 

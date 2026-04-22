@@ -277,6 +277,42 @@ Interpretation rules we've confirmed against Mowokuma's known config:
    intermediate vs final writes.
 6. Add a catalog entry to `docs/PACKETS.md`, write a handler, commit.
 
+### `probe-netid`: a research artefact, not a working tool
+
+`src/bin/probe_netid.rs` attempts to extract the netid of each class
+by calling its descriptor-entry fields as if they were "getter"
+thunks and inspecting RAX. Empirical results on patch 15.5:
+
+- **Slot 0** is the decoder (known).
+- **Slot 1** for real descriptor entries appears to return the
+  packet's in-memory struct size (144 for ward-spawn, 48 for mov).
+  Useful for sizing the hooked struct range dynamically rather than
+  hardcoding 0x90.
+- **Slot 3** is a shared helper (RVA `0x1c74c0`) common to every
+  entry; returns a small constant.
+- **Slot 4** returns small integers per entry (9 for ward, 3 for mov)
+  but the values do **not** form a dense enum that could encode
+  netids, and the mapping to Zhu's class names is unclear.
+- **Slots 1 and 4 become noisy across a broader scan** (81-entry
+  sample) because the naive sentinel match picks up non-descriptor
+  byte coincidences outside the real table region. Without
+  disassembly to delimit the true table, we can't distinguish real
+  entries from false positives at scale.
+
+Takeaway: the netid-to-descriptor mapping isn't extractable from the
+descriptor table alone. It lives in a separate structure (most likely
+a netid-keyed lookup consulted by the packet deserialiser at dispatch
+time) that we haven't yet located.
+
+### Current blockers and what would unblock them
+
+| blocker                                   | what unblocks it                                                      |
+|-------------------------------------------|-----------------------------------------------------------------------|
+| New decoder RVAs for patch 15.5           | Ghidra / IDA session on `text.bin`, walk outward from the known entries at rdata offsets 0xe1060 / 0xe1ab8. |
+| 16.8 `.patch` archive                     | Same, on the current League client. Skeleton exists; fill in RVAs.     |
+| netid-to-class mapping table              | Trace the packet deserialise dispatcher in a disassembler; it is the function that consults this table. |
+| Struct offsets for new decoders           | **Solved by `rofl-x trace-decoder`** once the RVA is known.           |
+
 ## Things this document does not yet describe
 
 - An automated byte-pattern-matching workflow that takes a known-good

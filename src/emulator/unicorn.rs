@@ -202,6 +202,45 @@ impl<'a> StubEmulator<'a> {
         })
     }
 
+    /// Call a small function with only `this` passed in RCX and read
+    /// back the u64 return value from RAX. Used to probe candidate
+    /// "get-my-netid" or "get-my-typeid" callbacks on class descriptor
+    /// entries. Caller provides a stop RVA (typically the function's
+    /// `ret` instruction address or slightly past); on timeout or bad
+    /// fetch we return `None` rather than panic.
+    pub fn call_thiscall_returning_u64(
+        &mut self,
+        call_rva: u64,
+        end_rva: u64,
+        this_ptr: u64,
+    ) -> Option<u64> {
+        // Fresh stack pointer, clean heap cursor.
+        if self.set_heap_cursor(0).is_err() {
+            return None;
+        }
+        if self
+            .write_reg(
+                RegisterX86::RSP,
+                Self::STACK_BASE + (Self::STACK_SIZE - 0x100) as u64,
+            )
+            .is_err()
+        {
+            return None;
+        }
+        if self.write_reg(RegisterX86::RCX, this_ptr).is_err() {
+            return None;
+        }
+        // Cap instruction count aggressively; these "get netid" thunks
+        // should be a handful of instructions. Budget 512 insts.
+        let _ = self.uc.emu_start(
+            self.rva_to_address(call_rva),
+            self.rva_to_address(end_rva),
+            0,
+            512,
+        );
+        self.uc.reg_read(RegisterX86::RAX).ok()
+    }
+
     /// Trace every memory write inside the output-struct range while
     /// executing a decoder function. Used to discover struct layouts of
     /// unknown decoders, and to verify that a hypothesised decoder RVA

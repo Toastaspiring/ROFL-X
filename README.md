@@ -112,9 +112,10 @@ Read in this order:
 | [docs/ROFL_FORMAT.md](docs/ROFL_FORMAT.md) | Byte-level format spec, every claim cited to evidence |
 | [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) | Proposed Rust crate layout for Phase 3 onwards |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-by-phase project plan with stop points |
-| `docs/PACKETS.md` | *(coming in Phase 4)* the packet catalog, one entry per opcode, including `UNKNOWN` |
-| `docs/COMPATIBILITY.md` | *(coming in Phase 4–5)* per-patch coverage + Zhu-dataset cross-reference |
-| `docs/DATASETS.md` | *(coming in Phase 5)* how to fetch and use Henry Zhu's Hugging Face corpus |
+| [docs/PACKETS.md](docs/PACKETS.md) | Packet catalog, one entry per opcode, including `UNKNOWN` |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-patch coverage table |
+| [docs/RE_PATCH.md](docs/RE_PATCH.md) | How to build a `.patch` archive for a new League patch |
+| `docs/DATASETS.md` | *(Phase 5)* how to fetch and use Henry Zhu's Hugging Face corpus |
 
 ---
 

@@ -108,7 +108,7 @@ Read in this order:
 | [docs/REFERENCE_MOWOKUMA.md](docs/REFERENCE_MOWOKUMA.md) | Module-by-module summary of Mowokuma's Rust parser, with corrections from our byte-level audit |
 | [docs/REFERENCE_HENRY_ZHU.md](docs/REFERENCE_HENRY_ZHU.md) | Summary of Henry Zhu's write-up, techniques, named packet classes, dataset links |
 | [docs/SAMPLE_A_WALKTHROUGH.md](docs/SAMPLE_A_WALKTHROUGH.md) | Annotated hex of a real patch-16.8 replay, with an opcode histogram across 1.9M blocks |
-| `docs/DOMAIN.md` | *(coming in Phase 2)* entities and lifecycles, the shape of the thing we're parsing |
+| [docs/DOMAIN.md](docs/DOMAIN.md) | Entities and lifecycles, the shape of the thing we're parsing |
 | `docs/ROFL_FORMAT.md` | *(coming in Phase 2)* byte-level format spec, every claim cited to evidence |
 | `docs/PACKETS.md` | *(coming in Phase 4)* the packet catalog, one entry per opcode, including `UNKNOWN` |
 | `docs/COMPATIBILITY.md` | *(coming later)* per-patch coverage tracking |

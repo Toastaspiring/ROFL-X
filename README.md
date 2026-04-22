@@ -109,7 +109,7 @@ Read in this order:
 | [docs/REFERENCE_HENRY_ZHU.md](docs/REFERENCE_HENRY_ZHU.md) | Summary of Henry Zhu's write-up, techniques, named packet classes, dataset links |
 | [docs/SAMPLE_A_WALKTHROUGH.md](docs/SAMPLE_A_WALKTHROUGH.md) | Annotated hex of a real patch-16.8 replay, with an opcode histogram across 1.9M blocks |
 | [docs/DOMAIN.md](docs/DOMAIN.md) | Entities and lifecycles, the shape of the thing we're parsing |
-| `docs/ROFL_FORMAT.md` | *(coming in Phase 2)* byte-level format spec, every claim cited to evidence |
+| [docs/ROFL_FORMAT.md](docs/ROFL_FORMAT.md) | Byte-level format spec, every claim cited to evidence |
 | `docs/PACKETS.md` | *(coming in Phase 4)* the packet catalog, one entry per opcode, including `UNKNOWN` |
 | `docs/COMPATIBILITY.md` | *(coming later)* per-patch coverage tracking |
 

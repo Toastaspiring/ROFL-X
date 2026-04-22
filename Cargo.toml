@@ -22,3 +22,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 zstd = "0.13"
+zip = "2"
+
+[dependencies.unicorn-engine]
+version = "=2.1.1"
+optional = true
+
+[features]
+default = ["emulator"]
+emulator = ["dep:unicorn-engine"]

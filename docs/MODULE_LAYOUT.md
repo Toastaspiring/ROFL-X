@@ -172,17 +172,17 @@ error messages.
 
 ### Cargo dependencies (concrete)
 
-- `clap` (derive) — CLI.
-- `thiserror` — error enum.
-- `serde`, `serde_json` — metadata JSON + output JSON.
-- `zstd` — decompression. Same crate and version family Mowokuma uses.
-- `rayon` — parallel block iteration and parallel replay-batch parse.
-- `tracing` + `tracing-subscriber` — structured logging. Prefer over
+- `clap` (derive), CLI.
+- `thiserror`, error enum.
+- `serde`, `serde_json`, metadata JSON + output JSON.
+- `zstd`, decompression. Same crate and version family Mowokuma uses.
+- `rayon`, parallel block iteration and parallel replay-batch parse.
+- `tracing` + `tracing-subscriber`, structured logging. Prefer over
   `log` + `fern` because structured fields pair well with the audit
   subcommand.
-- `unicorn-engine` — emulator backend. Gated behind a Cargo feature
+- `unicorn-engine`, emulator backend. Gated behind a Cargo feature
   (`emulator`) so the pure-Rust-only build path stays thin.
-- `proptest` (dev) — property tests.
+- `proptest` (dev), property tests.
 
 ### Cargo features
 

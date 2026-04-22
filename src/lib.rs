@@ -6,7 +6,9 @@
 //! `docs/DOMAIN.md` and `docs/MODULE_LAYOUT.md` for the full picture.
 
 pub mod cli;
+pub mod emulator;
 pub mod error;
+pub mod replay_info;
 pub mod rofl;
 
 pub use error::{Result, RoflError};

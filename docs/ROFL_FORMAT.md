@@ -55,7 +55,7 @@ end.
 
 ---
 
-## Section A — FileHeader
+## Section A, FileHeader
 
 Variable length. Layout, field by field:
 
@@ -122,7 +122,7 @@ and therefore has no branching here.
 
 ---
 
-## Section B — Chunks region
+## Section B, Chunks region
 
 Begins at `header_end`, ends at `len - 4 - md_len - 256`. The region is
 `N` concatenated `ChunkRecord`s. `N` is not explicitly given in the file;
@@ -209,7 +209,7 @@ If `compressed_len == 0`:
 
 ---
 
-## Section C — Signature
+## Section C, Signature
 
 - 256 bytes at `[len - 4 - md_len - 256 .. len - 4 - md_len]`.
 - Tag: **UPSTREAM + VERIFIED** (offset and size; contents opaque).
@@ -220,7 +220,7 @@ If `compressed_len == 0`:
 
 ---
 
-## Section D — MetadataBlob
+## Section D, MetadataBlob
 
 - UTF-8 JSON, no BOM, no terminator.
 - Located at `[len - 4 - md_len .. len - 4]` where `md_len` is the
@@ -268,7 +268,7 @@ falling back to array-index only as last resort.
 
 ---
 
-## Section E — Trailing u32
+## Section E, Trailing u32
 
 - 4 bytes at `[len - 4 .. len]`, u32 LE.
 - Value: byte length of `MetadataBlob`.

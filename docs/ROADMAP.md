@@ -6,7 +6,7 @@ calcify.
 
 ---
 
-## Phase 1, reconnaissance — DONE
+## Phase 1, reconnaissance, DONE
 
 Read the prior art and characterise one real replay end-to-end before
 writing any code of our own.
@@ -23,7 +23,7 @@ Commit: `b9873a7`.
 
 ---
 
-## Phase 2, domain and format spec — DONE
+## Phase 2, domain and format spec, DONE
 
 Write down what we're parsing and how it lays out on disk before
 committing to a code structure.
@@ -38,7 +38,7 @@ Commits: `8d9da90`, `fa39b5e`, `24b093f`.
 
 ---
 
-## Phase 3, port Mowokuma and reach parity — PENDING
+## Phase 3, port Mowokuma and reach parity, PENDING
 
 First code. Build the transport layer end-to-end, stand up the emulator
 backend, port Mowokuma's two handlers (ward-spawn and movement), and
@@ -80,7 +80,7 @@ Open questions blocking Phase 3:
 
 ---
 
-## Phase 4, packet catalog expansion — PENDING
+## Phase 4, packet catalog expansion, PENDING
 
 With parity achieved, grow the catalog. This is where the project's
 value compounds: every new opcode documented is a permanent gain, and
@@ -114,7 +114,7 @@ filled in for patch 16.8.
 
 ---
 
-## Phase 5, validation against Henry Zhu's public dataset — PENDING
+## Phase 5, validation against Henry Zhu's public dataset, PENDING
 
 Henry Zhu released 1.4M+ decoded replays on Hugging Face
 ([dataset](https://huggingface.co/datasets/maknee/league-of-legends-decoded-replay-packets)).

@@ -91,10 +91,10 @@ and the catalog-expansion plan.
 
 These projects informed the reconnaissance without being ported from:
 
-- [@fraxiinus](https://github.com/fraxiinus) — [fraxiinus/roflxd](https://github.com/fraxiinus/roflxd).
+- [@fraxiinus](https://github.com/fraxiinus), [fraxiinus/roflxd](https://github.com/fraxiinus/roflxd).
   An umbrella of ROFL parsers across languages. Useful cross-check that
   Riot's obfuscation really does drift per patch.
-- [@robertabcd](https://github.com/robertabcd) — `lol-ob`. Older Ruby
+- [@robertabcd](https://github.com/robertabcd), `lol-ob`. Older Ruby
   work on Blowfish decryption of chunk data from an earlier era of the
   format. Historical interest only; the format has changed since.
 

@@ -18,11 +18,27 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Parse one replay and emit Mowokuma-compatible JSON. Requires the
+    /// `emulator` feature and a per-patch `.patch` archive.
+    File {
+        /// Path to a `.rofl` file.
+        #[arg(short, long)]
+        replay: PathBuf,
+
+        /// Output JSON path.
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Directory holding per-patch emulator configs. Files must be
+        /// named `<patch>.patch` (e.g. `15-5.patch` or Mowokuma's
+        /// `5-5.patch`). Defaults to `./patch`.
+        #[arg(long, default_value = "./patch")]
+        patch_dir: PathBuf,
+    },
     /// Parse a single replay and print a transport-layer summary.
     ///
-    /// Does not decode packet semantics (no emulator involved); prints
-    /// file header, metadata, chunk distribution, and optionally a block
-    /// histogram.
+    /// Does not decode packet semantics; prints file header, metadata,
+    /// chunk distribution, and optionally a block histogram.
     Inspect {
         /// Path to a `.rofl` file.
         #[arg(short, long)]
@@ -36,8 +52,52 @@ pub enum Command {
 
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
+        Command::File {
+            replay,
+            output,
+            patch_dir,
+        } => file(replay, output, patch_dir),
         Command::Inspect { replay, histogram } => inspect(replay, histogram),
     }
+}
+
+#[cfg(feature = "emulator")]
+fn file(replay: PathBuf, output: PathBuf, patch_dir: PathBuf) -> Result<()> {
+    use crate::emulator::config::Config;
+    use crate::replay_info::parse_and_decode;
+    use crate::RoflError;
+
+    let bytes = std::fs::read(&replay)?;
+    let parsed = Replay::parse(&bytes)?;
+
+    let patch_tag = parsed.header.patch();
+    let patch_file = Config::resolve_patch_file(&patch_dir, patch_tag).ok_or_else(|| {
+        RoflError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "no patch archive for {patch_tag:?} under {}",
+                patch_dir.display()
+            ),
+        ))
+    })?;
+    eprintln!(
+        "using patch config: {} (for patch {})",
+        patch_file.display(),
+        patch_tag
+    );
+    let config = Config::parse(&patch_file)?;
+
+    let game = parse_and_decode(&parsed, &config)?;
+    std::fs::write(&output, game.to_string().as_bytes())?;
+    eprintln!("wrote {}", output.display());
+    Ok(())
+}
+
+#[cfg(not(feature = "emulator"))]
+fn file(_replay: PathBuf, _output: PathBuf, _patch_dir: PathBuf) -> Result<()> {
+    Err(crate::RoflError::Io(std::io::Error::other(
+        "file subcommand requires the `emulator` feature at build time",
+    )))
 }
 
 fn inspect(path: PathBuf, histogram: bool) -> Result<()> {

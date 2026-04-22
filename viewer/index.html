@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ROFL-X replay viewer</title>
+<style>
+:root {
+  --bg: #111;
+  --fg: #ddd;
+  --map-bg: #1e2a2a;
+  --lane-mid: #2a3b3b;
+  --river: #2f4a6b;
+  --blue: #3a8dde;
+  --red:  #e25252;
+  --neutral: #c8c078;
+  --ward-green:  #7dd36a;
+  --ward-pink:   #e970c7;
+  --ward-blue:   #61c9f5;
+  --accent: #ffbe4f;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+header, footer {
+  padding: 0.6rem 1rem;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+footer { border-top: 1px solid #333; border-bottom: none; font-size: 0.85rem; }
+button, select, input[type="range"], input[type="file"] {
+  background: #222;
+  color: var(--fg);
+  border: 1px solid #444;
+  padding: 0.3rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+button:hover { background: #2a2a2a; }
+button:disabled { opacity: 0.5; cursor: default; }
+input[type="range"] { padding: 0; cursor: grab; flex: 1; min-width: 200px; }
+#time { font-variant-numeric: tabular-nums; min-width: 120px; }
+#drop {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 1.1rem;
+  color: #888;
+  border: 2px dashed #333;
+  border-radius: 6px;
+  margin: 0.5rem;
+  padding: 2rem;
+}
+#drop.active { border-color: var(--accent); color: var(--accent); }
+#map-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+svg#map { width: 100%; height: 100%; max-width: 90vh; max-height: 90vh; background: var(--map-bg); }
+.player-label {
+  font-size: 9px;
+  fill: #fff;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #000;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.ward { opacity: 0.9; }
+.team-Blue { color: var(--blue); }
+.team-Red  { color: var(--red); }
+#legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <input type="file" id="file" accept=".json,application/json">
+  <button id="play" disabled>Play</button>
+  <select id="speed">
+    <option value="0.5">0.5x</option>
+    <option value="1" selected>1x</option>
+    <option value="5">5x</option>
+    <option value="15">15x</option>
+    <option value="60">60x</option>
+  </select>
+  <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" disabled>
+  <span id="time">—</span>
+</header>
+
+<section id="map-container">
+  <div id="drop">Drop a rofl-x JSON output here, or use the file picker above.</div>
+  <svg id="map" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" style="display:none">
+    <!-- Stylised Summoner's Rift: corners for bases, diagonal river band. -->
+    <defs>
+      <linearGradient id="riverGrad" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0"   stop-color="var(--river)" stop-opacity="0.0"/>
+        <stop offset="0.35" stop-color="var(--river)" stop-opacity="0.55"/>
+        <stop offset="0.65" stop-color="var(--river)" stop-opacity="0.55"/>
+        <stop offset="1"   stop-color="var(--river)" stop-opacity="0.0"/>
+      </linearGradient>
+    </defs>
+
+    <!-- River band along the diagonal from bottom-right to top-left. -->
+    <polygon points="1000,400 600,1000 0,1000 0,600 400,0 1000,0" fill="url(#riverGrad)"/>
+
+    <!-- Base markers (Blue bottom-left, Red top-right by default LoL orientation). -->
+    <rect x="20" y="820" width="160" height="160" fill="#1b3b66" stroke="#264e88" stroke-width="2" rx="8"/>
+    <rect x="820" y="20" width="160" height="160" fill="#662020" stroke="#883030" stroke-width="2" rx="8"/>
+    <text x="100" y="910" class="player-label" style="font-size:14px">Blue base</text>
+    <text x="900" y="110" class="player-label" style="font-size:14px">Red base</text>
+
+    <!-- Groups populated by JS. -->
+    <g id="wards-layer"></g>
+    <g id="players-layer"></g>
+  </svg>
+</section>
+
+<footer>
+  <div id="legend">
+    <span><span class="swatch" style="background: var(--blue)"></span>Blue</span>
+    <span><span class="swatch" style="background: var(--red)"></span>Red</span>
+    <span><span class="swatch" style="background: var(--ward-green)"></span>YellowTrinket / SightWard</span>
+    <span><span class="swatch" style="background: var(--ward-pink)"></span>JammerDevice</span>
+    <span><span class="swatch" style="background: var(--ward-blue)"></span>other ward</span>
+  </div>
+  <div id="stats" style="margin-left:auto"></div>
+</footer>
+
+<script>
+"use strict";
+
+// Map: Summoner's Rift is ~14820 x 14881 game units. Origin is bottom-
+// left; Y grows upward. SVG uses top-left origin, so we flip Y.
+const MAP_UNITS = 15000;
+const SVG_SIZE = 1000;
+
+function gameToSvg(x, y) {
+  return {
+    x: (x / MAP_UNITS) * SVG_SIZE,
+    y: SVG_SIZE - (y / MAP_UNITS) * SVG_SIZE,
+  };
+}
+
+function teamColor(team) {
+  return team === "Blue" ? "#3a8dde" : (team === "Red" ? "#e25252" : "#c8c078");
+}
+
+function wardColor(name) {
+  if (!name) return "var(--ward-blue)";
+  if (name.includes("Jammer")) return "var(--ward-pink)";
+  if (name.includes("SightWard") || name.includes("YellowTrinket")) return "var(--ward-green)";
+  return "var(--ward-blue)";
+}
+
+function fmtTime(s) {
+  if (!Number.isFinite(s)) return "—";
+  const m = Math.floor(s / 60);
+  const ss = Math.floor(s % 60).toString().padStart(2, "0");
+  return `${m}:${ss}`;
+}
+
+const state = {
+  data: null,
+  gameLen: 0,          // seconds
+  states: [],          // sorted by timestamp
+  wards: [],           // each: { start, end, team, name, x, y, owner }
+  playing: false,
+  t: 0,                // current game time in seconds
+  rafId: null,
+  lastFrame: 0,
+};
+
+function loadJson(json) {
+  state.data = json;
+  state.gameLen = (json.metadata?.game_len ?? 0) / 1000;
+
+  state.states = (json.players_state || []).slice().sort(
+    (a, b) => a.timestamp - b.timestamp
+  );
+
+  state.wards = (json.wards || []).map(w => ({
+    start: w.timestamp,
+    end:   w.timestamp + (w.duration || 0),
+    team:  w.team,
+    name:  w.name,
+    x: w.pos?.[0] ?? 0,
+    y: w.pos?.[1] ?? 0,
+    owner: w.owner,
+  }));
+
+  document.getElementById("drop").style.display = "none";
+  document.getElementById("map").style.display = "block";
+  document.getElementById("play").disabled = false;
+  const scrub = document.getElementById("scrub");
+  scrub.disabled = false;
+  scrub.max = state.gameLen || 1;
+  scrub.value = 0;
+
+  state.t = 0;
+  setPlaying(false);
+  render();
+  updateStats();
+}
+
+// Snapshot interpolation: find the two states surrounding t and lerp
+// each player's position by champ+team+role key.
+function playersAt(t) {
+  const arr = state.states;
+  if (!arr.length) return [];
+  if (t <= arr[0].timestamp) return arr[0].players;
+  if (t >= arr[arr.length - 1].timestamp) return arr[arr.length - 1].players;
+
+  // Binary search for lower bound.
+  let lo = 0, hi = arr.length - 1;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].timestamp <= t) lo = mid; else hi = mid;
+  }
+  const a = arr[lo], b = arr[hi];
+  const dt = b.timestamp - a.timestamp;
+  const u = dt > 0 ? (t - a.timestamp) / dt : 0;
+
+  const indexB = {};
+  for (const p of b.players) {
+    indexB[`${p.team}|${p.role}|${p.champ}`] = p;
+  }
+  return a.players.map(p => {
+    const key = `${p.team}|${p.role}|${p.champ}`;
+    const q = indexB[key];
+    if (!q) return p;
+    return {
+      ...p,
+      pos: [
+        p.pos[0] + (q.pos[0] - p.pos[0]) * u,
+        p.pos[1] + (q.pos[1] - p.pos[1]) * u,
+      ],
+    };
+  });
+}
+
+function activeWards(t) {
+  return state.wards.filter(w => t >= w.start && t <= w.end);
+}
+
+function render() {
+  const playersLayer = document.getElementById("players-layer");
+  const wardsLayer = document.getElementById("wards-layer");
+
+  const players = playersAt(state.t);
+  const wards = activeWards(state.t);
+
+  // Wards first (under players).
+  wardsLayer.innerHTML = "";
+  for (const w of wards) {
+    const p = gameToSvg(w.x, w.y);
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", p.x);
+    c.setAttribute("cy", p.y);
+    c.setAttribute("r", 4);
+    c.setAttribute("class", "ward");
+    c.setAttribute("fill", wardColor(w.name));
+    c.setAttribute("stroke", teamColor(w.team));
+    c.setAttribute("stroke-width", "1.5");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${w.name} (${w.team}) @ ${fmtTime(w.start)}–${fmtTime(w.end)}`;
+    c.appendChild(title);
+    wardsLayer.appendChild(c);
+  }
+
+  playersLayer.innerHTML = "";
+  for (const pl of players) {
+    const p = gameToSvg(pl.pos[0], pl.pos[1]);
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", p.x);
+    c.setAttribute("cy", p.y);
+    c.setAttribute("r", 9);
+    c.setAttribute("fill", teamColor(pl.team));
+    c.setAttribute("stroke", "#000");
+    c.setAttribute("stroke-width", "1.5");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${pl.champ} (${pl.role}, ${pl.team})`;
+    c.appendChild(title);
+    g.appendChild(c);
+    const tx = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tx.setAttribute("x", p.x);
+    tx.setAttribute("y", p.y - 12);
+    tx.setAttribute("class", "player-label");
+    tx.textContent = pl.champ;
+    g.appendChild(tx);
+    playersLayer.appendChild(g);
+  }
+
+  document.getElementById("time").textContent =
+    `${fmtTime(state.t)} / ${fmtTime(state.gameLen)}`;
+  document.getElementById("scrub").value = state.t;
+  document.getElementById("stats").textContent =
+    `${players.length} players · ${wards.length} wards active`;
+}
+
+function updateStats() {
+  const s = state.data;
+  if (!s) return;
+  document.getElementById("stats").textContent =
+    `patch ${s.metadata?.version ?? "?"} · ${s.wards?.length ?? 0} ward lifecycles · ${s.players_state?.length ?? 0} state ticks`;
+}
+
+function setPlaying(p) {
+  state.playing = p;
+  document.getElementById("play").textContent = p ? "Pause" : "Play";
+  if (p) {
+    state.lastFrame = performance.now();
+    const tick = now => {
+      if (!state.playing) return;
+      const dt = (now - state.lastFrame) / 1000;
+      state.lastFrame = now;
+      const speed = parseFloat(document.getElementById("speed").value);
+      state.t = Math.min(state.gameLen, state.t + dt * speed);
+      render();
+      if (state.t >= state.gameLen) {
+        setPlaying(false);
+      } else {
+        state.rafId = requestAnimationFrame(tick);
+      }
+    };
+    state.rafId = requestAnimationFrame(tick);
+  } else if (state.rafId) {
+    cancelAnimationFrame(state.rafId);
+    state.rafId = null;
+  }
+}
+
+// File input + drag/drop.
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      loadJson(JSON.parse(reader.result));
+    } catch (e) {
+      alert(`Failed to parse JSON: ${e.message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById("file").addEventListener("change", e => {
+  handleFile(e.target.files[0]);
+});
+const drop = document.getElementById("drop");
+["dragenter", "dragover"].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("active"); })
+);
+["dragleave", "drop"].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("active"); })
+);
+drop.addEventListener("drop", e => {
+  handleFile(e.dataTransfer.files[0]);
+});
+// Also allow dropping anywhere on the document once a file is loaded.
+document.body.addEventListener("dragover", e => e.preventDefault());
+document.body.addEventListener("drop", e => {
+  e.preventDefault();
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById("play").addEventListener("click", () => setPlaying(!state.playing));
+document.getElementById("scrub").addEventListener("input", e => {
+  state.t = parseFloat(e.target.value);
+  render();
+});
+
+// Keyboard: space toggles play/pause, arrows seek.
+document.addEventListener("keydown", e => {
+  if (!state.data) return;
+  if (e.code === "Space") { e.preventDefault(); setPlaying(!state.playing); }
+  else if (e.code === "ArrowLeft")  { state.t = Math.max(0, state.t - 5); render(); }
+  else if (e.code === "ArrowRight") { state.t = Math.min(state.gameLen, state.t + 5); render(); }
+});
+</script>
+</body>
+</html>

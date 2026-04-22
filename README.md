@@ -156,6 +156,84 @@ credited, which CREDITS.md does in detail.
 
 ---
 
+## TODO
+
+Concrete work that's been scoped and triaged but not done. Ordered by
+how much it unblocks downstream.
+
+### Reverse-engineering (needs a disassembler)
+
+- [ ] **Find the netid-to-class mapping table** in Mowokuma's 5-5
+  binary. The class-descriptor table is known (see
+  [docs/RE_PATCH.md](docs/RE_PATCH.md) for its layout at image RVA
+  `0x169b000`, ~500 entries at 48-byte stride), but there is no netid
+  field inside an entry. The packet-deserialise dispatcher must
+  consult a separate structure. Finding this is the single biggest
+  unblocker for the catalog: once we can map "netid N" to "class
+  descriptor entry K", every decoder RVA becomes accessible.
+- [ ] **Port `CreateHero`, `HeroDie`, `CreateTurret`**, three of the
+  simplest Zhu classes (2-4 fields each). Workflow:
+  Ghidra session → identify decoder RVA → feed into
+  `rofl-x trace-decoder` → add handler + fixture + test →
+  promote from `OBSERVED-ONLY` to `DOCUMENTED` in
+  [docs/PACKETS.md](docs/PACKETS.md).
+- [ ] **Port `Replication`** (Zhu's per-entity stat-update packet,
+  15.8 % of all packets in S12). Harder than the `Hero*` ones because
+  the payload is a variable-length dict of field updates, but this is
+  the packet that carries HP, movement speed, and every other stat
+  the viewer needs to render health bars and grey-on-death.
+- [ ] **Port `UnitApplyDamage`** and **`NPCDieMapView`**. Together
+  these give us a kill feed.
+- [ ] **Build a 16.8 `.patch` archive.** Skeleton exists at
+  `reference/patch-16-8-skeleton.patch`; the RVAs marked `NEEDS_RE`
+  in its `result.json` need filling in against the current League
+  binary. Full recipe in [docs/RE_PATCH.md](docs/RE_PATCH.md).
+
+### Parser and tooling
+
+- [ ] **Opcode-coverage regression test.** `tests/opcode_coverage.rs`
+  walking `ROFL_X_SAMPLES_DIR` and asserting every observed opcode is
+  in the catalog. Trips loudly when a new patch introduces a new
+  opcode.
+- [ ] **`tests/zhu_schema_compat.rs`**, a strict-comparison test
+  asserting our output can represent every field in Zhu's 22-class
+  schema. Will trivially fail while the catalog has 2 `DOCUMENTED`
+  classes; useful as a coverage baseline that unlocks once more
+  classes are in.
+- [ ] **Cross-patch decoder byte-pattern matching.** Given the known
+  mov/ward decoder bytes from 15.5, scan a new patch's `.text` for
+  near-matches. Hypothesis: many decoder bodies are stable across
+  short patch runs, so a 15.5 decoder's byte pattern should still
+  appear at a slightly shifted RVA in 15.6. Not a replacement for RE
+  on major jungle-rework patches but an accelerator for consecutive
+  patches.
+
+### Viewer
+
+- [ ] **Hardcoded SR turret positions on the map** (22 positions,
+  static, no decoder work needed). Visual improvement independent of
+  any RE.
+- [ ] **Ward icons from Data Dragon items** (3340 Yellow, 2055
+  Control, 3363 Blue Trinket). No decoder work needed.
+- [ ] **Team sidebars** showing each player's champion icon and role.
+  Data is already in the output JSON.
+- [ ] **Simulated fog of war** with a Blue/Red/Both POV toggle,
+  computed from ally player positions + active wards. No decoder
+  work needed.
+- [ ] **HP bars and grey-on-death**. Blocked on `Replication` and
+  `HeroDie` decoders.
+- [ ] **Kill feed sidebar**. Blocked on `UnitApplyDamage` +
+  `NPCDieMapView` / `HeroDie` decoders.
+
+### Parity
+
+- [ ] **Parity runs against Mowokuma's binary on 15.1-15.4**.
+  Currently only 15.5 has been measured (99.07 % content match).
+  Cheap once a small shell script runs both tools and diffs the
+  order-normalised JSON.
+
+---
+
 ## Non-goals
 
 - **We will not publish a decoded-replay dataset.** Henry Zhu's Hugging Face

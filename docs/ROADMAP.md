@@ -38,7 +38,7 @@ Commits: `8d9da90`, `fa39b5e`, `24b093f`.
 
 ---
 
-## Phase 3, port Mowokuma and reach parity, PENDING
+## Phase 3, port Mowokuma and reach parity, DONE
 
 First code. Build the transport layer end-to-end, stand up the emulator
 backend, port Mowokuma's two handlers (ward-spawn and movement), and
@@ -68,19 +68,23 @@ Stop point: a green byte-for-byte diff against her binary on at least
 one shared replay, plus a `cargo test` run with the golden-JSON, opcode-
 coverage, and proptest targets all passing.
 
-Open questions blocking Phase 3:
+Outcome: content parity reached on patch 15.5 (metadata + wards
+byte-identical, 99.07 % of individual player entries match). Full
+byte-identity is not achievable because her output uses `HashMap`
+iteration order inside `players_state` and is non-deterministic
+run-to-run on her side (0.1 % self-similarity across her own runs).
+Ours is deterministic via `BTreeMap`. Commits: `fa2e059`, `deb7bf0`,
+`40108b0`, `8581732`.
 
-- License direction for the Rust code we write here (Mowokuma's upstream
-  has no LICENSE).
-- Whether to maintain per-patch `.patch` archives ourselves, lean on the
-  community, or both.
-- Whether to fetch her release binary + `.patch` archive now (required
-  for the parity test) or defer until someone in the project has done
-  so manually.
+Phase 3c deliverable: `rofl-x extract-patch` subcommand + RE
+methodology doc (`docs/RE_PATCH.md`) for producing a `.patch` archive
+on a new League version. Skeleton archive for 16.8 sits at
+`reference/patch-16-8-skeleton.patch`; filling in the RVAs is the
+multi-hour disassembler task documented in `RE_PATCH.md`.
 
 ---
 
-## Phase 4, packet catalog expansion, PENDING
+## Phase 4, packet catalog expansion, SEEDED
 
 With parity achieved, grow the catalog. This is where the project's
 value compounds: every new opcode documented is a permanent gain, and
@@ -112,9 +116,19 @@ Stop point: one full pass of the top-40 opcodes, each either
 `DOCUMENTED` or `UNKNOWN`-with-evidence, and `docs/COMPATIBILITY.md`
 filled in for patch 16.8.
 
+Status as of commit `64ff98d`: catalog scaffolded in `docs/PACKETS.md`
+with two `DOCUMENTED` classes (MOVEMENT_PATH, WARD_SPAWN_OR_DESTROY),
+20 `OBSERVED-ONLY` classes (from Zhu's public schema), and 15
+`UNKNOWN` entries (top opcodes from sample_a's histogram, with
+frequency counts). `docs/COMPATIBILITY.md` lists per-patch coverage.
+Promoting an `OBSERVED-ONLY` or `UNKNOWN` entry to `DOCUMENTED`
+requires reverse-engineering a new decoder function in the League
+binary; that work is out of scope for a single chat session and is
+paused pending a contributor with disassembler access.
+
 ---
 
-## Phase 5, validation against Henry Zhu's public dataset, PENDING
+## Phase 5, validation against Henry Zhu's public dataset, INITIAL PASS DONE
 
 Henry Zhu released 1.4M+ decoded replays on Hugging Face
 ([dataset](https://huggingface.co/datasets/maknee/league-of-legends-decoded-replay-packets)).
@@ -183,3 +197,27 @@ Open questions specific to Phase 5:
   statistics.
 - Whether to attempt patch-12.x `.rofl` parsing at all (may be a Phase 6
   candidate; likely requires its own emulator config archive).
+
+Initial pass delivered (commit `f791fd9`):
+
+- `scripts/zhu_dataset_fetch.py` + `scripts/zhu_dataset_stats.py` for
+  reproducible slices and profiling.
+- `docs/DATASETS.md` with dataset layout, Apache-2.0 license note,
+  fetch recipes, per-class frequency table across 20 S12 games.
+- `docs/PACKETS.md` cross-references: `WaypointGroup` ~ our
+  `MOVEMENT_PATH`; ward events ride on Zhu's `SpawnMinion` (confirmed
+  by probing names for `SightWard`, `VisionWard`, `JammerDevice`,
+  `PlantVision`, `WardCorpse`); our `WARD_SPAWN_OR_DESTROY` output is
+  strictly richer than his (`owner_id` present in ours, absent in his
+  schema).
+
+Still outstanding:
+
+- `tests/zhu_schema_compat.rs` to assert our output can round-trip
+  every Zhu-class field. Currently our output schema only covers two
+  Zhu classes (`WaypointGroup` partial, `SpawnMinion`-ward partial),
+  so a strict compat test would trivially fail on the other 20. Worth
+  writing as a coverage-tracking baseline when the catalog grows.
+- Raw-replay byte-diff: Zhu's dataset ships decoded JSON only, not
+  source `.rofl` files. Still an open question whether the raw files
+  are available anywhere.

@@ -1,0 +1,34 @@
+# Rust build output
+/target
+**/target
+
+# Raw replay files (never commit, copyrighted Riot content + PII)
+*.rofl
+replays/
+League of Legends/
+
+# Per-patch emulator configs (each contains reverse-engineered game binary
+# sections, large, patch-specific, not appropriate to commit)
+/patch
+patch/
+*.patch
+
+# Reference clones (Mowokuma/ROFL is a git-submodule-style reference, not
+# part of our source tree)
+/reference
+
+# Script-produced artifacts that may embed sample file paths or PII
+/scripts/sample_a_dump.txt
+/scripts/*.log
+/scripts/out/
+__pycache__/
+*.pyc
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Per-user Claude Code settings (not project source)
+.claude/

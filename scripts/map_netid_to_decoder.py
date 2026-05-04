@@ -132,19 +132,20 @@ def main() -> int:
         rva = struct.unpack_from("<I", binary, jt_off + i * 4)[0]
         jumptable.append(rva)
 
-    def scan_for_vtable(start_rva: int, depth: int, visited: set) -> tuple | None:
-        """Recursively scan a function (and its callees) for a LEA loading
-        a sub-table VA. Returns (decoder_rva, vtable_va, source_str) or None.
+    def collect_lea_hits(start_rva: int, depth: int, visited: set, hits: list) -> None:
+        """Collect ALL LEA targets pointing into sub-tables, in execution
+        order (linear walk; recurse into call rel32 as encountered).
+        C++ ctors set the vtable LAST (most-derived class wins), so we
+        keep all hits and pick the LAST one as the final vtable.
         """
         if start_rva in visited or depth > MAX_CALL_DEPTH:
-            return None
+            return
         if not (text_rva <= start_rva < text_rva + text["virt_size"]):
-            return None
+            return
         visited.add(start_rva)
         body_off = text["raw_off"] + start_rva - text_rva
         body = binary[body_off : body_off + CTOR_SCAN_LIMIT]
 
-        callees: list[int] = []
         i = 0
         while i + 7 < len(body):
             b0 = body[i]
@@ -154,56 +155,55 @@ def main() -> int:
                 target_rva = pc_after + disp32
                 target_va = IMAGE_BASE + target_rva
                 if target_va in sub_table_va_to_decoder:
-                    return (
+                    hits.append((
                         sub_table_va_to_decoder[target_va],
                         target_va,
                         f"lea start fn=0x{start_rva:x} +0x{i:x}",
-                    )
-                hit = find_subtable_at(target_va)
-                if hit and hit[0]:
-                    return (
-                        hit[0],
-                        target_va,
-                        f"lea inside-sub fn=0x{start_rva:x} +0x{i:x} sub_off=0x{hit[1]:x}",
-                    )
+                    ))
+                else:
+                    hit = find_subtable_at(target_va)
+                    if hit and hit[0]:
+                        hits.append((
+                            hit[0],
+                            target_va,
+                            f"lea inside-sub fn=0x{start_rva:x} +0x{i:x} sub_off=0x{hit[1]:x}",
+                        ))
                 i += 7
                 continue
-            # call rel32 (e8 disp32)
             if b0 == 0xe8 and i + 5 < len(body):
                 disp32 = struct.unpack_from("<i", body, i + 1)[0]
                 pc_after = start_rva + i + 5
                 target_rva = pc_after + disp32
                 if text_rva <= target_rva < text_rva + text["virt_size"]:
-                    callees.append(target_rva)
+                    # Recurse INLINE so the resulting hit ordering matches
+                    # execution order. C++ derived ctor calls base ctor
+                    # FIRST, so base-class vtable hits land before derived.
+                    collect_lea_hits(target_rva, depth + 1, visited, hits)
                 i += 5
                 continue
-            # ret = stop scanning
             if b0 == 0xc3 or b0 == 0xc2:
-                # only if at function start or after enough bytes
                 if i > 32:
                     break
             i += 1
-        # Recurse into each callee in order
-        for callee in callees:
-            r = scan_for_vtable(callee, depth + 1, visited)
-            if r is not None:
-                return r
-        return None
 
     netid_to_decoder: dict[int, dict] = {}
     for netid in range(NUM_NETIDS):
         ctor_rva = jumptable[netid]
         if not (text_rva <= ctor_rva < text_rva + text["virt_size"]):
             continue
-        result = scan_for_vtable(ctor_rva, 0, set())
-        if result is not None:
-            decoder_rva, vtable_va, source = result
-            netid_to_decoder[netid] = {
-                "ctor_rva": f"0x{ctor_rva:x}",
-                "vtable_va": f"0x{vtable_va:x}",
-                "decoder_rva": f"0x{decoder_rva:x}",
-                "source": source,
-            }
+        hits: list[tuple[int, int, str]] = []
+        collect_lea_hits(ctor_rva, 0, set(), hits)
+        if not hits:
+            continue
+        # Pick the LAST hit — derived-most vtable assignment
+        decoder_rva, vtable_va, source = hits[-1]
+        netid_to_decoder[netid] = {
+            "ctor_rva": f"0x{ctor_rva:x}",
+            "vtable_va": f"0x{vtable_va:x}",
+            "decoder_rva": f"0x{decoder_rva:x}",
+            "source": source,
+            "all_hits_count": len(hits),
+        }
     found_count = len(netid_to_decoder)
 
     print(f"resolved decoder for {found_count} / {NUM_NETIDS} netids")

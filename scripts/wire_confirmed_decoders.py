@@ -26,7 +26,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ANALYSIS = Path(os.environ["USERPROFILE"]) / "Tools" / "analysis" / "16-9"
 PATCH_PATH = ROOT / "patch" / "16-9.patch"
-RESULTS_PATH = ANALYSIS / "brute_match_results.json"
+# Prefer the extended results (327 prologue candidates, includes the
+# follow-up sweep on no-hits netids) when available; fall back to the
+# initial 41-high-confidence sweep.
+_RESULTS_EXTENDED = ANALYSIS / "brute_match_results_extended.json"
+RESULTS_PATH = _RESULTS_EXTENDED if _RESULTS_EXTENDED.exists() else ANALYSIS / "brute_match_results.json"
 BINARY_PATH = ANALYSIS / "league_16-9.exe"
 
 MIN_GAP = 2                             # winner must lead runner-up by this many writes (loose)
@@ -103,11 +107,26 @@ def main() -> int:
     #          (typical specialized decoder shape). This catches
     #          legitimate "shared per-family" decoders like f9d4e0 that
     #          handle many Replication-style netids correctly.
+    # Skip the netids that are configured as primary decoders elsewhere
+    # in the patch (mov_decrypt / ward_spawn_decrypt) — those go through
+    # their own dedicated emulator code path with type-aware handlers.
+    primary_netids: set[int] = set()
+    try:
+        with zipfile.ZipFile(PATCH_PATH) as z:
+            cfg = json.loads(z.read("result.json"))
+        primary_netids.add(cfg["mov_decrypt"]["netid"])
+        primary_netids.add(cfg["ward_spawn_decrypt"]["netid"])
+    except Exception:
+        pass
+
     confirmed: list[tuple[int, str, int, int, int]] = []  # (netid, rva, writes, gap, size)
-    skipped: dict[str, int] = {"noisy": 0, "min_writes": 0, "gap": 0, "size": 0, "loud": 0, "no_hits": 0}
+    skipped: dict[str, int] = {"noisy": 0, "min_writes": 0, "gap": 0, "size": 0, "loud": 0, "no_hits": 0, "primary": 0}
     REASONABLE_RANGE = (MIN_WRITES, STRICT_MAX_WRITES)
     for netid_s, hits in brute["results"].items():
         netid = int(netid_s)
+        if netid in primary_netids:
+            skipped["primary"] += 1
+            continue
         if not hits:
             skipped["no_hits"] += 1
             continue

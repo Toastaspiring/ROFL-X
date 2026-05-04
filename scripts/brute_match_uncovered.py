@@ -137,10 +137,11 @@ def main() -> int:
     print(f"sweeping {len(target_netids)} target netids x {len(candidates)} candidates "
           f"~= {len(target_netids) * len(candidates) * 1.2 / 60:.0f} min")
 
-    # Sweep
+    # Sweep — write incrementally so progress survives interruption
+    out_path = ANALYSIS / "brute_match_results_extended.json"
     new_results = {}
-    for netid in target_netids:
-        print(f"=== netid {netid} ===", flush=True)
+    for idx, netid in enumerate(target_netids):
+        print(f"=== [{idx + 1}/{len(target_netids)}] netid {netid} ===", flush=True)
         per_netid = []
         for rva, rva_end in candidates:
             n = trace_one(replay, netid, rva, rva_end)
@@ -148,22 +149,20 @@ def main() -> int:
                 per_netid.append((rva, n))
         per_netid.sort(key=lambda x: -x[1])
         for rva, n in per_netid[:5]:
-            print(f"  RVA 0x{rva:x}: {n} distinct offsets")
+            print(f"  RVA 0x{rva:x}: {n} distinct offsets", flush=True)
         new_results[netid] = per_netid
 
-    # Merge into existing results: replace per-netid lists where we got new hits
-    merged = dict(existing["results"])
-    for netid, hits in new_results.items():
-        if hits:
-            merged[str(netid)] = [
-                {"rva": f"0x{rva:x}", "distinct_offsets": n}
-                for rva, n in hits
-            ]
-    # Save
-    out_path = ANALYSIS / "brute_match_results_extended.json"
-    with open(out_path, "w") as f:
-        json.dump({"replay": existing.get("replay", replay.name), "results": merged}, f, indent=2)
-    print(f"wrote {out_path}")
+        # Flush incrementally
+        merged = dict(existing["results"])
+        for n_id, hits in new_results.items():
+            if hits:
+                merged[str(n_id)] = [
+                    {"rva": f"0x{rva:x}", "distinct_offsets": cnt}
+                    for rva, cnt in hits
+                ]
+        with open(out_path, "w") as f:
+            json.dump({"replay": existing.get("replay", replay.name), "results": merged}, f, indent=2)
+    print(f"wrote {out_path}", flush=True)
     return 0
 
 

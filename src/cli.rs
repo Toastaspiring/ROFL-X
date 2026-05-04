@@ -693,8 +693,8 @@ fn inspect(path: PathBuf, histogram: bool) -> Result<()> {
         println!("Distinct opcodes  : {}", opcodes.len());
         let mut top: Vec<(&u16, &usize)> = opcodes.iter().collect();
         top.sort_by(|a, b| b.1.cmp(a.1));
-        println!("Top 20 opcodes    :");
-        for (op, count) in top.iter().take(20) {
+        println!("All opcodes (sorted by frequency):");
+        for (op, count) in top.iter() {
             println!("  0x{:04x} ({:>5})  x{}", op, op, count);
         }
     }

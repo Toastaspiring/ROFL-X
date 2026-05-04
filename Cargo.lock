@@ -546,6 +546,7 @@ name = "rofl-x"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "memchr",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

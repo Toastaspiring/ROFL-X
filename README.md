@@ -200,13 +200,20 @@ how much it unblocks downstream.
   schema. Will trivially fail while the catalog has 2 `DOCUMENTED`
   classes; useful as a coverage baseline that unlocks once more
   classes are in.
-- [ ] **Cross-patch decoder byte-pattern matching.** Given the known
-  mov/ward decoder bytes from 15.5, scan a new patch's `.text` for
-  near-matches. Hypothesis: many decoder bodies are stable across
-  short patch runs, so a 15.5 decoder's byte pattern should still
-  appear at a slightly shifted RVA in 15.6. Not a replacement for RE
-  on major jungle-rework patches but an accelerator for consecutive
-  patches.
+- [x] **Cross-patch decoder byte-pattern matching.** Done:
+  `scripts/ghidra/export_decoders.py` exports anchor patterns from a
+  labeled donor binary; `rofl-x scan-decoder` finds candidate RVA
+  ranges in a target patch by anchor-clustering. Workflow documented
+  in [docs/RE_PATCH.md](docs/RE_PATCH.md) § "Cross-patch byte-pattern
+  porting". Not a replacement for RE on rewrites; accelerator for
+  consecutive patches.
+- [x] **Per-decoder scaffolding tools.** Done: `rofl-x extract-fixture`
+  pulls raw payloads from a `.rofl` by netid; `rofl-x new-handler`
+  scaffolds the test stub and `docs/PACKETS.md` row. The handler
+  source file under `src/` stays manual (StubEmulator integration
+  shape is per-decoder). Workflow in
+  [docs/RE_PATCH.md](docs/RE_PATCH.md) § "Per-decoder workflow
+  tooling".
 
 ### Viewer
 

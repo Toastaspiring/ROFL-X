@@ -9,8 +9,11 @@ pub mod cli;
 pub mod emulator;
 pub mod error;
 pub mod extract_patch;
+pub mod fixture;
 pub mod replay_info;
 pub mod rofl;
+pub mod scaffold;
+pub mod scan_decoder;
 
 pub use error::{Result, RoflError};
 pub use rofl::Replay;

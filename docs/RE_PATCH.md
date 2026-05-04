@@ -313,14 +313,115 @@ time) that we haven't yet located.
 | netid-to-class mapping table              | Trace the packet deserialise dispatcher in a disassembler; it is the function that consults this table. |
 | Struct offsets for new decoders           | **Solved by `rofl-x trace-decoder`** once the RVA is known.           |
 
+## Cross-patch byte-pattern porting (`scan-decoder` + Ghidra script)
+
+Once a decoder's RVA is known on patch X, porting it to patch Y is mostly
+a hunt for the same byte sequence at a relocated address. ROFL-X ships
+two pieces that automate that hunt.
+
+### Step 1: export decoder anchors from the donor binary
+
+In Ghidra, label the decoder functions you want to port (any name will
+do; the script exports whatever you tell it to match). Then run
+`scripts/ghidra/export_decoders.py` from the Script Manager. It prompts
+for:
+
+- Patch tag (e.g. `15.5`)
+- Function-name regex (or empty for the built-in decoder name list)
+- Output JSON path
+
+The script extracts each function's RVA range and ~20 short distinctive
+byte windows (`anchors`) at strided offsets, skipping windows that look
+like immediates or relocations. Output is a `decoders.json` consumed by
+`scan-decoder`.
+
+### Step 2: extract a skeleton archive for the target patch
+
+Same as before:
+
+```
+rofl-x extract-patch \
+  --binary "C:\Riot Games\League of Legends\Game\League of Legends.exe" \
+  --output ./patch/16-8.patch-skeleton
+```
+
+### Step 3: scan the target's `.text` for matches
+
+```
+rofl-x scan-decoder \
+  --donors decoders.json \
+  --target ./patch/16-8.patch-skeleton \
+  --report-json scan_results.json
+```
+
+For each donor function, the tool reports the top-K target RVA candidates
+ranked by anchor-cluster score. A score of 1.0 means every donor anchor
+landed at the expected relative offset in the target — the function was
+relocated but not modified. Scores below ~0.5 mean the body was rewritten
+and you should fall back to disassembly.
+
+The candidate `rva_start` for a high-score match goes straight into the
+`mov_decrypt.rva_start` / `ward_spawn_decrypt.rva_start` fields in the
+target's `result.json`. Use `trace-decoder` to verify struct offsets
+stayed stable across the move (they usually do).
+
+### What this replaces, what it doesn't
+
+Replaces: the manual "open Ghidra on 16.8, eyeball-compare against 15.5
+disassembly, find the relocated function" loop.
+
+Doesn't replace:
+- Finding the netids on the new patch. Still a histogram + cross-reference job.
+- Decoders that Riot genuinely rewrote. Low scores are honest signals
+  that the body changed; the tool will not invent a match.
+- The first-ever decoder on a patch. You need at least one labeled
+  function to act as donor. Mowokuma's `5-5.patch` is the seed.
+
+## Per-decoder workflow tooling (`extract-fixture` + `new-handler`)
+
+The catalog discipline in `docs/ROADMAP.md` § Phase 4 says: catalog entry,
+handler, fixture, test. ROFL-X ships two subcommands that produce three of
+those four artefacts (the handler stays manual because the StubEmulator
+integration shape varies per decoder).
+
+### Step 1: pull payloads from a real replay
+
+```
+rofl-x extract-fixture \
+  --replay <.rofl> \
+  --netid <N> \
+  --name <lower_snake_case> \
+  --count 5
+```
+
+Writes `tests/fixtures/<name>_0.bin` … `<name>_4.bin` plus a sidecar
+`<name>.json` recording the source replay, patch tag, and per-fixture
+timestamps. The chosen samples are the earliest in the game (lane phase
+tends to exercise simpler code paths in a decoder).
+
+### Step 2: scaffold the catalog entry and test
+
+```
+rofl-x new-handler \
+  --name <name> \
+  --patch <tag> \
+  --netid <N> \
+  --status OBSERVED-ONLY \
+  --rva-start 0x... --rva-end 0x... \
+  --summary "Short description"
+```
+
+Produces `tests/handler_<name>.rs` (a placeholder test that asserts the
+fixtures exist and are non-empty) and appends a row to
+`docs/PACKETS.md`. When you later wire up the real decoder under `src/`,
+replace the test body with field-level assertions on the decoded struct
+and promote the catalog status to `DOCUMENTED`.
+
 ## Things this document does not yet describe
 
-- An automated byte-pattern-matching workflow that takes a known-good
-  15.5 archive and tries to find the same functions in a 16.8 binary.
-  `trace-decoder` replaces the struct-offset portion of this but not
-  the RVA-finding portion.
 - The netid-to-class mapping table. Finding it in the binary would
-  turn the above workflow from "manual hunt" into "table lookup".
+  turn netid discovery from "histogram + cross-reference" into "table
+  lookup". `src/bin/probe_netid.rs` documents what didn't work.
 - Handling of patches where Riot restructures the decoder layout
   significantly. If the struct offsets cease to be stable across
   patches, we will need to track those separately per-patch.

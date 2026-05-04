@@ -90,6 +90,90 @@ pub enum Command {
         #[arg(long, default_value_t = 5usize)]
         samples: usize,
     },
+    /// Pull raw payload bytes for one netid out of a replay and write
+    /// them as fixture files for handler tests.
+    ExtractFixture {
+        /// Path to a `.rofl` file.
+        #[arg(short, long)]
+        replay: PathBuf,
+
+        /// Packet id (netid) to pull.
+        #[arg(short, long)]
+        netid: u16,
+
+        /// Symbolic name used as the file stem (lower_snake_case),
+        /// e.g. `ward_spawn` or `create_hero`.
+        #[arg(long)]
+        name: String,
+
+        /// How many payloads to extract.
+        #[arg(long, default_value_t = 5usize)]
+        count: usize,
+
+        /// Where to drop the `.bin` files and the sidecar `.json`.
+        #[arg(long, default_value = "tests/fixtures")]
+        out_dir: PathBuf,
+    },
+    /// Scan a target patch's `text.bin` for byte-pattern matches against
+    /// known decoder functions exported from a donor patch via the Ghidra
+    /// script in `scripts/ghidra/export_decoders.py`. Produces a ranked
+    /// list of candidate RVA ranges per donor function.
+    ScanDecoder {
+        /// JSON dump of donor functions from the Ghidra exporter.
+        #[arg(long)]
+        donors: PathBuf,
+
+        /// Target `.patch` archive (the one whose RVAs are unknown).
+        #[arg(long)]
+        target: PathBuf,
+
+        /// How many candidates per donor to report (default 5).
+        #[arg(long, default_value_t = 5usize)]
+        top_k: usize,
+
+        /// Optional: also write the full report (all donors, all
+        /// candidates) as JSON for downstream scripting.
+        #[arg(long)]
+        report_json: Option<PathBuf>,
+    },
+    /// Scaffold a new packet entry: integration test stub plus a row
+    /// appended to `docs/PACKETS.md`. Run after `extract-fixture` so the
+    /// test can find its inputs. Does not create handler source files;
+    /// the production decoder gets written by hand once the RVA range is
+    /// known and `trace-decoder` has produced struct offsets.
+    NewHandler {
+        /// Lower_snake_case packet name, e.g. `create_hero`.
+        #[arg(long)]
+        name: String,
+
+        /// Patch tag (e.g. `15.5`) the netid was observed on.
+        #[arg(long)]
+        patch: String,
+
+        /// Numeric netid on that patch.
+        #[arg(long)]
+        netid: u16,
+
+        /// Catalog status: DOCUMENTED, PARTIAL, OBSERVED-ONLY, or UNKNOWN.
+        #[arg(long, default_value = "OBSERVED-ONLY")]
+        status: String,
+
+        /// Optional decoder start RVA, hex.
+        #[arg(long)]
+        rva_start: Option<String>,
+
+        /// Optional decoder end RVA, hex.
+        #[arg(long)]
+        rva_end: Option<String>,
+
+        /// One-line summary of what the packet is for.
+        #[arg(long, default_value = "")]
+        summary: String,
+
+        /// Repository root. Files are written relative to this directory.
+        #[arg(long, default_value = ".")]
+        repo_root: PathBuf,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -109,7 +193,237 @@ pub fn run(cli: Cli) -> Result<()> {
             rva_end,
             samples,
         } => trace_decoder(replay, netid, patch_dir, &rva_start, &rva_end, samples),
+        Command::ExtractFixture {
+            replay,
+            netid,
+            name,
+            count,
+            out_dir,
+        } => extract_fixture(replay, netid, name, count, out_dir),
+        Command::ScanDecoder {
+            donors,
+            target,
+            top_k,
+            report_json,
+        } => scan_decoder(donors, target, top_k, report_json),
+        Command::NewHandler {
+            name,
+            patch,
+            netid,
+            status,
+            rva_start,
+            rva_end,
+            summary,
+            repo_root,
+        } => new_handler(
+            repo_root, name, patch, netid, status, rva_start, rva_end, summary,
+        ),
     }
+}
+
+fn extract_fixture(
+    replay_path: PathBuf,
+    netid: u16,
+    name: String,
+    count: usize,
+    out_dir: PathBuf,
+) -> Result<()> {
+    use crate::fixture;
+
+    let bytes = std::fs::read(&replay_path)?;
+    let parsed = Replay::parse(&bytes)?;
+    let patch_tag = parsed.header.patch().to_string();
+
+    let fixtures = fixture::collect(&parsed, netid, count)?;
+    if fixtures.is_empty() {
+        eprintln!(
+            "no blocks with netid {} found in {}",
+            netid,
+            replay_path.display()
+        );
+        return Ok(());
+    }
+
+    let written = fixture::write_fixtures(&out_dir, &name, &fixtures, &replay_path, netid, &patch_tag)?;
+    eprintln!(
+        "wrote {} file(s) under {} for netid {} (patch {}):",
+        written.len(),
+        out_dir.display(),
+        netid,
+        patch_tag
+    );
+    for p in &written {
+        eprintln!("  {}", p.display());
+    }
+    eprintln!(
+        "size summary: {} payload(s), bytes per payload = [{}]",
+        fixtures.len(),
+        fixtures
+            .iter()
+            .map(|f| f.payload.len().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn scan_decoder(
+    donors_path: PathBuf,
+    target_archive: PathBuf,
+    top_k: usize,
+    report_json: Option<PathBuf>,
+) -> Result<()> {
+    use crate::scan_decoder::{load_donors, scan_all};
+    use crate::RoflError;
+    use std::io::Read;
+
+    let donors = load_donors(&donors_path)?;
+
+    // Pull text.bin and result.json from the target archive without taking
+    // a full Config dependency (the target archive's RVAs are exactly what
+    // we don't yet know, so most Config fields would be NEEDS_RE).
+    let zipfile = std::fs::File::open(&target_archive)?;
+    let mut archive = zip::ZipArchive::new(zipfile).map_err(|e| {
+        RoflError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("target archive open: {e}"),
+        ))
+    })?;
+
+    let mut text_bytes = Vec::new();
+    archive
+        .by_name("text.bin")
+        .map_err(|e| {
+            RoflError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("target archive missing text.bin: {e}"),
+            ))
+        })?
+        .read_to_end(&mut text_bytes)?;
+
+    let mut result_bytes = Vec::new();
+    archive
+        .by_name("result.json")
+        .map_err(|e| {
+            RoflError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("target archive missing result.json: {e}"),
+            ))
+        })?
+        .read_to_end(&mut result_bytes)?;
+    let target_meta: serde_json::Value = serde_json::from_slice(&result_bytes)?;
+    let text_rva_str = target_meta
+        .get("text")
+        .and_then(|t| t.get("rva"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            RoflError::Io(std::io::Error::other(
+                "target archive result.json missing text.rva",
+            ))
+        })?;
+    let text_rva = u64::from_str_radix(text_rva_str.trim_start_matches("0x"), 16)
+        .map_err(|e| RoflError::Io(std::io::Error::other(format!("text.rva parse: {e}"))))?;
+
+    let reports = scan_all(&donors, &text_bytes, text_rva, top_k)?;
+
+    println!(
+        "scanning {} donor function(s) from patch {} against {} ({} bytes of .text)",
+        donors.functions.len(),
+        donors.patch,
+        target_archive.display(),
+        text_bytes.len()
+    );
+    println!();
+    for report in &reports {
+        println!(
+            "{} ({} anchors)  donor {} .. {}",
+            report.donor_name, report.anchor_count, report.donor_rva_start, report.donor_rva_end
+        );
+        if report.top_candidates.is_empty() {
+            println!("  no candidates above zero anchors matched");
+            continue;
+        }
+        for (i, c) in report.top_candidates.iter().enumerate() {
+            println!(
+                "  #{:<2} {} .. {}   {:>3}/{:<3} anchors  score={:.2}",
+                i + 1,
+                c.rva_start_hex,
+                c.rva_end_hex,
+                c.matched_anchors,
+                c.total_anchors,
+                c.score
+            );
+        }
+        println!();
+    }
+
+    if let Some(path) = report_json {
+        std::fs::write(&path, serde_json::to_string_pretty(&reports)?)?;
+        eprintln!("wrote full report to {}", path.display());
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn new_handler(
+    repo_root: PathBuf,
+    name: String,
+    patch: String,
+    netid: u16,
+    status: String,
+    rva_start: Option<String>,
+    rva_end: Option<String>,
+    summary: String,
+) -> Result<()> {
+    use crate::scaffold::{self, Scaffold, Status};
+
+    let status = Status::parse(&status)?;
+    let decoder_rva = match (rva_start, rva_end) {
+        (Some(s), Some(e)) => Some((s, e)),
+        (None, None) => None,
+        _ => {
+            return Err(crate::RoflError::Io(std::io::Error::other(
+                "--rva-start and --rva-end must be passed together",
+            )))
+        }
+    };
+
+    let s = Scaffold {
+        name: name.clone(),
+        patch: patch.clone(),
+        netid,
+        decoder_rva,
+        status,
+        summary,
+    };
+    let written = scaffold::run(&repo_root, &s)?;
+
+    eprintln!("scaffolded {} file(s):", written.len());
+    for p in &written {
+        eprintln!("  {}", p.display());
+    }
+    eprintln!();
+    eprintln!("next steps:");
+    eprintln!("  1. extract fixtures (if you haven't):");
+    eprintln!(
+        "       rofl-x extract-fixture --replay <.rofl> --netid {} --name {} --count 5",
+        netid, name
+    );
+    eprintln!("  2. find the decoder RVA in the donor binary (Ghidra) and run:");
+    eprintln!(
+        "       rofl-x trace-decoder --replay <.rofl> --netid {} --rva-start 0x... --rva-end 0x...",
+        netid
+    );
+    eprintln!(
+        "  3. add a handler at src/packet/handlers/{}.rs once you have struct offsets;",
+        name
+    );
+    eprintln!(
+        "     follow the StubEmulator pattern in src/emulator/packet.rs."
+    );
+    eprintln!("  4. promote the PACKETS.md entry from the current status to DOCUMENTED.");
+    Ok(())
 }
 
 #[cfg(feature = "emulator")]

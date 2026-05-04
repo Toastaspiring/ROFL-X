@@ -265,23 +265,23 @@ Three honest layers — don't conflate them:
 
 | Layer | Coverage | What it means |
 |-------|----------|---------------|
-| (1) Class identified (RVA known) | **182 / 195 (93.3%)** | We know which function in the binary decodes this netid |
-| (2) Block-level decoder runs | **98.91%** | The emulator runs the decoder for this many of the replay's blocks |
-| (3) Field plaintext extracted | **98.91% (100% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
-| (4) Class semantically named | 8 / 195 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
-| (5) Field-level semantics | 0 / 195 | "this u32 is HP not gold" — no shortcut, manual per-class |
+| (1) Class identified (RVA known) | **215 / 217 (99.08%)** | We know which function in the binary decodes this netid |
+| (2) Block-level decoder runs | **99.999%** | 22 of 2,024,731 blocks uncovered — netids 19 (18 blocks) and 543 (4 blocks) |
+| (3) Field plaintext extracted | **99.999% (100% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
+| (4) Class semantically named | 8 / 217 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
+| (5) Field-level semantics | 0 / 217 | "this u32 is HP not gold" — no shortcut, manual per-class |
 
-End-to-end output: **4,537 sample dumps** across 181 generic decoders
+End-to-end output: **4,967 sample dumps** across 214 generic decoders
 (`extra_decoders[]`) + **61,730 raw positions** from the typed `mov`
-decoder. Avg **6.7 fields per sample** (max 23).
+decoder. Avg **6.2 fields per sample** (max 23).
 
-14 netids remain unmatched, totaling ~18.5 K blocks (1.1 % of total).
-Per-netid Ghidra triage via the constructor jump table at
-`0xe93818[netid]` reveals these are **tag-only packets**: their
-constructor sets a vtable whose `slot[1]` (the decode method) points
-to `0x1dbc10` (`xor al, al; ret` — "return false") rather than to a
-real decoder. The packet IS the netid; there's nothing else to
-decode.
+Only **2 netids remain unmatched**, totaling 22 blocks (0.001 % of
+total). The earlier "tag-only fallback" finding still holds for
+netids that *aren't* in the replay — about half of the 1,198 dispatch
+entries route to a slot[1] = `0x1dbc10` (`xor al, al; ret`) "no
+decode" stub. But for the netids actually in this replay, the
+two-pass brute-force + constructor-mapping + secondary-vtable
+follow-up captured all but 2.
 
 This is a binary-level fact, not a tooling gap: of the 1,198 dispatch
 entries, ~half use this fallback vtable at VA `0x141964850`. Brute-
@@ -291,18 +291,14 @@ inner-ctor `init_fn` → first `lea [rdata]` → `slot[1]`) confirms 9 of
 the 14 are fallback; the remaining 5 are likely also fallback but
 have indirect init paths.
 
-| Match approach              | Coverage  |
-|-----------------------------|-----------|
-| 41-confidence × 196 nets    |  84 %     |
-| + two-pass noise fallback   |  84 %     |
-| + 327-prologue × 22 nets    | **93 %**  |
-| + ctor-mapped (no replay-hits) | **+25** |
-| + indirect-init (secondary vtable) | **+8**  |
-|                             | (covers netids absent from this replay; unlocks future replays) |
-| **Total wired netids**      | **214**   |
-| **Visible in benchmark replay** | **181 / 195 = 92.8 %** |
-| **Block coverage** | **98.91 %** |
-| Theoretical max (excludes tag-only fallback netids) | ~93 %     |
+| Match approach              | Class coverage | Block coverage |
+|-----------------------------|----------------|----------------|
+| 41-confidence × 196 nets    |  82 / 217 (38 %) |  ~80 %         |
+| + two-pass noise fallback   |  159 / 217 (73 %) |  ~96 %         |
+| + 327-prologue × 22 nets    |  181 / 217 (83 %) |  ~98.4 %       |
+| + ctor-mapped follow-up     |  207 / 217 (95 %) |  ~99.5 %       |
+| + indirect-init (secondary vtable) | **215 / 217 (99.08 %)** | **99.999 %** |
+| Theoretical max (in this replay)   | 215 / 217      | 99.999 %       |
 
 ### Major architectural breakthrough: netid dispatcher located
 

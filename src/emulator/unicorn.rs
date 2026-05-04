@@ -59,7 +59,13 @@ impl<'a> StubEmulator<'a> {
     const STACK_SIZE: usize = 0x2000;
 
     const HEAP_BASE: u64 = 0x7FFF_FFFF_8000;
-    const HEAP_SIZE: usize = 0x2000;
+    /// 1 MiB heap — Mowokuma's original 8 KiB was enough for the two
+    /// known decoders (mov, ward) but overflows on bigger ones (e.g.
+    /// the 70-write decoder at 16.9 RVA `0xeba9e0` shared by several
+    /// netids) when the bump allocator races a long decoder loop. The
+    /// heap is reset between samples so the higher cap costs nothing
+    /// per packet; it just survives a single big run.
+    const HEAP_SIZE: usize = 0x100000;
 
     const HEAP_CURSOR_PTR: u64 = 0x0;
 
@@ -416,7 +422,8 @@ impl<'a> StubEmulator<'a> {
         let writes_log_clone = Arc::clone(&writes_log);
         let packet_addr = self.packet_addr;
         let cap = struct_size.min(self.packet_size as u64);
-        self.uc
+        let hook_id = self
+            .uc
             .add_mem_hook(
                 HookType::MEM_WRITE,
                 packet_addr,
@@ -438,6 +445,12 @@ impl<'a> StubEmulator<'a> {
             0,
             0,
         );
+
+        // Remove the hook so successive calls on the same emulator don't
+        // accumulate dead hooks. Each batch processes ~100 samples; without
+        // this the hook list grows unboundedly and per-call overhead degrades
+        // until the heap-write hook misfires (UC_ERR_WRITE_UNMAPPED).
+        let _ = self.uc.remove_hook(hook_id);
 
         let mut struct_bytes = vec![0u8; cap as usize];
         self.uc

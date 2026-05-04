@@ -299,7 +299,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         let mut entries: Vec<(f32, crate::emulator::unicorn::ExtraDecoded)> = Vec::new();
         // Cap per-class samples so we don't blow the JSON up to gigabytes
         // on heartbeat-class netids that fire millions of times.
-        const MAX_SAMPLES_PER_EXTRA: usize = 200;
+        const MAX_SAMPLES_PER_EXTRA: usize = 30;
         for batch in hits.chunks(BATCH_SIZE).take(
             (MAX_SAMPLES_PER_EXTRA + BATCH_SIZE - 1) / BATCH_SIZE,
         ) {

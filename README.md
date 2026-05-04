@@ -296,8 +296,12 @@ have indirect init paths.
 | 41-confidence × 196 nets    |  84 %     |
 | + two-pass noise fallback   |  84 %     |
 | + 327-prologue × 22 nets    | **93 %**  |
-| + ctor-mapped × 1182 nets   | **+25**   |
+| + ctor-mapped (no replay-hits) | **+25** |
+| + indirect-init (secondary vtable) | **+8**  |
 |                             | (covers netids absent from this replay; unlocks future replays) |
+| **Total wired netids**      | **214**   |
+| **Visible in benchmark replay** | **181 / 195 = 92.8 %** |
+| **Block coverage** | **98.91 %** |
 | Theoretical max (excludes tag-only fallback netids) | ~93 %     |
 
 ### Major architectural breakthrough: netid dispatcher located

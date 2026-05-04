@@ -6,8 +6,8 @@ the thought process, the dead ends, and the result** — so the work
 is intelligible to whoever picks it up next (or to me, in six
 months, with no session memory).
 
-> Goal as the user phrased it: *"a true parser of EVERY packet of a
-> rofl"*, and ultimately *"to literally read my rofl"*.
+> "a true parser of EVERY packet of a
+> rofl"
 
 ---
 

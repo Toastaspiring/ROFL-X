@@ -241,6 +241,205 @@ how much it unblocks downstream.
 
 ---
 
+## Resuming the `decrypt/` branch (cold-start guide)
+
+This section is the survival kit for picking up the `decrypt/`-prefixed
+branches with **zero session memory**. Read end-to-end before resuming.
+
+### What this branch line is
+
+`decrypt/tooling-and-16-9-recon` is the active line of work pushing
+ROFL-X past the two-decoder Mowokuma baseline toward "every packet
+decoded on every patch we care about". As of the last push:
+
+- 8 commits ahead of `main`. Latest: `6b8b065`.
+- Remote: `https://github.com/Toastaspiring/ROFL-X.git`
+- The first commit (`748ee3c`) added the per-decoder workflow tooling
+  (`scan-decoder`, `extract-fixture`, `new-handler`, Ghidra exporter)
+  documented in [docs/RE_PATCH.md](docs/RE_PATCH.md). Everything
+  after that is 16.9 reverse-engineering.
+
+### Coverage right now (16.9, single replay benchmark)
+
+Three honest layers — don't conflate them:
+
+| Layer | Coverage | What it means |
+|-------|----------|---------------|
+| (1) Class identified (RVA known) | **40 / 190 (21.1%)** | We know which function in the binary decodes this netid |
+| (2) Block-level decoder runs | **80.4%** | The emulator runs the decoder for this many of the replay's blocks |
+| (3) Field plaintext extracted | **80.4% (92.8% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
+| (4) Class semantically named | 8 / 190 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
+| (5) Field-level semantics | 0 / 190 | "this u32 is HP not gold" — no shortcut, manual per-class |
+
+The top-by-frequency netids dominate, so 21% of classes covers 80% of
+blocks. The remaining 150 classes are scattered across the long tail
+(each ≤0.5% of blocks individually).
+
+### What's installed on the dev machine
+
+ROFL-X targets reverse-engineering a Windows binary, so the toolchain
+lives outside the repo. From a fresh shell:
+
+| Path | Contents |
+|------|----------|
+| `~/Tools/ghidra/ghidra_12.0.4_PUBLIC/` | Ghidra. Desktop shortcut "Ghidra" launches it. Needs JDK 21 (Eclipse Temurin, also installed). |
+| `~/Tools/donors/mowokuma-5-5/` | Mowokuma's release: her `ROFL.exe` and `5-1.patch` ... `5-5.patch` |
+| `~/Tools/donors/5-5-extracted/` | 5-5.patch unzipped (text.bin, data.bin, rdata.bin, result.json) |
+| `~/Tools/donors/donors-15-5.json` | Output of the Ghidra exporter run on Mowokuma's binary — `scan-decoder`'s donor input |
+| `~/Tools/analysis/16-9/league_16-9.exe` | Copy of the live League binary (16.9.771.8383, captured 2026-04-30) |
+| `~/Tools/analysis/16-9-project/` | Ghidra project — analysis already complete (~24 min run). Reuse with `analyzeHeadless -process league_16-9.exe -noanalysis`. |
+| `~/Tools/analysis/16-9/decomp/` | Decompiled C of every confirmed decoder, plus the helpers (skip, alloc1, etc.) |
+| `~/Tools/analysis/16-9/brute_match_results.json` | Latest brute-force results (60 netids x 41 candidates) |
+| `~/Tools/analysis/16-9/decoders_confirmed.json` | The 41 high-confidence decoder candidates (prologue match + dispatch table) |
+| `patch/5-5.patch` | Mowokuma's 15.5 archive, staged for `rofl-x file --patch-dir ./patch` |
+| `patch/16-9.patch` | Our 16.9 archive with 39 wired `extra_decoders` + the mov_decrypt + ward_spawn slots |
+
+### Critical 16.9 architecture facts (don't relearn from scratch)
+
+Documented in detail in [docs/PATCH_16_9_ANALYSIS.md](docs/PATCH_16_9_ANALYSIS.md). TL;DR:
+
+- **Dispatch table is in `.rdata`**, fragmented into 538 sub-tables.
+  Each entry is **48 bytes (6 u64s)**, stored as full virtual
+  addresses (image_base + RVA), NOT raw RVAs like 5-5 used.
+- **Slot layout rotated** since 5-5: now slot[0] is a shared
+  destructor stub (`ret 0` at RVA `0x1dc000`), **slot[1] is the
+  decoder**, slot[4] is the `return 3` helper at `0x2173a0`
+  (byte-identical to 5-5's helper at `0x1c74c0`).
+- **Confirmed helpers in 16.9**: `skip = 0x11b8430` (88.5% byte
+  match to 5-5's skip), `alloc1 = 0x10053f0` (vector resize, signature
+  matches Mowokuma's stub), `alloc2 = 0x10053f0` (same — stubbed
+  identically).
+- **Image base** in the emulator: `0x140000000` (PE OptionalHeader),
+  not the runtime VA `0x7ff76afd0000` Mowokuma's port hardcodes —
+  her shellcode encodes the latter so we kept that.
+- **Heap bumped to 1 MiB** (was 8 KiB). Some 16.9 decoders allocate
+  more than the original heap could hold.
+- **Decoded values are RE-OBFUSCATED in the post-call struct**.
+  Plaintext lives only briefly during decode. Capture it via the
+  LAST atomic write per offset (size ≥ 4) — `replay_info.rs` does
+  this and emits `decoded_fields[]` per sample.
+
+### Active TODO (priority ordered)
+
+#### Layer 1/2 push (mechanizable)
+
+- [ ] **Run the long-tail brute-force** to push class identification
+  toward 100%. `scripts/brute_match_decoders.py` already has all 196
+  netids. ~2 hr wall clock; +2.2% block coverage max. Easy overnight
+  job.
+  ```bash
+  python scripts/brute_match_decoders.py
+  python scripts/wire_confirmed_decoders.py   # post-process + write 16-9.patch
+  cargo build --release
+  ./target/release/rofl-x.exe file --replay <r.rofl> --patch-dir ./patch --output out.json
+  ```
+- [ ] **Tighten the noise filter** in
+  `scripts/wire_confirmed_decoders.py`. Current: drops RVAs that win
+  for ≥ 3 different netids. Misses cases where a "shared base
+  deserializer" wins for several legitimate variants. Better
+  heuristic: gap-to-runner-up > 3 AND distinct_offsets in [3, 30]
+  range (real decoders, not heartbeat-style 1-field nor 70-write
+  loud functions).
+
+#### Layer 4/5 push (semantic, manual)
+
+- [ ] **Find entity_id source for 16.9 mov_decrypt (`0xfb4070`)**.
+  fb4070 doesn't write entity_id to the output struct — the caller
+  does. Check `~/Tools/analysis/16-9/decomp/fb4070.c`'s callers via
+  `scripts/ghidra/xrefs_to.py 0xfb4070` (already produced
+  `xrefs_fb4070.json`: 2 data refs, both to dispatch-table slots).
+  The CODE callers of those slots are the dispatcher we want.
+  Closes layer-5 for the mov class.
+- [ ] **Per-class field naming** for the top 8 classes already
+  hypothesised. Decompiled C is in `~/Tools/analysis/16-9/decomp/`.
+  Per class (~30 min): read the C, identify what each `param_1+0xN =
+  value` means, add a typed Rust struct in `src/emulator/packet.rs`,
+  wire it into `replay_info::parse_and_decode`. Documented pattern
+  in [docs/ADDING_DECODERS.md](docs/ADDING_DECODERS.md).
+- [ ] **Decompile `FUN_140f41410`** and the other variable-length
+  helpers. fb4070 calls `f41410` for tags 2/4/5 — those are the
+  variable-length read paths that decode actual entity values
+  (id, time, etc.). Without understanding `f41410` we can't see what
+  values those tags carry.
+
+#### Architectural
+
+- [ ] **`extra_decoders[]` schema is a stopgap**. The clean design
+  per [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) is the
+  one-file-per-handler `src/packet/handlers/<name>.rs` registry.
+  When a class graduates from "raw struct dump" to "typed semantics",
+  it should leave the `extra_decoders` array and become a real
+  handler. The framework is ready; just hasn't been done for any
+  16.9 class yet.
+- [ ] **Find the netid → table-index mapping**. Still unsolved.
+  Would replace brute-force matching entirely. Look for a function
+  that takes a u16/u32 netid as arg, indexes into one of the 538
+  sub-tables. `xrefs_to.py` against the table base addresses is the
+  starting point.
+
+### Common commands
+
+```bash
+# Inspect any replay's full opcode histogram
+./target/release/rofl-x.exe inspect --replay <r.rofl> --histogram
+
+# Decode a 16.9 replay end-to-end (uses patch/16-9.patch)
+./target/release/rofl-x.exe file --replay <r.rofl> --patch-dir ./patch --output out.json
+
+# Run trace-decoder on a candidate decoder (probe its struct writes)
+./target/release/rofl-x.exe trace-decoder --replay <r.rofl> --netid <N> \
+    --patch-dir ./patch --rva-start 0x... --rva-end 0x... --samples 5
+
+# Pull payload fixtures for a netid
+./target/release/rofl-x.exe extract-fixture --replay <r.rofl> --netid <N> \
+    --name foo --count 5 --out-dir tests/fixtures
+
+# Decompile arbitrary RVAs in 16.9 via Ghidra (fast — reuses analyzed project)
+$GHIDRA/support/analyzeHeadless.bat ~/Tools/analysis/16-9-project league_169 \
+    -process league_16-9.exe -noanalysis \
+    -scriptPath ./scripts/ghidra \
+    -postScript decompile_funcs.py ~/Tools/analysis/16-9/decomp 0xRVA1 0xRVA2 ...
+
+# Brute-force match netids to candidate decoders
+python scripts/brute_match_decoders.py            # ~2 hr for 196 netids
+python scripts/wire_confirmed_decoders.py         # filter + auto-write to 16-9.patch
+```
+
+### Honest gotchas
+
+- **Some "winning" decoders are shared deserializers**. `0xeba9e0`
+  (filtered out as noise) wins for many netids because it writes to
+  ~70 offsets unconditionally. `0xf6ab10`, `0xf8f840` are similar.
+  After filtering them, the runner-ups (e.g. `0xf9bae0` winning for
+  9 netids) are themselves likely real shared decoders for a class
+  hierarchy — they DO carry signal, just for multiple variants
+  routed by netid internally.
+- **decoded_fields[]'s f32 column is sometimes garbage**. We surface
+  every interpretation (u32/i32/f32) of every captured 4-byte value;
+  if the field is actually an int, the float interpretation will
+  often be NaN or absurdly large. Pick the right column per offset
+  per class.
+- **5-5 retro compat is preserved**. Mowokuma's `5-5.patch` archive
+  has no `output_format` field; the Rust side defaults to
+  `buffer-stream` and her schema parses unchanged. Don't break this
+  when extending the schema.
+- **The Ghidra script directory must be added once per Ghidra
+  project**. In the Script Manager, right-click → Script Directories
+  → add the worktree's `scripts/ghidra` path. Then headless runs
+  pick it up via `-scriptPath`.
+
+### When in doubt
+
+Read in this order:
+
+1. [docs/PATCH_16_9_ANALYSIS.md](docs/PATCH_16_9_ANALYSIS.md) — what we know about 16.9 specifically
+2. [docs/ADDING_DECODERS.md](docs/ADDING_DECODERS.md) — how to add a new packet class
+3. [docs/RE_PATCH.md](docs/RE_PATCH.md) — the cross-patch porting workflow
+4. [docs/PACKETS.md](docs/PACKETS.md) — the catalog (still mostly OBSERVED-ONLY for 16.9)
+5. The decompiled C in `~/Tools/analysis/16-9/decomp/` — concrete ground truth per decoder
+
+---
+
 ## Non-goals
 
 - **We will not publish a decoded-replay dataset.** Henry Zhu's Hugging Face

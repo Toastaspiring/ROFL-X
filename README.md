@@ -275,21 +275,30 @@ End-to-end output: **4,537 sample dumps** across 181 generic decoders
 (`extra_decoders[]`) + **61,730 raw positions** from the typed `mov`
 decoder. Avg **6.7 fields per sample** (max 23).
 
-13 netids remain unmatched, totaling ~18.5 K blocks (1.1 % of total).
-These have zero hits across the full 327-prologue-shape candidate
-sweep, meaning their decoders use a different prologue convention or
-go through a custom dispatch path. Capturing them requires either
-- brute-forcing against the full 2,800 dispatch-table-only candidates
-  (~14 hr at 1.5 s/pair); or
-- per-netid Ghidra triage via the constructor jump table at
-  `0xe93818[netid]`.
+14 netids remain unmatched, totaling ~18.5 K blocks (1.1 % of total).
+Per-netid Ghidra triage via the constructor jump table at
+`0xe93818[netid]` reveals these are **tag-only packets**: their
+constructor sets a vtable whose `slot[1]` (the decode method) points
+to `0x1dbc10` (`xor al, al; ret` — "return false") rather than to a
+real decoder. The packet IS the netid; there's nothing else to
+decode.
 
-| Match approach            | Coverage |
-|---------------------------|----------|
-| 41-confidence × 196 nets  |  84%     |
-| + two-pass noise fallback |  84%     |
-| + 327-prologue × 22 nets  | **93%**  |
-| + 2800-dispatch × 13 nets |   ~98%   (not run; 14 hr) |
+This is a binary-level fact, not a tooling gap: of the 1,198 dispatch
+entries, ~half use this fallback vtable at VA `0x141964850`. Brute-
+forcing harder won't find them; they don't exist. The
+`scripts/probe_unmatched_netids.py` workflow (e83930 jumptable →
+inner-ctor `init_fn` → first `lea [rdata]` → `slot[1]`) confirms 9 of
+the 14 are fallback; the remaining 5 are likely also fallback but
+have indirect init paths.
+
+| Match approach              | Coverage  |
+|-----------------------------|-----------|
+| 41-confidence × 196 nets    |  84 %     |
+| + two-pass noise fallback   |  84 %     |
+| + 327-prologue × 22 nets    | **93 %**  |
+| + ctor-mapped × 1182 nets   | **+25**   |
+|                             | (covers netids absent from this replay; unlocks future replays) |
+| Theoretical max (excludes tag-only fallback netids) | ~93 %     |
 
 ### Major architectural breakthrough: netid dispatcher located
 

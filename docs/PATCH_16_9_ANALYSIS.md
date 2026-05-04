@@ -223,3 +223,65 @@ new `alloc1` requires either:
 
 This is the irreducible 1-hour Ghidra task that closes the
 last gap.
+
+---
+
+## Confirmed decoder map (16.9)
+
+Filled in incrementally from brute-force matching + decompiler review.
+Each entry maps a netid to a decoder RVA, what we believe it represents
+(from frequency + payload signature + Zhu's S12 schema), and the field
+offsets we've seen the decoder write to.
+
+| Netid    | Decoder RVA | Freq    | Likely Class                    | Notes |
+|----------|-------------|---------|---------------------------------|-------|
+| 1068     | `0xf9d4e0`  | 46.5%   | `UpdateState` or `LeaveFog`     | 2B payload, single 4B output at 0x10. High freq + tiny payload = heartbeat-class. |
+| 916      | `0xfb4070`  | 1-3%    | `WaypointGroup` (mov)           | Variable 18-352B. Writes vector at 0x10/0x18, inline final pos at 0x20/0x24. |
+| 707      | `0xfaffc0`  | 5.5%    | `EnterFog` or visibility event  | 2-3B fixed payload, scalar field. Other half of the LeaveFog/EnterFog pair. |
+| 684      | `0xfdb200`  | 5.2%    | `DoSetCooldown` candidate       | 3B fixed payload, two fields: 1B at 0x8 (slot?) + 4B at 0xc (cooldown_ms?). |
+| 652      | `0xeba9e0`  | 4.2%    | `Replication_short` candidate   | 17B fixed, multiple atomic fields (-1, 0, 1, 2 values). Per-property update. |
+| 806      | `0xeba9e0`  | 4.1%    | `BuffAdd` or `Replication_long` | 136B fixed, larger struct. Status effect or many-property packet. |
+| 446      | `0xeba9e0`  | 2.6%    | `Replication_variable`          | Variable 58-493B = variable-length property dict. Zhu's `Replication` was 15.8% in S12. |
+| 876      | `0xf8f840`  | 0.9%    | `CastSpellAns` candidate        | 30B fixed, complex struct. Skill cast metadata (caster, spell, targets). |
+
+**Caveat on shared decoders**: `0xeba9e0` wins as the brute-force top
+match for several netids (652, 806, 446, plus several lower-frequency
+ones it's filtered out of by gap heuristic). It writes to ~70 distinct
+offsets per call — too many for a single packet class. Two
+interpretations:
+
+1. **It's a generic class deserializer** that handles multiple packet
+   variants (sub-classes). If so, the netid → variant routing happens
+   inside the function and we'd need to RE that routing to fully
+   decode each variant.
+2. **It's a "loud" shared helper** (e.g., a base-class initializer)
+   that other decoders call into, and the brute-force is finding it
+   instead of the per-class decoder.
+
+Either way, brute-force results for these netids are LOWER CONFIDENCE
+than for netids with cleaner gap-to-runner-up separation.
+
+## Field-level decoding caveat
+
+The output struct after a decoder returns holds RE-OBFUSCATED bytes
+(Henry Zhu's "decrypt-access-release" pattern). Plaintext lives only
+during decode, written by atomic 4-byte stores BEFORE a byte-by-byte
+obfuscation loop encrypts them.
+
+`replay_info::build_output_json` captures the LAST atomic write per
+offset (size >= 4) before obfuscation. For most fields this recovers
+the plaintext value. The recovered values are surfaced as
+`decoded_fields[]` in the JSON output, with multiple type
+interpretations (`u32_le`, `i32_le`, `f32_le`) since the decoder
+itself doesn't carry type metadata.
+
+What we DON'T yet know (the genuine "100% true decoding" gap):
+
+- What each field MEANS per packet class (which f32 is HP vs. mana
+  vs. position?)
+- Whether the encoded value is then transformed by game logic before
+  use (some fields are bitfields, some are scaled by a global factor)
+
+Naming each field requires either reading Riot's source (we can't),
+correlating decoded values with observable game state across many
+replays (statistical), or per-class manual analysis.

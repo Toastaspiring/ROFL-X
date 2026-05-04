@@ -265,15 +265,38 @@ Three honest layers — don't conflate them:
 
 | Layer | Coverage | What it means |
 |-------|----------|---------------|
-| (1) Class identified (RVA known) | **40 / 190 (21.1%)** | We know which function in the binary decodes this netid |
-| (2) Block-level decoder runs | **80.4%** | The emulator runs the decoder for this many of the replay's blocks |
-| (3) Field plaintext extracted | **80.4% (92.8% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
-| (4) Class semantically named | 8 / 190 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
-| (5) Field-level semantics | 0 / 190 | "this u32 is HP not gold" — no shortcut, manual per-class |
+| (1) Class identified (RVA known) | **164 / 195 (84.1%)** | We know which function in the binary decodes this netid |
+| (2) Block-level decoder runs | **98.4%** | The emulator runs the decoder for this many of the replay's blocks |
+| (3) Field plaintext extracted | **98.4% (100% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
+| (4) Class semantically named | 8 / 195 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
+| (5) Field-level semantics | 0 / 195 | "this u32 is HP not gold" — no shortcut, manual per-class |
 
-The top-by-frequency netids dominate, so 21% of classes covers 80% of
-blocks. The remaining 150 classes are scattered across the long tail
-(each ≤0.5% of blocks individually).
+Avg samples per class: **25.4**. Avg fields per sample: **5.1**
+(median 4, max 15).
+
+The top-by-frequency netids dominate. 31 netids remain unmatched
+(~1.6 % of total blocks, ~27 K out of 1.7 M); 22 of them have zero
+hits across the prologue-AND-dispatch-table 41-candidate sweep,
+meaning their decoders are NOT in the prologue+dispatch intersection
+and require the wider 327-prologue-only sweep (or external
+identification) to capture.
+
+### Major architectural breakthrough: netid dispatcher located
+
+`scripts/find_dispatcher.py` + Ghidra decompile of `0xe83930` revealed
+the **netid jump-table dispatcher**: a u32 jump table at .text
+RVA `0xe93818` (1198 entries, one per netid in `[0..0x4ae)`). The
+prologue of `0xe83930` reads `*(u32*)(table + netid*4)` and
+indirect-jumps. Each jump target is a per-class **constructor** that
+allocates an instance and writes a vtable pointer — the vtable is one
+of the 538 dispatch sub-tables in `.rdata` and slot[1] of that vtable
+is the per-class decoder.
+
+Caveat: `scripts/map_netid_to_decoder.py` follows the constructor
+chain and resolves 1182/1198 netids, but the picked vtable is often
+the *base-class* one (LEA scan limitation across multi-vtable
+hierarchies). Brute-force matching remains the source of truth for
+crisp per-netid → decoder mappings.
 
 ### What's installed on the dev machine
 

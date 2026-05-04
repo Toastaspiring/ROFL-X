@@ -48,6 +48,29 @@ pub struct PathPacket {
 }
 
 impl PathPacket {
+    /// Build a `PathPacket` from the inline-float layout used on patch 16.9+.
+    ///
+    /// On those patches the position decoder writes `x` and `y` as two
+    /// `f32`s directly into the output struct at known offsets, with no
+    /// separate buffer. The waypoint list lives in a vector at different
+    /// struct offsets that we don't yet decode (it would require driving
+    /// the per-element vtable thunks the decoder calls), so this packet
+    /// carries a single point in `waypoints`.
+    ///
+    /// `id` is `0` because the inline-float decoder we've identified
+    /// (`fb4070` on 16.9) doesn't write the entity id into its output
+    /// struct — that field is set by an enclosing dispatcher we haven't
+    /// reverse-engineered yet. Callers that filter by `player_id_start`
+    /// will see no matches.
+    pub fn from_inline_floats(timestamp: f32, x: f32, y: f32) -> Self {
+        Self {
+            timestamp,
+            id: 0,
+            speed: 0.0,
+            waypoints: vec![(x, y)],
+        }
+    }
+
     /// Parse a movement-packet body (post-decryption) into waypoints.
     ///
     /// Verbatim port of Mowokuma's `PathPacket::parse`. The unusual

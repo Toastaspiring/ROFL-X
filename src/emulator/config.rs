@@ -44,14 +44,75 @@ pub struct WardSpawnDecrypt {
     pub y_write_count: u32,
 }
 
+/// How the movement/position decoder writes its result, so the post-decode
+/// step knows where to read the decoded data from.
+///
+/// On 5-5 (and earlier) the decoder allocates a buffer (via `alloc1` /
+/// `alloc2`) and writes a `(pointer, size)` pair into the output struct.
+/// The buffer contains a varint-encoded waypoint stream, parsed by
+/// `PathPacket::parse_buffer_stream`.
+///
+/// On 16.9+ Riot moved to inline writes — the final position lands as
+/// two `f32`s directly in the output struct at known offsets, with no
+/// separate buffer. The waypoint list lives in a callee-allocated vector
+/// at separate offsets that we don't yet decode.
+#[derive(Clone, Debug, Default)]
+pub enum MovOutputFormat {
+    /// Mowokuma's 5-5-era format: `(payload_offset, payload_size_offset)`
+    /// point to a `(buf_ptr, size)` pair; the buffer holds varint-encoded
+    /// waypoints. This is the default for backward compatibility with
+    /// existing `.patch` archives.
+    #[default]
+    BufferStream,
+    /// 16.9+ inline-floats format: the decoder writes the final position
+    /// as two `f32`s at `inline_x_offset` and `inline_y_offset`. No
+    /// waypoint parsing — the packet carries one position per call.
+    InlineFloats {
+        inline_x_offset: u64,
+        inline_y_offset: u64,
+    },
+}
+
 /// Parameters for the movement/position decode function.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct MovDecrypt {
     pub netid: u32,
     pub rva: u64,
     pub end_rva: u64,
+    /// `BufferStream`: file offset where decoded buf-ptr lands.
+    /// `InlineFloats`: ignored.
     pub payload_offset: u64,
+    /// `BufferStream`: file offset where decoded buf-size lands.
+    /// `InlineFloats`: ignored.
     pub payload_size_offset: u64,
+    pub format: MovOutputFormat,
+}
+
+/// One generic extra-decoder entry. Used to map any netid to a decoder
+/// function and dump its output struct writes. Supports the long tail of
+/// unknown packet classes — for each one, we don't yet have a typed
+/// struct or field semantics, but we can still capture every write the
+/// decoder makes and surface it in the JSON output for downstream
+/// inspection.
+///
+/// This is the extension point for "every packet decoded": as new
+/// classes get RE'd, they migrate from `extra_decoders` (raw dump) to
+/// dedicated typed structs (full semantics).
+#[derive(Clone, Debug)]
+pub struct ExtraDecoder {
+    /// Symbolic name shown in the output JSON, e.g. `"replication"`.
+    pub name: String,
+    /// Packet id (netid) on this patch.
+    pub netid: u32,
+    /// Function start RVA in the patched binary.
+    pub rva_start: u64,
+    /// Function end RVA (exclusive).
+    pub rva_end: u64,
+    /// How much of the output struct to capture as raw bytes (default 0x90).
+    pub struct_size: u64,
+    /// Optional hint for downstream consumers about what semantic class
+    /// this maps to (e.g. `"Replication"`, `"UnitApplyDamage"`). Free-form.
+    pub semantic_hint: Option<String>,
 }
 
 /// Everything the emulator needs for one game patch.
@@ -64,6 +125,10 @@ pub struct Config {
     pub player_id_start: u32,
     pub ward_spawn_decrypt: WardSpawnDecrypt,
     pub mov_decrypt: MovDecrypt,
+    /// Generic decoders for packet classes whose struct layout isn't yet
+    /// reverse-engineered. Each one runs the decoder via the emulator and
+    /// dumps the resulting struct writes as raw hex into the output JSON.
+    pub extra_decoders: Vec<ExtraDecoder>,
     pub text: Arc<Section>,
     pub data: Arc<Section>,
     pub rdata: Arc<Section>,
@@ -139,6 +204,33 @@ impl Config {
         let mv = json
             .get("mov_decrypt")
             .ok_or(RoflError::MetadataMissingKey("mov_decrypt"))?;
+        // Output format is optional. Without it (or with the explicit value
+        // "buffer-stream") we use the 5-5 layout. With "inline-floats" we
+        // read two f32s directly out of the struct at the given offsets.
+        let format_str = mv
+            .get("output_format")
+            .and_then(Value::as_str)
+            .unwrap_or("buffer-stream");
+        let format = match format_str {
+            "buffer-stream" => MovOutputFormat::BufferStream,
+            "inline-floats" => MovOutputFormat::InlineFloats {
+                inline_x_offset: str_hex_to_u64(as_str_at(mv, "inline_x_offset")?)?,
+                inline_y_offset: str_hex_to_u64(as_str_at(mv, "inline_y_offset")?)?,
+            },
+            other => {
+                return Err(RoflError::Io(std::io::Error::other(format!(
+                    "unknown mov_decrypt.output_format {other:?} \
+                     (expected \"buffer-stream\" or \"inline-floats\")"
+                ))));
+            }
+        };
+        let (payload_offset, payload_size_offset) = match &format {
+            MovOutputFormat::BufferStream => (
+                str_hex_to_u64(as_str_at(mv, "payload_offset")?)?,
+                str_hex_to_u64(as_str_at(mv, "payload_size_offset")?)?,
+            ),
+            MovOutputFormat::InlineFloats { .. } => (0, 0),
+        };
         let mov_decrypt = MovDecrypt {
             netid: mv
                 .get("netid")
@@ -147,8 +239,44 @@ impl Config {
                 as u32,
             rva: str_hex_to_u64(as_str_at(mv, "rva_start")?)?,
             end_rva: str_hex_to_u64(as_str_at(mv, "rva_end")?)?,
-            payload_offset: str_hex_to_u64(as_str_at(mv, "payload_offset")?)?,
-            payload_size_offset: str_hex_to_u64(as_str_at(mv, "payload_size_offset")?)?,
+            payload_offset,
+            payload_size_offset,
+            format,
+        };
+
+        // Optional extra_decoders array for the long-tail packet classes.
+        // Each entry: { name, netid, rva_start, rva_end, struct_size?, semantic_hint? }
+        let extra_decoders = match json.get("extra_decoders") {
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .map(|e| {
+                    Ok(ExtraDecoder {
+                        name: e
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .ok_or(RoflError::MetadataMissingKey("extra_decoders[].name"))?
+                            .to_string(),
+                        netid: e
+                            .get("netid")
+                            .and_then(Value::as_u64)
+                            .ok_or(RoflError::MetadataMissingKey("extra_decoders[].netid"))?
+                            as u32,
+                        rva_start: str_hex_to_u64(as_str_at(e, "rva_start")?)?,
+                        rva_end: str_hex_to_u64(as_str_at(e, "rva_end")?)?,
+                        struct_size: e
+                            .get("struct_size")
+                            .and_then(Value::as_str)
+                            .map(str_hex_to_u64)
+                            .transpose()?
+                            .unwrap_or(0x90),
+                        semantic_hint: e
+                            .get("semantic_hint")
+                            .and_then(Value::as_str)
+                            .map(String::from),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+            _ => Vec::new(),
         };
 
         Ok(Config {
@@ -159,6 +287,7 @@ impl Config {
             player_id_start: str_hex_to_u32(get_top_str(&json, "player_id_start")?)?,
             ward_spawn_decrypt,
             mov_decrypt,
+            extra_decoders,
             text: Arc::new(text),
             data: Arc::new(data),
             rdata: Arc::new(rdata),

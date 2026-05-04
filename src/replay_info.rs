@@ -60,6 +60,11 @@ pub fn build_output_json(
         "metadata": metadata_to_json(header, metadata),
         "wards": [],
         "players_state": [],
+        // For inline-floats movement packets (16.9+), entity id is not
+        // written by the decoder we've identified, so `players_state` stays
+        // empty. The raw (timestamp, x, y) tuples land here so downstream
+        // consumers can at least see decoded position data.
+        "raw_positions": [],
     });
 
     // Ward lifecycle reconstruction, same rules as Mowokuma:
@@ -118,6 +123,17 @@ pub fn build_output_json(
     for packet in path_packets {
         if packet.id >= player_id_start && packet.id <= player_id_start + 9 {
             players_path_state.insert(packet.id, packet.clone());
+        } else if packet.id == 0 {
+            // Inline-floats packet (16.9+ partial decoder). Land it in
+            // raw_positions so the data is visible even without entity
+            // attribution.
+            if let Some(&(x, y)) = packet.waypoints.first() {
+                game["raw_positions"].as_array_mut().unwrap().push(json!({
+                    "timestamp": packet.timestamp,
+                    "x": x,
+                    "y": y,
+                }));
+            }
         }
 
         if packet.timestamp - tick >= 1.0 {
@@ -239,12 +255,13 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         emu.setup()?;
         for (timestamp, payload) in batch {
             emu.setup_args(payload)?;
-            let p = emu.call_decrypt_ward_spawn_packet(
+            if let Ok(p) = emu.call_decrypt_ward_spawn_packet(
                 config.ward_spawn_decrypt.rva,
                 config.ward_spawn_decrypt.end_rva,
                 *timestamp,
-            )?;
-            ward_packets.push(p);
+            ) {
+                ward_packets.push(p);
+            }
             emu.reset()?;
         }
     }
@@ -266,11 +283,85 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         }
     }
 
-    Ok(build_output_json(
+    // Run any extra-decoders declared in the patch archive. These are
+    // long-tail packet classes whose struct layout we haven't yet RE'd:
+    // we capture the raw struct writes per packet and surface them under
+    // the `extra_decoders` field of the output JSON for downstream
+    // inspection. This is the long-term path to "every packet decoded":
+    // archive entries here grow as more decoders get RE'd.
+    let mut extras: BTreeMap<String, Vec<(f32, crate::emulator::unicorn::ExtraDecoded)>> =
+        BTreeMap::new();
+    for ed in &config.extra_decoders {
+        let hits = blocks_with_netid(replay, ed.netid as u16)?;
+        if hits.is_empty() {
+            continue;
+        }
+        let mut entries: Vec<(f32, crate::emulator::unicorn::ExtraDecoded)> = Vec::new();
+        // Cap per-class samples so we don't blow the JSON up to gigabytes
+        // on heartbeat-class netids that fire millions of times.
+        const MAX_SAMPLES_PER_EXTRA: usize = 200;
+        for batch in hits.chunks(BATCH_SIZE).take(
+            (MAX_SAMPLES_PER_EXTRA + BATCH_SIZE - 1) / BATCH_SIZE,
+        ) {
+            let mut emu = StubEmulator::new(config.clone());
+            emu.setup()?;
+            for (timestamp, payload) in batch.iter().take(MAX_SAMPLES_PER_EXTRA - entries.len()) {
+                emu.setup_args(payload)?;
+                if let Ok(decoded) = emu.call_decrypt_extra(ed.rva_start, ed.rva_end, ed.struct_size)
+                {
+                    entries.push((*timestamp, decoded));
+                }
+                emu.reset()?;
+                if entries.len() >= MAX_SAMPLES_PER_EXTRA {
+                    break;
+                }
+            }
+        }
+        let label = format!("{}_netid{}", ed.name, ed.netid);
+        extras.insert(label, entries);
+    }
+
+    let mut json = build_output_json(
         &replay.header,
         &replay.metadata,
         ward_packets,
         path_packets,
         config.player_id_start,
-    ))
+    );
+
+    // Attach extra-decoder dumps. Layout:
+    //   "extra_decoders": {
+    //     "<name>_netid<N>": [
+    //       { "timestamp": 12.34, "writes": [[off, sz, val], ...], "struct_hex": "..." }
+    //     ]
+    //   }
+    if !extras.is_empty() {
+        let mut by_name = serde_json::Map::new();
+        for (label, entries) in extras {
+            let arr: Vec<Value> = entries
+                .iter()
+                .map(|(ts, decoded)| {
+                    let writes: Vec<Value> = decoded
+                        .writes
+                        .iter()
+                        .map(|(off, sz, val)| json!([*off, *sz, *val]))
+                        .collect();
+                    let struct_hex: String = decoded
+                        .struct_bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect();
+                    json!({
+                        "timestamp": ts,
+                        "writes": writes,
+                        "struct_hex": struct_hex,
+                    })
+                })
+                .collect();
+            by_name.insert(label, Value::Array(arr));
+        }
+        json["extra_decoders"] = Value::Object(by_name);
+    }
+
+    Ok(json)
 }

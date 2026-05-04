@@ -1,61 +1,1606 @@
 {
-  "_comment": "Per-netid semantic field naming map. Maps offsets in the decoder's output struct to human-readable field names + type hints. Refined per class as Ghidra-decompiled C is reviewed.",
-  "_source": "Hypothesised from frequency + payload size + decoded-fields shape; cross-referenced with Henry Zhu's S12 packet schema (CREDITS.md).",
-  "16.9": {
-    "1068": {
-      "class": "UpdateState_or_LeaveFog",
-      "comment": "46.5% of blocks; constant 2B payload; single 4B output. Heartbeat-class.",
+  "_comment": "Per-decoder semantic field names for the 16.9 patch. Each entry maps a decoder RVA to its hypothesised packet class + field names per offset. Multiple netids may share a decoder when they represent variants of the same packet shape (e.g. Replication for different entity classes). High-confidence entries are hand-curated from decompiled C; the rest are auto-generated from observed write patterns.",
+  "_zhu_classes": [
+    "CreateHero",
+    "WaypointGroup",
+    "WaypointGroupWithSpeed",
+    "EnterFog",
+    "LeaveFog",
+    "UnitApplyDamage",
+    "DoSetCooldown",
+    "BasicAttackPos",
+    "CastSpellAns",
+    "BarrackSpawnUnit",
+    "Replication",
+    "SpawnMinion",
+    "CreateNeutral",
+    "CreateTurret",
+    "NPCDieMapView",
+    "NPCDieMapViewBroadcast",
+    "HeroDie",
+    "BuyItem",
+    "RemoveItem",
+    "SwapItem",
+    "UseItem"
+  ],
+  "patch": "16.9",
+  "decoders": {
+    "0xf6ab10": {
+      "class": "Replication",
+      "comment": "Generic Replication packet \u2014 variable per-property updates. Handles 51 entity-class-specific netids that share this decoder. Per-offset semantics depend on which property the decoder selected for this sample.",
       "fields": {
-        "0x0010": {"name": "state_or_visibility_flag", "type": "u32"}
-      }
+        "0x0008": {
+          "name": "property_index_or_class_id",
+          "type": "u8"
+        },
+        "0x0010": {
+          "name": "property_value_a",
+          "type": "u32_or_f32"
+        },
+        "0x0014": {
+          "name": "property_value_b",
+          "type": "u32_or_f32"
+        },
+        "0x001c": {
+          "name": "property_value_c",
+          "type": "u32_or_f32"
+        },
+        "0x0024": {
+          "name": "property_value_d",
+          "type": "u32_or_f32"
+        },
+        "0x0028": {
+          "name": "property_value_e",
+          "type": "u32_or_f32"
+        },
+        "0x002c": {
+          "name": "property_value_f",
+          "type": "u32_or_f32"
+        },
+        "0x0030": {
+          "name": "property_value_g",
+          "type": "u32_or_f32"
+        },
+        "0x0038": {
+          "name": "property_value_h",
+          "type": "u32_or_f32"
+        },
+        "0x003c": {
+          "name": "property_value_i",
+          "type": "u32_or_f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        21,
+        33,
+        51,
+        60,
+        155,
+        165,
+        166,
+        175,
+        188,
+        191,
+        214,
+        220,
+        224,
+        252,
+        271,
+        347,
+        360,
+        362,
+        400,
+        410,
+        446,
+        447,
+        449,
+        463,
+        472,
+        497,
+        499,
+        559,
+        560,
+        647,
+        652,
+        742,
+        782,
+        785,
+        806,
+        828,
+        831,
+        876,
+        896,
+        907,
+        950,
+        975,
+        985,
+        990,
+        1077,
+        1093,
+        1151,
+        1159,
+        1178,
+        1179,
+        1195
+      ],
+      "netid_count": 51
     },
-    "916": {
-      "class": "WaypointGroup_mov_decrypt",
-      "comment": "Variable 18-352B payload. Inline final position + waypoint vector.",
+    "0xfcfd30": {
+      "class": "Replication_compact",
+      "comment": "Compact replication-style packet, 7 fields including position pair.",
       "fields": {
-        "0x0010": {"name": "waypoint_vector_ptr", "type": "u64"},
-        "0x0018": {"name": "waypoint_vector_size", "type": "u32"},
-        "0x0020": {"name": "final_x", "type": "f32"},
-        "0x0024": {"name": "final_y", "type": "f32"}
-      }
+        "0x0010": {
+          "name": "entity_net_id",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_b",
+          "type": "u32_or_f32"
+        },
+        "0x0018": {
+          "name": "scalar_a",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "position_x_or_value",
+          "type": "f32"
+        },
+        "0x0020": {
+          "name": "position_y_or_value",
+          "type": "f32"
+        },
+        "0x0024": {
+          "name": "extra_value",
+          "type": "f32"
+        },
+        "0x0028": {
+          "name": "trailing_value",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        76,
+        132,
+        174,
+        216,
+        306,
+        338,
+        421,
+        430,
+        438,
+        569,
+        648,
+        757,
+        781,
+        793,
+        807,
+        939,
+        959,
+        999,
+        1045,
+        1112,
+        1123
+      ],
+      "netid_count": 21
     },
-    "707": {
-      "class": "EnterFog_or_visibility",
-      "comment": "5.5%; 2-3B fixed payload; small visibility event.",
+    "0xdb2910": {
+      "class": "ConstructorFallback",
+      "comment": "Class constructor matched as decoder by brute-force; the decoded_fields[] are init constants (zeros), not real packet data. 18 netids wired here have NO real decoder.",
+      "fields": {},
+      "confidence": "hand-curated",
+      "netids": [
+        9,
+        41,
+        64,
+        86,
+        115,
+        143,
+        153,
+        223,
+        382,
+        505,
+        593,
+        641,
+        708,
+        720,
+        733,
+        934,
+        962,
+        1102
+      ],
+      "netid_count": 18
+    },
+    "0xf9d4e0": {
+      "class": "UpdateState_complex",
+      "comment": "1068 (heartbeat/UpdateState, 46.5% blocks) plus 11 sibling netids. Complex multi-tag dispatch with mixed scalar fields.",
       "fields": {
-        "0x0010": {"name": "entity_id_or_flag", "type": "u32"}
-      }
+        "0x0010": {
+          "name": "primary_value_or_enum",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "secondary_id_lo",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "secondary_id_hi",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "scalar_1",
+          "type": "f32"
+        },
+        "0x0020": {
+          "name": "scalar_2",
+          "type": "f32"
+        },
+        "0x0024": {
+          "name": "scalar_3",
+          "type": "u32"
+        },
+        "0x0028": {
+          "name": "scalar_4",
+          "type": "u32"
+        },
+        "0x002c": {
+          "name": "flag_or_byte",
+          "type": "u8"
+        },
+        "0x0030": {
+          "name": "scalar_5_lo",
+          "type": "u32"
+        },
+        "0x0034": {
+          "name": "scalar_5_hi",
+          "type": "u32"
+        },
+        "0x0038": {
+          "name": "trailing_flag",
+          "type": "u8"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        27,
+        168,
+        277,
+        413,
+        615,
+        627,
+        658,
+        835,
+        920,
+        928,
+        1068,
+        1196
+      ],
+      "netid_count": 12
     },
-    "684": {
-      "class": "DoSetCooldown_candidate",
-      "comment": "5.2%; 3B payload; 1B at 0x8 (slot?) + 4B at 0xc (cooldown_ms?).",
+    "0xfd6270": {
+      "class": "TinyEvent",
+      "comment": "2-field tiny packet (single value at 0x14 and 0x20).",
       "fields": {
-        "0x0008": {"name": "spell_slot", "type": "u8"},
-        "0x000c": {"name": "cooldown_ms", "type": "u32"}
-      }
+        "0x0014": {
+          "name": "primary_value",
+          "type": "u32_or_f32"
+        },
+        "0x0020": {
+          "name": "secondary_value",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        100,
+        128,
+        156,
+        378,
+        422,
+        436,
+        451,
+        591,
+        653,
+        738,
+        838,
+        1190
+      ],
+      "netid_count": 12
     },
-    "652": {
-      "class": "Replication_short",
-      "comment": "4.2%; 17B fixed payload; multi-property update with -1/0/1/2 enum values.",
+    "0x1074580": {
+      "class": "AttackOrSpellCast",
+      "comment": "Position-heavy packet, 14 offsets with multiple f32 groups. Shape consistent with Zhu's BasicAttackPos or CastSpellAns (source_position, target_position, target_end_position = 6 floats + multiple IDs and scalars).",
       "fields": {
-        "0x0010": {"name": "property_id", "type": "u32"},
-        "0x0014": {"name": "property_value", "type": "i32"}
-      }
+        "0x0018": {
+          "name": "caster_or_source_id",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "source_position_x",
+          "type": "f32"
+        },
+        "0x0024": {
+          "name": "source_position_y",
+          "type": "f32"
+        },
+        "0x0030": {
+          "name": "target_id",
+          "type": "u32"
+        },
+        "0x0038": {
+          "name": "target_position_x",
+          "type": "f32"
+        },
+        "0x003c": {
+          "name": "target_position_y",
+          "type": "f32"
+        },
+        "0x0040": {
+          "name": "target_end_position_x",
+          "type": "f32"
+        },
+        "0x0044": {
+          "name": "target_end_position_y",
+          "type": "f32"
+        },
+        "0x0048": {
+          "name": "spell_or_attack_param_a",
+          "type": "f32"
+        },
+        "0x0050": {
+          "name": "spell_hash_lo",
+          "type": "u32"
+        },
+        "0x0054": {
+          "name": "spell_hash_hi",
+          "type": "u32"
+        },
+        "0x0058": {
+          "name": "windup_time_ms",
+          "type": "f32"
+        },
+        "0x005c": {
+          "name": "cooldown_ms",
+          "type": "f32"
+        },
+        "0x0060": {
+          "name": "mana_cost",
+          "type": "f32"
+        },
+        "0x0064": {
+          "name": "level_or_slot",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        205,
+        346,
+        423,
+        429,
+        442,
+        491,
+        598,
+        758,
+        794,
+        803,
+        1138
+      ],
+      "netid_count": 11
     },
-    "806": {
-      "class": "BuffAdd_or_Replication_long",
-      "comment": "4.1%; 136B payload; large struct (status effect or many-property packet).",
-      "fields": {}
+    "0xfcd970": {
+      "class": "ItemOrStatus_change",
+      "comment": "Mid-sized event packet. Could be BuyItem, SwapItem, or status-effect application.",
+      "fields": {
+        "0x0018": {
+          "name": "entity_net_id",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "field_b",
+          "type": "u32_or_f32"
+        },
+        "0x0020": {
+          "name": "field_c",
+          "type": "u32_or_f32"
+        },
+        "0x002c": {
+          "name": "field_d",
+          "type": "u32_or_f32"
+        },
+        "0x0034": {
+          "name": "field_e",
+          "type": "u32_or_f32"
+        },
+        "0x0038": {
+          "name": "field_f",
+          "type": "f32"
+        },
+        "0x003c": {
+          "name": "field_g",
+          "type": "u32_or_f32"
+        },
+        "0x0040": {
+          "name": "field_h",
+          "type": "f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        239,
+        259,
+        296,
+        888,
+        964,
+        982,
+        1021,
+        1034,
+        1099,
+        1134
+      ],
+      "netid_count": 10
     },
-    "446": {
-      "class": "Replication_variable",
-      "comment": "2.6%; variable 58-493B = property dict. Henry Zhu's S12 Replication = 15.8%.",
-      "fields": {}
+    "0xf9bae0": {
+      "class": "BasicAttack_or_Spawn",
+      "comment": "Multi-position packet (could be BasicAttackPos, SpawnMinion, or BarrackSpawnUnit).",
+      "fields": {
+        "0x0010": {
+          "name": "source_or_caster_id",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "position_a_x",
+          "type": "f32"
+        },
+        "0x001c": {
+          "name": "position_a_y",
+          "type": "f32"
+        },
+        "0x0020": {
+          "name": "position_b_x",
+          "type": "f32"
+        },
+        "0x0024": {
+          "name": "position_b_y",
+          "type": "f32"
+        },
+        "0x002c": {
+          "name": "scalar_a",
+          "type": "u32_or_f32"
+        },
+        "0x0030": {
+          "name": "scalar_b",
+          "type": "u32_or_f32"
+        },
+        "0x0034": {
+          "name": "scalar_c",
+          "type": "u32_or_f32"
+        },
+        "0x0040": {
+          "name": "trailing_id_or_flag",
+          "type": "u32"
+        },
+        "0x0048": {
+          "name": "trailing_value",
+          "type": "u32"
+        },
+        "0x004c": {
+          "name": "trailing_value_b",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        104,
+        392,
+        406,
+        455,
+        715,
+        756,
+        760
+      ],
+      "netid_count": 7
     },
-    "876": {
-      "class": "CastSpellAns_candidate",
-      "comment": "0.9%; 30B fixed payload; cast metadata (caster, spell, targets).",
-      "fields": {}
+    "0x10843b0": {
+      "class": "SmallEvent",
+      "comment": "Small 3-field event packet (could be SwapItem, NPCDieMapView, etc.).",
+      "fields": {
+        "0x0014": {
+          "name": "entity_id_or_value",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "secondary_id",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "tertiary_value",
+          "type": "u32_or_f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        65,
+        506,
+        575,
+        644,
+        799,
+        1193
+      ],
+      "netid_count": 6
+    },
+    "0xeba9e0": {
+      "class": "Replication_long",
+      "comment": "Replication-style decoder with extended property dict. Wins many netids by writing to many offsets.",
+      "fields": {
+        "0x0010": {
+          "name": "property_value_a",
+          "type": "u32_or_f32"
+        },
+        "0x0014": {
+          "name": "property_value_b",
+          "type": "u32"
+        },
+        "0x0024": {
+          "name": "property_value_c",
+          "type": "u32_or_f32"
+        },
+        "0x0028": {
+          "name": "property_value_d",
+          "type": "u32"
+        },
+        "0x0030": {
+          "name": "property_value_e",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        623,
+        666,
+        717,
+        1110,
+        1139
+      ],
+      "netid_count": 5
+    },
+    "0xfdb200": {
+      "class": "DoSetCooldown",
+      "comment": "Spell cooldown update. 5-field shape matches Zhu's DoSetCooldown(net_id, slot, cooldown, display_cooldown) plus an extra status flag.",
+      "fields": {
+        "0x000c": {
+          "name": "spell_slot",
+          "type": "u8"
+        },
+        "0x0010": {
+          "name": "cooldown_remaining_ms",
+          "type": "f32"
+        },
+        "0x0018": {
+          "name": "cooldown_total_ms",
+          "type": "f32"
+        },
+        "0x001c": {
+          "name": "target_net_id",
+          "type": "u32"
+        },
+        "0x0024": {
+          "name": "display_cooldown_ms",
+          "type": "f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        157,
+        268,
+        452,
+        533,
+        955
+      ],
+      "netid_count": 5
+    },
+    "0x107c470": {
+      "class": "MediumEvent",
+      "comment": "Mid-sized 7-field event packet.",
+      "fields": {
+        "0x0014": {
+          "name": "primary_id_or_value",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "scalar_a",
+          "type": "u32_or_f32"
+        },
+        "0x001c": {
+          "name": "scalar_b",
+          "type": "u32_or_f32"
+        },
+        "0x0028": {
+          "name": "field_c",
+          "type": "u32"
+        },
+        "0x0038": {
+          "name": "field_d",
+          "type": "u32"
+        },
+        "0x0040": {
+          "name": "field_e",
+          "type": "f32"
+        },
+        "0x0044": {
+          "name": "field_f",
+          "type": "u32_or_f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        89,
+        298,
+        873,
+        1177
+      ],
+      "netid_count": 4
+    },
+    "0xfaffc0": {
+      "class": "FogEvent_or_smallID",
+      "comment": "Single-entity event (EnterFog/LeaveFog/HeroDie shape).",
+      "fields": {
+        "0x0010": {
+          "name": "entity_net_id",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "event_subtype_or_flag",
+          "type": "u32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        97,
+        707,
+        1055
+      ],
+      "netid_count": 3
+    },
+    "0xfb4070": {
+      "class": "WaypointGroup_mov",
+      "comment": "Position/movement decoder. 916=mov (typed); 52,173,390 are sibling packets reusing the body.",
+      "fields": {
+        "0x0010": {
+          "name": "waypoint_vector_ptr",
+          "type": "u64"
+        },
+        "0x0018": {
+          "name": "waypoint_vector_size",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "final_position_x_or_tag",
+          "type": "f32_or_i32"
+        },
+        "0x0024": {
+          "name": "final_position_y_or_tag",
+          "type": "f32_or_i32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        52,
+        173,
+        390
+      ],
+      "netid_count": 3
+    },
+    "0xfc2fe0": {
+      "class": "MovementSibling",
+      "comment": "3-netid mov-sized decoder; sibling of fb4070 family.",
+      "fields": {},
+      "confidence": "hand-curated",
+      "netids": [
+        567,
+        843,
+        951
+      ],
+      "netid_count": 3
+    },
+    "0x10371f0": {
+      "class": "PositionEvent",
+      "comment": "Small position-style event (2 floats + scalar).",
+      "fields": {
+        "0x0008": {
+          "name": "position_x",
+          "type": "f32"
+        },
+        "0x000c": {
+          "name": "position_y",
+          "type": "f32"
+        },
+        "0x0018": {
+          "name": "scalar_or_id",
+          "type": "u32"
+        },
+        "0x0024": {
+          "name": "trailing_value",
+          "type": "u32_or_f32"
+        }
+      },
+      "confidence": "hand-curated",
+      "netids": [
+        471,
+        613,
+        1153
+      ],
+      "netid_count": 3
+    },
+    "0xea9ec0": {
+      "class": "LargePacket",
+      "comment": "Large packet with 11 fields (BasicAttackPos / CastSpellAns / Replication-style).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "field_at_0x1c",
+          "type": "u32"
+        },
+        "0x0028": {
+          "name": "field_at_0x28",
+          "type": "u32"
+        },
+        "0x0034": {
+          "name": "field_at_0x34",
+          "type": "u32"
+        },
+        "0x0038": {
+          "name": "field_at_0x38",
+          "type": "u32"
+        },
+        "0x0048": {
+          "name": "field_at_0x48",
+          "type": "u32"
+        },
+        "0x0050": {
+          "name": "field_at_0x50",
+          "type": "u32"
+        },
+        "0x0054": {
+          "name": "field_at_0x54",
+          "type": "u32"
+        },
+        "0x0058": {
+          "name": "field_at_0x58",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        201,
+        660
+      ],
+      "netid_count": 2
+    },
+    "0xeb3b80": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        45,
+        1000
+      ],
+      "netid_count": 2
+    },
+    "0xfb9700": {
+      "class": "SmallPacket",
+      "comment": "Small packet with 4 fields.",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "f32"
+        },
+        "0x001c": {
+          "name": "field_at_0x1c",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        83,
+        85
+      ],
+      "netid_count": 2
+    },
+    "0xfbc760": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "i32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        357,
+        358
+      ],
+      "netid_count": 2
+    },
+    "0x1063c00": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        1004,
+        1006
+      ],
+      "netid_count": 2
+    },
+    "0x10558c0": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        684
+      ],
+      "netid_count": 1
+    },
+    "0x105d460": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "i32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        700
+      ],
+      "netid_count": 1
+    },
+    "0xfd6630": {
+      "class": "SmallPacket",
+      "comment": "Small packet with 3 fields.",
+      "fields": {
+        "0x0008": {
+          "name": "field_at_0x08",
+          "type": "f32"
+        },
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "field_at_0x20",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1104
+      ],
+      "netid_count": 1
+    },
+    "0xeac580": {
+      "class": "SmallPacket",
+      "comment": "Small packet with 5 fields.",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        },
+        "0x001c": {
+          "name": "field_at_0x1c",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "field_at_0x20",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1011
+      ],
+      "netid_count": 1
+    },
+    "0x1052ec0": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1058
+      ],
+      "netid_count": 1
+    },
+    "0x103bd40": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        179
+      ],
+      "netid_count": 1
+    },
+    "0x105bb30": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "f32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        325
+      ],
+      "netid_count": 1
+    },
+    "0xfa4540": {
+      "class": "SmallPacket",
+      "comment": "Small packet with 3 fields.",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "f32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "i32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        335
+      ],
+      "netid_count": 1
+    },
+    "0x1050270": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        426
+      ],
+      "netid_count": 1
+    },
+    "0xfad8d0": {
+      "class": "SmallPacket",
+      "comment": "Small packet with 3 fields.",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "field_at_0x20",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        441
+      ],
+      "netid_count": 1
+    },
+    "0x1068100": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        474
+      ],
+      "netid_count": 1
+    },
+    "0xebda70": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        642
+      ],
+      "netid_count": 1
+    },
+    "0xf9d320": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        681
+      ],
+      "netid_count": 1
+    },
+    "0xf7bca0": {
+      "class": "MediumPacket",
+      "comment": "Medium packet with 7 fields.",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "field_at_0x20",
+          "type": "i32"
+        },
+        "0x0024": {
+          "name": "field_at_0x24",
+          "type": "u32"
+        },
+        "0x0028": {
+          "name": "field_at_0x28",
+          "type": "u32"
+        },
+        "0x0038": {
+          "name": "field_at_0x38",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        690
+      ],
+      "netid_count": 1
+    },
+    "0x1067d70": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        691
+      ],
+      "netid_count": 1
+    },
+    "0x1067500": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        755
+      ],
+      "netid_count": 1
+    },
+    "0xeb6850": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "i32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        788
+      ],
+      "netid_count": 1
+    },
+    "0xec58d0": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0008": {
+          "name": "field_at_0x08",
+          "type": "u32"
+        },
+        "0x000c": {
+          "name": "field_at_0x0c",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        832
+      ],
+      "netid_count": 1
+    },
+    "0xeb9320": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        834
+      ],
+      "netid_count": 1
+    },
+    "0x10731c0": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0020": {
+          "name": "field_at_0x20",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        894
+      ],
+      "netid_count": 1
+    },
+    "0x1073e50": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        1048
+      ],
+      "netid_count": 1
+    },
+    "0x105dd70": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1115
+      ],
+      "netid_count": 1
+    },
+    "0xfd5bd0": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        1180
+      ],
+      "netid_count": 1
+    },
+    "0xfa85b0": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        448
+      ],
+      "netid_count": 1
+    },
+    "0xf87b70": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        673
+      ],
+      "netid_count": 1
+    },
+    "0x103a3b0": {
+      "class": "TagOnlyOrNoFields",
+      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "fields": {},
+      "confidence": "auto-generated",
+      "netids": [
+        752
+      ],
+      "netid_count": 1
+    },
+    "0x1050b90": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        772
+      ],
+      "netid_count": 1
+    },
+    "0x104e4a0": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0014": {
+          "name": "field_at_0x14",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1025
+      ],
+      "netid_count": 1
+    },
+    "0x106a140": {
+      "class": "TwoField",
+      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        },
+        "0x0018": {
+          "name": "field_at_0x18",
+          "type": "f32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1033
+      ],
+      "netid_count": 1
+    },
+    "0xfb7ce0": {
+      "class": "SingleField",
+      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "fields": {
+        "0x0010": {
+          "name": "field_at_0x10",
+          "type": "u32"
+        }
+      },
+      "confidence": "auto-generated",
+      "netids": [
+        1166
+      ],
+      "netid_count": 1
+    },
+    "0xfbd8f0": {
+      "class": "Netid19_specific",
+      "comment": "Decoder for netid 19 specifically (found via indirect-init secondary vtable).",
+      "fields": {},
+      "confidence": "hand-curated",
+      "netids": [
+        19
+      ],
+      "netid_count": 1
+    },
+    "0xe9dd20": {
+      "class": "TagOnlyStub",
+      "comment": "19-byte stub function (init returns immediately). netid 543 is tag-only \u2014 the netid IS the entire packet content.",
+      "fields": {},
+      "confidence": "hand-curated",
+      "netids": [
+        543
+      ],
+      "netid_count": 1
     }
-  }
+  },
+  "netid_to_decoder": {
+    "652": "0xf6ab10",
+    "806": "0xf6ab10",
+    "347": "0xf6ab10",
+    "876": "0xf6ab10",
+    "828": "0xf6ab10",
+    "446": "0xf6ab10",
+    "782": "0xf6ab10",
+    "559": "0xf6ab10",
+    "220": "0xf6ab10",
+    "360": "0xf6ab10",
+    "165": "0xf6ab10",
+    "831": "0xf6ab10",
+    "985": "0xf6ab10",
+    "742": "0xf6ab10",
+    "1178": "0xf6ab10",
+    "188": "0xf6ab10",
+    "975": "0xf6ab10",
+    "1159": "0xf6ab10",
+    "785": "0xf6ab10",
+    "214": "0xf6ab10",
+    "1151": "0xf6ab10",
+    "410": "0xf6ab10",
+    "647": "0xf6ab10",
+    "166": "0xf6ab10",
+    "51": "0xf6ab10",
+    "449": "0xf6ab10",
+    "950": "0xf6ab10",
+    "499": "0xf6ab10",
+    "175": "0xf6ab10",
+    "1077": "0xf6ab10",
+    "990": "0xf6ab10",
+    "400": "0xf6ab10",
+    "907": "0xf6ab10",
+    "252": "0xf6ab10",
+    "472": "0xf6ab10",
+    "447": "0xf6ab10",
+    "896": "0xf6ab10",
+    "362": "0xf6ab10",
+    "1093": "0xf6ab10",
+    "497": "0xf6ab10",
+    "271": "0xf6ab10",
+    "191": "0xf6ab10",
+    "224": "0xf6ab10",
+    "1195": "0xf6ab10",
+    "463": "0xf6ab10",
+    "60": "0xf6ab10",
+    "560": "0xf6ab10",
+    "1179": "0xf6ab10",
+    "21": "0xf6ab10",
+    "33": "0xf6ab10",
+    "155": "0xf6ab10",
+    "1112": "0xfcfd30",
+    "132": "0xfcfd30",
+    "438": "0xfcfd30",
+    "807": "0xfcfd30",
+    "421": "0xfcfd30",
+    "569": "0xfcfd30",
+    "959": "0xfcfd30",
+    "338": "0xfcfd30",
+    "306": "0xfcfd30",
+    "781": "0xfcfd30",
+    "757": "0xfcfd30",
+    "430": "0xfcfd30",
+    "1045": "0xfcfd30",
+    "648": "0xfcfd30",
+    "939": "0xfcfd30",
+    "793": "0xfcfd30",
+    "76": "0xfcfd30",
+    "174": "0xfcfd30",
+    "1123": "0xfcfd30",
+    "216": "0xfcfd30",
+    "999": "0xfcfd30",
+    "1102": "0xdb2910",
+    "64": "0xdb2910",
+    "720": "0xdb2910",
+    "153": "0xdb2910",
+    "962": "0xdb2910",
+    "733": "0xdb2910",
+    "593": "0xdb2910",
+    "115": "0xdb2910",
+    "143": "0xdb2910",
+    "934": "0xdb2910",
+    "9": "0xdb2910",
+    "505": "0xdb2910",
+    "708": "0xdb2910",
+    "41": "0xdb2910",
+    "382": "0xdb2910",
+    "641": "0xdb2910",
+    "86": "0xdb2910",
+    "223": "0xdb2910",
+    "1068": "0xf9d4e0",
+    "27": "0xf9d4e0",
+    "920": "0xf9d4e0",
+    "627": "0xf9d4e0",
+    "615": "0xf9d4e0",
+    "1196": "0xf9d4e0",
+    "928": "0xf9d4e0",
+    "277": "0xf9d4e0",
+    "413": "0xf9d4e0",
+    "835": "0xf9d4e0",
+    "168": "0xf9d4e0",
+    "658": "0xf9d4e0",
+    "100": "0xfd6270",
+    "436": "0xfd6270",
+    "422": "0xfd6270",
+    "838": "0xfd6270",
+    "653": "0xfd6270",
+    "591": "0xfd6270",
+    "156": "0xfd6270",
+    "451": "0xfd6270",
+    "1190": "0xfd6270",
+    "128": "0xfd6270",
+    "378": "0xfd6270",
+    "738": "0xfd6270",
+    "598": "0x1074580",
+    "346": "0x1074580",
+    "429": "0x1074580",
+    "758": "0x1074580",
+    "803": "0x1074580",
+    "423": "0x1074580",
+    "794": "0x1074580",
+    "1138": "0x1074580",
+    "491": "0x1074580",
+    "205": "0x1074580",
+    "442": "0x1074580",
+    "964": "0xfcd970",
+    "1134": "0xfcd970",
+    "1099": "0xfcd970",
+    "1034": "0xfcd970",
+    "1021": "0xfcd970",
+    "888": "0xfcd970",
+    "296": "0xfcd970",
+    "259": "0xfcd970",
+    "982": "0xfcd970",
+    "239": "0xfcd970",
+    "406": "0xf9bae0",
+    "104": "0xf9bae0",
+    "756": "0xf9bae0",
+    "760": "0xf9bae0",
+    "715": "0xf9bae0",
+    "455": "0xf9bae0",
+    "392": "0xf9bae0",
+    "575": "0x10843b0",
+    "799": "0x10843b0",
+    "1193": "0x10843b0",
+    "65": "0x10843b0",
+    "644": "0x10843b0",
+    "506": "0x10843b0",
+    "717": "0xeba9e0",
+    "1139": "0xeba9e0",
+    "1110": "0xeba9e0",
+    "666": "0xeba9e0",
+    "623": "0xeba9e0",
+    "452": "0xfdb200",
+    "157": "0xfdb200",
+    "268": "0xfdb200",
+    "533": "0xfdb200",
+    "955": "0xfdb200",
+    "89": "0x107c470",
+    "298": "0x107c470",
+    "873": "0x107c470",
+    "1177": "0x107c470",
+    "707": "0xfaffc0",
+    "1055": "0xfaffc0",
+    "97": "0xfaffc0",
+    "52": "0xfb4070",
+    "390": "0xfb4070",
+    "173": "0xfb4070",
+    "843": "0xfc2fe0",
+    "951": "0xfc2fe0",
+    "567": "0xfc2fe0",
+    "613": "0x10371f0",
+    "471": "0x10371f0",
+    "1153": "0x10371f0",
+    "201": "0xea9ec0",
+    "660": "0xea9ec0",
+    "1000": "0xeb3b80",
+    "45": "0xeb3b80",
+    "83": "0xfb9700",
+    "85": "0xfb9700",
+    "357": "0xfbc760",
+    "358": "0xfbc760",
+    "1004": "0x1063c00",
+    "1006": "0x1063c00",
+    "684": "0x10558c0",
+    "700": "0x105d460",
+    "1104": "0xfd6630",
+    "1011": "0xeac580",
+    "1058": "0x1052ec0",
+    "179": "0x103bd40",
+    "325": "0x105bb30",
+    "335": "0xfa4540",
+    "426": "0x1050270",
+    "441": "0xfad8d0",
+    "474": "0x1068100",
+    "642": "0xebda70",
+    "681": "0xf9d320",
+    "690": "0xf7bca0",
+    "691": "0x1067d70",
+    "755": "0x1067500",
+    "788": "0xeb6850",
+    "832": "0xec58d0",
+    "834": "0xeb9320",
+    "894": "0x10731c0",
+    "1048": "0x1073e50",
+    "1115": "0x105dd70",
+    "1180": "0xfd5bd0",
+    "448": "0xfa85b0",
+    "673": "0xf87b70",
+    "752": "0x103a3b0",
+    "772": "0x1050b90",
+    "1025": "0x104e4a0",
+    "1033": "0x106a140",
+    "1166": "0xfb7ce0",
+    "19": "0xfbd8f0",
+    "543": "0xe9dd20",
+    "916": "0xfb4070"
+  },
+  "mov_decrypt_netid": 916
 }

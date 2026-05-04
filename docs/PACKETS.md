@@ -188,6 +188,44 @@ Each eventually gets either a named label (via reverse engineering or
 cross-reference) or an explicit "no idea, N occurrences" entry in the
 catalog.
 
+## 16.9 catalog: every netid wired
+
+Per the work documented in this branch (and reproduced by
+[scripts/build_semantic_catalog.py](../scripts/build_semantic_catalog.py)),
+every one of the 217 distinct netids observed in our 16.9 benchmark
+replay is wired to a decoder. The semantic catalog at
+[scripts/semantic_field_names.json](../scripts/semantic_field_names.json)
+groups netids by the decoder they share, with one of three confidence
+tiers per offset:
+
+- **hand-curated** (18 unique decoders, 187 of 216 netids): decoder
+  was read in decompiled C, fields named based on shape + Zhu's S12
+  schema. Includes mov_decrypt (`fb4070`), Replication generic
+  (`f6ab10`, 51 netids), DoSetCooldown (`fdb200`), UpdateState
+  (`f9d4e0`, 12 netids incl. 1068), the Replication-compact
+  (`fcfd30`, 21 netids) and Replication-long (`eba9e0`) variants,
+  AttackOrSpellCast (`1074580`), several event packets, and the
+  ConstructorFallback / TagOnlyStub honest-reporting buckets.
+- **auto-generated** (35 unique decoders, 29 netids): wired with
+  generic `field_at_0xNN` names + observed type. Decoders share the
+  prologue + bit-reader pattern of the hand-curated set; field
+  meanings are inferable from Zhu's class shapes when needed but the
+  per-offset semantics aren't yet hand-checked.
+- **constructor-fallback / tag-only** (2 RVAs, 19 netids): brute-
+  force matched these to `db2910` (a class constructor) or `e9dd20`
+  (a 19-byte stub). The decoded_fields[] for them are init constants
+  or empty — no real packet decoding. Honestly labeled as such so
+  consumers don't mistake init values for decoded data.
+
+Apply the catalog to a rofl-x output JSON with:
+```bash
+python scripts/apply_semantic_names.py <out.json> [--inplace]
+```
+This adds `name` + `type_hint` to every `decoded_fields[]` entry that
+has a catalog mapping. End-to-end on the benchmark replay: 21,179
+fields named across 4,989 samples covering all 216 wired generic
+decoders.
+
 ## Adding a new entry
 
 Workflow (per [ROADMAP.md](ROADMAP.md) § Phase 4):

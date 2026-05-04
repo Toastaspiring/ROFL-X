@@ -57,16 +57,29 @@ def main() -> int:
         if not decoder_rva:
             continue
         decoder_info = decoders.get(decoder_rva, {})
-        cls = decoder_info.get("class", "Unknown")
-        cls_comment = decoder_info.get("comment", "")
-        confidence = decoder_info.get("confidence", "")
+        # Prefer riot_class_primary (new schema), fall back to legacy class field.
+        cls = decoder_info.get("riot_class_primary") or decoder_info.get("class", "Unknown")
+        cls_comment = decoder_info.get("shape") or decoder_info.get("comment", "")
+        confidence = decoder_info.get("riot_class_confidence") or decoder_info.get("confidence", "")
         fields_map = decoder_info.get("fields", {})
-        if cls != "Unknown":
+        if cls and cls != "Unknown":
             classes_named += 1
+        riot_primary = decoder_info.get("riot_class_primary", "")
+        riot_candidates = decoder_info.get("riot_class_candidates", [])
+        riot_confidence = decoder_info.get("riot_class_confidence", "")
+        shape_desc = decoder_info.get("shape", "")
         for sample in samples:
             sample.setdefault("class", cls)
             sample.setdefault("class_comment", cls_comment)
             sample.setdefault("class_confidence", confidence)
+            if riot_primary:
+                sample.setdefault("riot_class_primary", riot_primary)
+            if riot_candidates:
+                sample.setdefault("riot_class_candidates", riot_candidates)
+            if riot_confidence:
+                sample.setdefault("riot_class_confidence", riot_confidence)
+            if shape_desc:
+                sample.setdefault("shape", shape_desc)
             samples_annotated += 1
             for f in sample.get("decoded_fields", []):
                 off = f.get("offset")

@@ -1,5 +1,329 @@
 {
-  "_comment": "Per-decoder semantic field names for the 16.9 patch. Each entry maps a decoder RVA to its hypothesised packet class + field names per offset. Multiple netids may share a decoder when they represent variants of the same packet shape (e.g. Replication for different entity classes). High-confidence entries are hand-curated from decompiled C; the rest are auto-generated from observed write patterns.",
+  "_comment": "Per-decoder semantic catalog with Riot's REAL packet class names (extracted from leaked MakeFunction template strings). Each decoder is mapped to a primary Riot class + ranked candidates. Field names are hand-curated where shape is distinctive; otherwise auto-generated. Confidence: 'shape-match' = field count + types align with the named class's known structure; 'frequency-hint' = packet frequency points to a class category (e.g. 1068=46.5% must be Replicate or MissileReplication); 'speculative' = single-netid decoder with no anchor; 'constructor-fallback'/'tag-only' = honest no-decoder buckets.",
+  "patch": "16.9",
+  "_riot_class_vocabulary": {
+    "_comment": "All 320 Riot packet class names leaked through MakeFunction template instantiations in the binary's mangled MSVC symbols. These are the EXACT names Riot uses internally.",
+    "total": 317,
+    "names": [
+      "PKT_AI_TargetHeroS2C_s",
+      "PKT_AI_TargetS2C_s",
+      "PKT_AvatarInfo_Server_s",
+      "PKT_Basic_Attack_Minion_s",
+      "PKT_Basic_Attack_Pos_Minion_s",
+      "PKT_Basic_Attack_Pos_s",
+      "PKT_Basic_Attack_s",
+      "PKT_Building_Die_s",
+      "PKT_BuyItemAns_s",
+      "PKT_CHAR_CancelTargetingReticle_s",
+      "PKT_CHAR_SetCooldown_Broadcast_s",
+      "PKT_ChangeSlotSpellData_OwnerOnly_s",
+      "PKT_ChangeSlotSpellData_Summoner_s",
+      "PKT_ChangeSlotSpellData_s",
+      "PKT_ClearDisguiseData_s",
+      "PKT_CombatStateChanged_s",
+      "PKT_DampenerSwitchStates_s",
+      "PKT_DirectInputMovementDriverServerTurnData_s",
+      "PKT_ForwardOrderFromObjectAttacher_s",
+      "PKT_HealthBar_Icon_Add_S2C_s",
+      "PKT_HealthBar_Icon_Clear_S2C_s",
+      "PKT_HealthBar_Icon_Remove_S2C_s",
+      "PKT_HealthBar_Icon_State_Set_S2C_s",
+      "PKT_HeroReincarnateAlive_s",
+      "PKT_HeroReincarnate_s",
+      "PKT_MissileReplication_s",
+      "PKT_NPC_AddFakeBuff_s",
+      "PKT_NPC_AddFakeBuffs_s",
+      "PKT_NPC_BuffAdd2_s",
+      "PKT_NPC_BuffLockFacing_s",
+      "PKT_NPC_BuffRemove2_s",
+      "PKT_NPC_BuffReplace_s",
+      "PKT_NPC_BuffUpdateCount_s",
+      "PKT_NPC_BuffUpdateNumCounter_s",
+      "PKT_NPC_BuffUpdateStatAdjustments_s",
+      "PKT_NPC_CastSpellAns_s",
+      "PKT_NPC_Die_Broadcast_s",
+      "PKT_NPC_Die_MapView_s",
+      "PKT_NPC_ForceDead_s",
+      "PKT_NPC_Hero_Die_s",
+      "PKT_NPC_InstantStop_Attack_s",
+      "PKT_NPC_LevelUp_Global_s",
+      "PKT_NPC_LevelUp_s",
+      "PKT_NPC_MessageToClient_Broadcast_s",
+      "PKT_NPC_MessageToClient_MapView_s",
+      "PKT_NPC_RemoveFakeBuff_s",
+      "PKT_NPC_RemoveFakeBuffs_s",
+      "PKT_NPC_SetAutocast_s",
+      "PKT_NPC_UpgradeSpellAns_s",
+      "PKT_OnLeaveVisibilityClient_s",
+      "PKT_Pause_s",
+      "PKT_RemoveItemAns_s",
+      "PKT_S2C_AddBuffModifier_s",
+      "PKT_S2C_AddDamagePredictionByItem_s",
+      "PKT_S2C_AddDamagePredictionBySpell_s",
+      "PKT_S2C_AddDamagePredictionByValue_s",
+      "PKT_S2C_AddFollowTargetPosition_s",
+      "PKT_S2C_AddFollowTargetTeleport_s",
+      "PKT_S2C_AddHUDCenterFrameGlow_s",
+      "PKT_S2C_AddHealthThreshold_s",
+      "PKT_S2C_AddItemModifier_s",
+      "PKT_S2C_AddSpellModifier_s",
+      "PKT_S2C_AlwaysFaceTarget_s",
+      "PKT_S2C_AmmoUpdate_s",
+      "PKT_S2C_AnimationUpdateTimeStep_s",
+      "PKT_S2C_AutoAimTarget_s",
+      "PKT_S2C_BBExtraActionsSetBlendColor_s",
+      "PKT_S2C_CameraFOV_s",
+      "PKT_S2C_CameraLockTarget_s",
+      "PKT_S2C_CameraLock_s",
+      "PKT_S2C_CameraPosition_s",
+      "PKT_S2C_CameraRotation_s",
+      "PKT_S2C_CameraZoom_s",
+      "PKT_S2C_ChangeCharacterData_s",
+      "PKT_S2C_ChangeCharacterVoice_s",
+      "PKT_S2C_ChangeHealthBarStyle_s",
+      "PKT_S2C_ChangeMissilePhysics_s",
+      "PKT_S2C_ChangeMissileSpline_s",
+      "PKT_S2C_ChangeMissileTarget_s",
+      "PKT_S2C_CharacterSelectionUIReset_s",
+      "PKT_S2C_CharacterSelectionUISetExButtonEnabled_s",
+      "PKT_S2C_CharacterSelectionUISetTeamToFocus_s",
+      "PKT_S2C_CharacterSelectionUIShowPlaceholderIcon_s",
+      "PKT_S2C_ChargeSpellCastAck_s",
+      "PKT_S2C_CherryHeroInfo_s",
+      "PKT_S2C_CircularRestrictionOverride_s",
+      "PKT_S2C_ClearAlternateCircleIcon_s",
+      "PKT_S2C_ClearCharacterStateIndicatorIndex_s",
+      "PKT_S2C_ClearFloatingTextOnUnit_s",
+      "PKT_S2C_ClearHealthThreshold_s",
+      "PKT_S2C_ClearObjectSelection_s",
+      "PKT_S2C_ClearSecondaryCharacterData_s",
+      "PKT_S2C_ClearSpellNumericalDisplay_s",
+      "PKT_S2C_CompanionSpawned_s",
+      "PKT_S2C_CooldownReductionModifierUpdate_s",
+      "PKT_S2C_CopyAnimationState_s",
+      "PKT_S2C_CreateBannerAtMapLocator_s",
+      "PKT_S2C_CreateTrophyAtMapLocator_s",
+      "PKT_S2C_CursorPositionData_s",
+      "PKT_S2C_DamagePredictionState_s",
+      "PKT_S2C_DestroyClientMissile_s",
+      "PKT_S2C_DestroyUnit_s",
+      "PKT_S2C_DisplaySummonerEmote_s",
+      "PKT_S2C_EmoteInCooldown_s",
+      "PKT_S2C_EnableAttackOverlays_s",
+      "PKT_S2C_EnableCursorTracking_s",
+      "PKT_S2C_EnableDeathEffectForChampionKills_s",
+      "PKT_S2C_EquipGear_s",
+      "PKT_S2C_ExtraActionsClearCharacterOverride_s",
+      "PKT_S2C_ExtraActionsEnableGroup_s",
+      "PKT_S2C_ExtraActionsPlayAnim_s",
+      "PKT_S2C_ExtraActionsSetButtonEnableStateByButtonId_s",
+      "PKT_S2C_ExtraActionsSetButtonSelectionStateByButtonId_s",
+      "PKT_S2C_ExtraActionsSetChampionButtonEnableState_s",
+      "PKT_S2C_ExtraActionsSetChampionButtonSelectionState_s",
+      "PKT_S2C_ExtraActionsSetCharacterOverride_s",
+      "PKT_S2C_ExtraActionsSetElementalCounterValue_s",
+      "PKT_S2C_ExtraActionsSetElementalCurrentElement_s",
+      "PKT_S2C_ExtraActionsSetItemButtonID_s",
+      "PKT_S2C_ExtraActionsSetPortrait_s",
+      "PKT_S2C_ExtraActionsSetRoleBoundQuestButtonID_s",
+      "PKT_S2C_ExtraActionsSetScreenOffset_s",
+      "PKT_S2C_ExtraActionsSetText_s",
+      "PKT_S2C_ExtraActionsSetUpgradeItemButtonID_s",
+      "PKT_S2C_ExtraActionsSetVisibilityOfButtonById_s",
+      "PKT_S2C_ExtraActionsSetVisibilityOfGroup_s",
+      "PKT_S2C_FaceDirection_s",
+      "PKT_S2C_ForceCreateMissile_s",
+      "PKT_S2C_FullSyncRecommendedJunglePath_s",
+      "PKT_S2C_HandleMissileUnitCollisionEnterBehaviors_s",
+      "PKT_S2C_HandleMissileUnitCollisionExitBehaviors_s",
+      "PKT_S2C_HandleMissileUnitCollisionUpdateBehaviors_s",
+      "PKT_S2C_HandleTipUpdate_s",
+      "PKT_S2C_HandleUIItemCompleteFX_s",
+      "PKT_S2C_HeroItemAdvice_s",
+      "PKT_S2C_HeroStats_s",
+      "PKT_S2C_HideAllSummonerEmotes_s",
+      "PKT_S2C_HideOwnerEmotes_s",
+      "PKT_S2C_IncrementMinionKills_s",
+      "PKT_S2C_MarkAsCloneOfUnit_s",
+      "PKT_S2C_MissileReInitVFX_s",
+      "PKT_S2C_MissileScriptTrigger_s",
+      "PKT_S2C_MissileScriptedVisible_s",
+      "PKT_S2C_ModifyScriptItemRecommendation_s",
+      "PKT_S2C_MouseTrackMissile_s",
+      "PKT_S2C_MoveCameraToPoint_s",
+      "PKT_S2C_MoveMarker_s",
+      "PKT_S2C_NavCellStateOverride_s",
+      "PKT_S2C_NeutralCampLeashStateChanged_s",
+      "PKT_S2C_NotifyContextualSituation_s",
+      "PKT_S2C_OnDeathHealthBar_s",
+      "PKT_S2C_OnEnterTeamVisibility_s",
+      "PKT_S2C_OnLeaveTeamVisibility_s",
+      "PKT_S2C_OnSetHealthBarVariableTicks_s",
+      "PKT_S2C_PackManagerInfo_s",
+      "PKT_S2C_PauseAnimation_s",
+      "PKT_S2C_PlayAnimation_Mapview_s",
+      "PKT_S2C_PlayAnimation_Spawn_s",
+      "PKT_S2C_PlayAnimation_s",
+      "PKT_S2C_PlayEmote_s",
+      "PKT_S2C_PlaySpellCastAnimation_s",
+      "PKT_S2C_PlaySpellReadyEffectUI_s",
+      "PKT_S2C_PlaySpellResetFeedbackUI_s",
+      "PKT_S2C_PlayVOCommand_s",
+      "PKT_S2C_PopAllCharacterData_s",
+      "PKT_S2C_PopCharacterData_s",
+      "PKT_S2C_PostProcessEffect_s",
+      "PKT_S2C_RedirectOutlineUnit_s",
+      "PKT_S2C_RemoveBanner_s",
+      "PKT_S2C_RemoveBuffModifier_s",
+      "PKT_S2C_RemoveClentSideOnlyItem_s",
+      "PKT_S2C_RemoveCooldownGem_s",
+      "PKT_S2C_RemoveDamagePrediction_s",
+      "PKT_S2C_RemoveHUDCenterFrameGlow_s",
+      "PKT_S2C_RemoveHealthBarColorOverride_s",
+      "PKT_S2C_RemoveItemPreviewModifiers_s",
+      "PKT_S2C_RemoveSingleUnitClickTrigger_s",
+      "PKT_S2C_RemoveSpellModifier_s",
+      "PKT_S2C_RemoveTrophy_s",
+      "PKT_S2C_ReplicateField_s",
+      "PKT_S2C_ReplicateFields_s",
+      "PKT_S2C_RequestMouseOverObjIdUpdate_s",
+      "PKT_S2C_ResetCameraZoom_s",
+      "PKT_S2C_ResetUnitInfoBar_s",
+      "PKT_S2C_SendRecolorData_s",
+      "PKT_S2C_SetAllUnitClickTriggers_s",
+      "PKT_S2C_SetAlphaForHudPart_s",
+      "PKT_S2C_SetAlternateCircleIcon_s",
+      "PKT_S2C_SetAnimStates_s",
+      "PKT_S2C_SetAreaIndicatorEnabled_s",
+      "PKT_S2C_SetAudioLinkedAlly_s",
+      "PKT_S2C_SetBuffModifiers_s",
+      "PKT_S2C_SetCCAnimationsEnabled_s",
+      "PKT_S2C_SetCanSurrender_s",
+      "PKT_S2C_SetCharacterStateIndicatorIndex_s",
+      "PKT_S2C_SetCooldownGemCooldown_s",
+      "PKT_S2C_SetDirectedTrackingElementState_s",
+      "PKT_S2C_SetExclusiveItemGroup_s",
+      "PKT_S2C_SetFakeHeightTarget_s",
+      "PKT_S2C_SetFloatingTipElementState_s",
+      "PKT_S2C_SetFoWStatus_s",
+      "PKT_S2C_SetForceMuted_s",
+      "PKT_S2C_SetGreyscaleEnabledWhenDead_s",
+      "PKT_S2C_SetHealthBarColor_s",
+      "PKT_S2C_SetHealthBarScale_s",
+      "PKT_S2C_SetHealthThresholdValue_s",
+      "PKT_S2C_SetHoverIndicatorEnabled_s",
+      "PKT_S2C_SetHoverIndicatorTarget_s",
+      "PKT_S2C_SetIdleParticleVisibility_s",
+      "PKT_S2C_SetInventorySpellData_OwnerOnly_s",
+      "PKT_S2C_SetInventory_Broadcast_s",
+      "PKT_S2C_SetInventory_MapView_s",
+      "PKT_S2C_SetItemCharges_s",
+      "PKT_S2C_SetItemDataValueValue_s",
+      "PKT_S2C_SetItemGroupData_Broadcast_s",
+      "PKT_S2C_SetItemGroupData_MapView_s",
+      "PKT_S2C_SetItemIconOverride_s",
+      "PKT_S2C_SetItemIsSellable_s",
+      "PKT_S2C_SetItemModifiers_Broadcast_s",
+      "PKT_S2C_SetItemModifiers_MapView_s",
+      "PKT_S2C_SetItemParamValue_s",
+      "PKT_S2C_SetLaunchAreaIndicatorEnabled_s",
+      "PKT_S2C_SetLaunchAreaTargetDistance_s",
+      "PKT_S2C_SetLockForSetPieceAnimationForObjectAttacher_s",
+      "PKT_S2C_SetMinimapIconBehaviorSetKeyHash_Broadcast_s",
+      "PKT_S2C_SetMinimapIconBehaviorSetKeyHash_s",
+      "PKT_S2C_SetMinimapIconBorderOverride_s",
+      "PKT_S2C_SetMinimapIconOverride_Broadcast_s",
+      "PKT_S2C_SetMinimapIconOverride_s",
+      "PKT_S2C_SetMinimapIconSizeOverride_Broadcast_s",
+      "PKT_S2C_SetMinimapIconSizeOverride_s",
+      "PKT_S2C_SetMissileOrbit_s",
+      "PKT_S2C_SetMovementDriver_s",
+      "PKT_S2C_SetOffsetForObjectAttacher_s",
+      "PKT_S2C_SetRTPC_s",
+      "PKT_S2C_SetSecondaryCharacterData_s",
+      "PKT_S2C_SetShopActive_s",
+      "PKT_S2C_SetShopBaseItemAdvice_s",
+      "PKT_S2C_SetShopEnabled_s",
+      "PKT_S2C_SetShopScriptPurchasingEnabled_s",
+      "PKT_S2C_SetSpellLevel_s",
+      "PKT_S2C_SetSpellModifiers_s",
+      "PKT_S2C_SetSpellTimerFromBuff_s",
+      "PKT_S2C_SetSumomonerEmoteOnCooldown_s",
+      "PKT_S2C_SetSuppressCooldownUI_s",
+      "PKT_S2C_SetUndoEnabled_s",
+      "PKT_S2C_SetVisualOffset_s",
+      "PKT_S2C_SetZoomOutForAbilityAuto_s",
+      "PKT_S2C_SetZoomOutForAbility_s",
+      "PKT_S2C_ShakeCamera_s",
+      "PKT_S2C_ShopItemSubstitutionClear_Broadcast_s",
+      "PKT_S2C_ShopItemSubstitutionSet_Broadcast_s",
+      "PKT_S2C_ShowHealthBar_s",
+      "PKT_S2C_ShowInventoryPanel_s",
+      "PKT_S2C_ShowMinimapPanel_s",
+      "PKT_S2C_ShowPlayerFramePanel_s",
+      "PKT_S2C_ShowPlayerStatsPanel_s",
+      "PKT_S2C_ShowTrophy_s",
+      "PKT_S2C_SingleUnitClickTrigger_s",
+      "PKT_S2C_SpawnDelayedMissile_s",
+      "PKT_S2C_SpellTypesThatCanTargetUs_s",
+      "PKT_S2C_SpellbookOverrideCastPredictionFailed_s",
+      "PKT_S2C_SpellbookOverrideMoveToCastServerValidation_s",
+      "PKT_S2C_SpellbookOverrideResetClientOverrideState_s",
+      "PKT_S2C_StartCursorTracking_s",
+      "PKT_S2C_StartProgressBar_s",
+      "PKT_S2C_StartScreenTextureEffect_s",
+      "PKT_S2C_StartSpellTargeter_s",
+      "PKT_S2C_StatFormulaOutputs_s",
+      "PKT_S2C_StopAnimation_s",
+      "PKT_S2C_StopCursorTracking_s",
+      "PKT_S2C_StopProgressBar_s",
+      "PKT_S2C_StopScreenTextureEffect_s",
+      "PKT_S2C_StopSpellTargeter_s",
+      "PKT_S2C_SyncCircularMovementRestriction_s",
+      "PKT_S2C_SyncMovementCompleteCount_s",
+      "PKT_S2C_ToggleLevelUpTooltip_s",
+      "PKT_S2C_ToggleSubmeshVisibility_s",
+      "PKT_S2C_UnitSetAbilityResourceType_s",
+      "PKT_S2C_UnitSetCursorReticle_s",
+      "PKT_S2C_UnitSetDrawPathMode_s",
+      "PKT_S2C_UnitSetMaxLevelOverride_s",
+      "PKT_S2C_UnlockAnimation_s",
+      "PKT_S2C_UpdateAttackSpeedCapOverrides_s",
+      "PKT_S2C_UpdateAutoAttackOverrideRange_s",
+      "PKT_S2C_UpdateDeathTimer_s",
+      "PKT_S2C_UpdateDebugSpellSlotState_s",
+      "PKT_S2C_UpdateDebugState_s",
+      "PKT_S2C_UpdateJunglePathDisplayed_s",
+      "PKT_S2C_UpdateSpellNumericalDisplay_s",
+      "PKT_S2C_UpdateSpellToggleVisual_s",
+      "PKT_S2C_UpdateSpellToggle_s",
+      "PKT_S2C_UpdateStatStoneGameDelta_s",
+      "PKT_S2C_UpdateSummonerEmoteIdInSlot_s",
+      "PKT_S2C_UpdateUnitInfoBar_s",
+      "PKT_S2C_WASDCameraConfig_s",
+      "PKT_S2C_WASDInputConfig_s",
+      "PKT_S2C_WallTrackingComponentCacheData_s",
+      "PKT_SetAbilityResourceState_s",
+      "PKT_SetAlpha_s",
+      "PKT_SetCACDatas_s",
+      "PKT_SetDimensionMissile_s",
+      "PKT_SetDimensionUnit_s",
+      "PKT_SetDisguiseData_s",
+      "PKT_SetFadeOut_Pop_s",
+      "PKT_SetFadeOut_Push_Persistent_s",
+      "PKT_SetFadeOut_Push_s",
+      "PKT_SetItem_s",
+      "PKT_StealVOLine_s",
+      "PKT_StealthFlagsChanged_s",
+      "PKT_SwapItemAns_s",
+      "PKT_UnitApplyDamage_s",
+      "PKT_UnitApplyShieldDamage_s",
+      "PKT_UpdateGoldRedirectTarget_s",
+      "PKT_UpdateTurretFlags_s",
+      "PKT_Update_HeroStats_KDA_s",
+      "PKT_UseItemAns_s"
+    ]
+  },
   "_zhu_classes": [
     "CreateHero",
     "WaypointGroup",
@@ -23,11 +347,16 @@
     "SwapItem",
     "UseItem"
   ],
-  "patch": "16.9",
   "decoders": {
     "0xf6ab10": {
-      "class": "Replication",
-      "comment": "Generic Replication packet \u2014 variable per-property updates. Handles 51 entity-class-specific netids that share this decoder. Per-offset semantics depend on which property the decoder selected for this sample.",
+      "riot_class_primary": "PKT_S2C_ReplicateField_s",
+      "riot_class_candidates": [
+        "PKT_S2C_ReplicateField_s",
+        "PKT_S2C_ReplicateFields_s",
+        "PKT_MissileReplication_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "10 mixed-type fields (variable property dict \u2014 Zhu Replication)",
       "fields": {
         "0x0008": {
           "name": "property_index_or_class_id",
@@ -70,7 +399,6 @@
           "type": "u32_or_f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         21,
         33,
@@ -127,8 +455,13 @@
       "netid_count": 51
     },
     "0xfcfd30": {
-      "class": "Replication_compact",
-      "comment": "Compact replication-style packet, 7 fields including position pair.",
+      "riot_class_primary": "PKT_S2C_ReplicateField_s",
+      "riot_class_candidates": [
+        "PKT_S2C_ReplicateField_s",
+        "PKT_S2C_ReplicateFields_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "7 fields incl. position pair",
       "fields": {
         "0x0010": {
           "name": "entity_net_id",
@@ -159,7 +492,6 @@
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         76,
         132,
@@ -186,10 +518,11 @@
       "netid_count": 21
     },
     "0xdb2910": {
-      "class": "ConstructorFallback",
-      "comment": "Class constructor matched as decoder by brute-force; the decoded_fields[] are init constants (zeros), not real packet data. 18 netids wired here have NO real decoder.",
+      "riot_class_primary": "(class constructor \u2014 false-positive)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "constructor-fallback",
+      "shape": "NOT a decoder \u2014 this is a class ctor that initializes ~0x4cc bytes of an instance. The 18 netids matched here lack a real per-class decoder in our prologue+dispatch candidate set.",
       "fields": {},
-      "confidence": "hand-curated",
       "netids": [
         9,
         41,
@@ -213,8 +546,15 @@
       "netid_count": 18
     },
     "0xf9d4e0": {
-      "class": "UpdateState_complex",
-      "comment": "1068 (heartbeat/UpdateState, 46.5% blocks) plus 11 sibling netids. Complex multi-tag dispatch with mixed scalar fields.",
+      "riot_class_primary": "PKT_S2C_ReplicateFields_s",
+      "riot_class_candidates": [
+        "PKT_S2C_ReplicateFields_s",
+        "PKT_MissileReplication_s",
+        "PKT_S2C_AnimationUpdateTimeStep_s",
+        "PKT_S2C_AmmoUpdate_s"
+      ],
+      "riot_class_confidence": "frequency-hint",
+      "shape": "11 mixed scalar fields (multi-tag dispatch)",
       "fields": {
         "0x0010": {
           "name": "primary_value_or_enum",
@@ -261,7 +601,6 @@
           "type": "u8"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         27,
         168,
@@ -279,8 +618,15 @@
       "netid_count": 12
     },
     "0xfd6270": {
-      "class": "TinyEvent",
-      "comment": "2-field tiny packet (single value at 0x14 and 0x20).",
+      "riot_class_primary": "PKT_NPC_Hero_Die_s",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_LevelUp_s",
+        "PKT_NPC_LevelUp_Global_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2 fields (id + scalar)",
       "fields": {
         "0x0014": {
           "name": "primary_value",
@@ -291,7 +637,6 @@
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         100,
         128,
@@ -309,8 +654,14 @@
       "netid_count": 12
     },
     "0x1074580": {
-      "class": "AttackOrSpellCast",
-      "comment": "Position-heavy packet, 14 offsets with multiple f32 groups. Shape consistent with Zhu's BasicAttackPos or CastSpellAns (source_position, target_position, target_end_position = 6 floats + multiple IDs and scalars).",
+      "riot_class_primary": "PKT_Basic_Attack_Pos_s",
+      "riot_class_candidates": [
+        "PKT_Basic_Attack_Pos_s",
+        "PKT_NPC_CastSpellAns_s",
+        "PKT_Basic_Attack_Pos_Minion_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "14 fields w/ 3 position pairs (caster, target, target_end)",
       "fields": {
         "0x0018": {
           "name": "caster_or_source_id",
@@ -373,7 +724,6 @@
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         205,
         346,
@@ -390,8 +740,14 @@
       "netid_count": 11
     },
     "0xfcd970": {
-      "class": "ItemOrStatus_change",
-      "comment": "Mid-sized event packet. Could be BuyItem, SwapItem, or status-effect application.",
+      "riot_class_primary": "PKT_NPC_BuffAdd2_s",
+      "riot_class_candidates": [
+        "PKT_NPC_BuffAdd2_s",
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_BuyItemAns_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "8 fields, mid-sized event (buff add or item buy)",
       "fields": {
         "0x0018": {
           "name": "entity_net_id",
@@ -426,7 +782,6 @@
           "type": "f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         239,
         259,
@@ -442,8 +797,14 @@
       "netid_count": 10
     },
     "0xf9bae0": {
-      "class": "BasicAttack_or_Spawn",
-      "comment": "Multi-position packet (could be BasicAttackPos, SpawnMinion, or BarrackSpawnUnit).",
+      "riot_class_primary": "PKT_Basic_Attack_s",
+      "riot_class_candidates": [
+        "PKT_Basic_Attack_s",
+        "PKT_Basic_Attack_Minion_s",
+        "PKT_S2C_AddFollowTargetPosition_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "11 fields w/ 2 position pairs + IDs",
       "fields": {
         "0x0010": {
           "name": "source_or_caster_id",
@@ -490,7 +851,6 @@
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         104,
         392,
@@ -503,11 +863,18 @@
       "netid_count": 7
     },
     "0x10843b0": {
-      "class": "SmallEvent",
-      "comment": "Small 3-field event packet (could be SwapItem, NPCDieMapView, etc.).",
+      "riot_class_primary": "PKT_NPC_Die_MapView_s",
+      "riot_class_candidates": [
+        "PKT_NPC_Die_MapView_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_NPC_Hero_Die_s",
+        "PKT_S2C_RemoveItem_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "3-field (killer + killed + flag)",
       "fields": {
         "0x0014": {
-          "name": "entity_id_or_value",
+          "name": "primary_id",
           "type": "u32"
         },
         "0x0018": {
@@ -519,7 +886,6 @@
           "type": "u32_or_f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         65,
         506,
@@ -531,8 +897,13 @@
       "netid_count": 6
     },
     "0xeba9e0": {
-      "class": "Replication_long",
-      "comment": "Replication-style decoder with extended property dict. Wins many netids by writing to many offsets.",
+      "riot_class_primary": "PKT_S2C_ReplicateFields_s",
+      "riot_class_candidates": [
+        "PKT_S2C_ReplicateFields_s",
+        "PKT_NPC_BuffUpdateStatAdjustments_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "12 fields (extended property dict)",
       "fields": {
         "0x0010": {
           "name": "property_value_a",
@@ -555,7 +926,6 @@
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         623,
         666,
@@ -566,8 +936,13 @@
       "netid_count": 5
     },
     "0xfdb200": {
-      "class": "DoSetCooldown",
-      "comment": "Spell cooldown update. 5-field shape matches Zhu's DoSetCooldown(net_id, slot, cooldown, display_cooldown) plus an extra status flag.",
+      "riot_class_primary": "PKT_CHAR_SetCooldown_Broadcast_s",
+      "riot_class_candidates": [
+        "PKT_CHAR_SetCooldown_Broadcast_s",
+        "PKT_NPC_SetAutocast_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "5 fields (slot u8 + 3 floats + 1 entity id)",
       "fields": {
         "0x000c": {
           "name": "spell_slot",
@@ -590,7 +965,6 @@
           "type": "f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         157,
         268,
@@ -601,8 +975,14 @@
       "netid_count": 5
     },
     "0x107c470": {
-      "class": "MediumEvent",
-      "comment": "Mid-sized 7-field event packet.",
+      "riot_class_primary": "PKT_S2C_AddBuffModifier_s",
+      "riot_class_candidates": [
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_NPC_BuffUpdateCount_s",
+        "PKT_S2C_AddItemModifier_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "7 fields (modifier-style event)",
       "fields": {
         "0x0014": {
           "name": "primary_id_or_value",
@@ -633,7 +1013,6 @@
           "type": "u32_or_f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         89,
         298,
@@ -643,19 +1022,24 @@
       "netid_count": 4
     },
     "0xfaffc0": {
-      "class": "FogEvent_or_smallID",
-      "comment": "Single-entity event (EnterFog/LeaveFog/HeroDie shape).",
+      "riot_class_primary": "PKT_OnLeaveVisibilityClient_s",
+      "riot_class_candidates": [
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s",
+        "PKT_S2C_OnLeaveTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "single u32 ID + flag (Zhu EnterFog/LeaveFog pattern)",
       "fields": {
         "0x0010": {
           "name": "entity_net_id",
           "type": "u32"
         },
         "0x0014": {
-          "name": "event_subtype_or_flag",
+          "name": "visibility_flag_or_subtype",
           "type": "u32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         97,
         707,
@@ -664,8 +1048,14 @@
       "netid_count": 3
     },
     "0xfb4070": {
-      "class": "WaypointGroup_mov",
-      "comment": "Position/movement decoder. 916=mov (typed); 52,173,390 are sibling packets reusing the body.",
+      "riot_class_primary": "PKT_DirectInputMovementDriverServerTurnData_s",
+      "riot_class_candidates": [
+        "PKT_DirectInputMovementDriverServerTurnData_s",
+        "PKT_S2C_AddFollowTargetPosition_s",
+        "PKT_S2C_AddFollowTargetTeleport_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1 vector + 2 inline scalars (waypoint stream + final pos)",
       "fields": {
         "0x0010": {
           "name": "waypoint_vector_ptr",
@@ -684,7 +1074,6 @@
           "type": "f32_or_i32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         52,
         173,
@@ -693,10 +1082,13 @@
       "netid_count": 3
     },
     "0xfc2fe0": {
-      "class": "MovementSibling",
-      "comment": "3-netid mov-sized decoder; sibling of fb4070 family.",
+      "riot_class_primary": "PKT_DirectInputMovementDriverServerTurnData_s",
+      "riot_class_candidates": [
+        "PKT_DirectInputMovementDriverServerTurnData_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "mov-family decoder body (sibling of fb4070)",
       "fields": {},
-      "confidence": "hand-curated",
       "netids": [
         567,
         843,
@@ -705,8 +1097,13 @@
       "netid_count": 3
     },
     "0x10371f0": {
-      "class": "PositionEvent",
-      "comment": "Small position-style event (2 floats + scalar).",
+      "riot_class_primary": "PKT_S2C_AddFollowTargetPosition_s",
+      "riot_class_candidates": [
+        "PKT_S2C_AddFollowTargetPosition_s",
+        "PKT_S2C_AddFollowTargetTeleport_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2 floats + scalar + trailing",
       "fields": {
         "0x0008": {
           "name": "position_x",
@@ -725,7 +1122,6 @@
           "type": "u32_or_f32"
         }
       },
-      "confidence": "hand-curated",
       "netids": [
         471,
         613,
@@ -734,8 +1130,15 @@
       "netid_count": 3
     },
     "0xea9ec0": {
-      "class": "LargePacket",
-      "comment": "Large packet with 11 fields (BasicAttackPos / CastSpellAns / Replication-style).",
+      "riot_class_primary": "(position-bearing packet)",
+      "riot_class_candidates": [
+        "PKT_S2C_AddFollowTargetPosition_s",
+        "PKT_S2C_AddFollowTargetTeleport_s",
+        "PKT_Basic_Attack_Pos_Minion_s",
+        "PKT_S2C_ChangeMissileSpline_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "11-field packet w/ position pair",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -782,7 +1185,6 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         201,
         660
@@ -790,15 +1192,21 @@
       "netid_count": 2
     },
     "0xeb3b80": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         45,
         1000
@@ -806,8 +1214,15 @@
       "netid_count": 2
     },
     "0xfb9700": {
-      "class": "SmallPacket",
-      "comment": "Small packet with 4 fields.",
+      "riot_class_primary": "(small fixed packet)",
+      "riot_class_candidates": [
+        "PKT_NPC_BuffUpdateCount_s",
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_NPC_AddFakeBuff_s",
+        "PKT_BuyItemAns_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "4-field packet",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -826,7 +1241,6 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         83,
         85
@@ -834,19 +1248,25 @@
       "netid_count": 2
     },
     "0xfbc760": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
-          "type": "i32"
+          "type": "u32"
         },
         "0x0018": {
           "name": "field_at_0x18",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         357,
         358
@@ -854,10 +1274,11 @@
       "netid_count": 2
     },
     "0x1063c00": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         1004,
         1006
@@ -865,33 +1286,37 @@
       "netid_count": 2
     },
     "0x10558c0": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         684
       ],
       "netid_count": 1
     },
     "0x105d460": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
-      "fields": {
-        "0x0014": {
-          "name": "field_at_0x14",
-          "type": "i32"
-        }
-      },
-      "confidence": "auto-generated",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
+      "fields": {},
       "netids": [
         700
       ],
       "netid_count": 1
     },
     "0xfd6630": {
-      "class": "SmallPacket",
-      "comment": "Small packet with 3 fields.",
+      "riot_class_primary": "(small fixed packet)",
+      "riot_class_candidates": [
+        "PKT_NPC_BuffUpdateCount_s",
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_NPC_AddFakeBuff_s",
+        "PKT_BuyItemAns_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "3-field packet",
       "fields": {
         "0x0008": {
           "name": "field_at_0x08",
@@ -906,15 +1331,21 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1104
       ],
       "netid_count": 1
     },
     "0xeac580": {
-      "class": "SmallPacket",
-      "comment": "Small packet with 5 fields.",
+      "riot_class_primary": "(small fixed packet)",
+      "riot_class_candidates": [
+        "PKT_NPC_BuffUpdateCount_s",
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_NPC_AddFakeBuff_s",
+        "PKT_BuyItemAns_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "5-field packet",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -937,45 +1368,63 @@
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1011
       ],
       "netid_count": 1
     },
     "0x1052ec0": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1058
       ],
       "netid_count": 1
     },
     "0x103bd40": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         179
       ],
       "netid_count": 1
     },
     "0x105bb30": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
@@ -986,53 +1435,67 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         325
       ],
       "netid_count": 1
     },
     "0xfa4540": {
-      "class": "SmallPacket",
-      "comment": "Small packet with 3 fields.",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "f32"
-        },
-        "0x0014": {
-          "name": "field_at_0x14",
-          "type": "i32"
         },
         "0x0018": {
           "name": "field_at_0x18",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         335
       ],
       "netid_count": 1
     },
     "0x1050270": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         426
       ],
       "netid_count": 1
     },
     "0xfad8d0": {
-      "class": "SmallPacket",
-      "comment": "Small packet with 3 fields.",
+      "riot_class_primary": "(small fixed packet)",
+      "riot_class_candidates": [
+        "PKT_NPC_BuffUpdateCount_s",
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_NPC_AddFakeBuff_s",
+        "PKT_BuyItemAns_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "3-field packet",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -1047,60 +1510,83 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         441
       ],
       "netid_count": 1
     },
     "0x1068100": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         474
       ],
       "netid_count": 1
     },
     "0xebda70": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         642
       ],
       "netid_count": 1
     },
     "0xf9d320": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         681
       ],
       "netid_count": 1
     },
     "0xf7bca0": {
-      "class": "MediumPacket",
-      "comment": "Medium packet with 7 fields.",
+      "riot_class_primary": "(medium-large event)",
+      "riot_class_candidates": [
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_S2C_AddItemModifier_s",
+        "PKT_NPC_BuffUpdateStatAdjustments_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "7-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -1116,7 +1602,7 @@
         },
         "0x0020": {
           "name": "field_at_0x20",
-          "type": "i32"
+          "type": "u32"
         },
         "0x0024": {
           "name": "field_at_0x24",
@@ -1131,54 +1617,68 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         690
       ],
       "netid_count": 1
     },
     "0x1067d70": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         691
       ],
       "netid_count": 1
     },
     "0x1067500": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         755
       ],
       "netid_count": 1
     },
     "0xeb6850": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
-          "type": "i32"
+          "type": "u32"
         },
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         788
       ],
       "netid_count": 1
     },
     "0xec58d0": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0008": {
           "name": "field_at_0x08",
@@ -1189,30 +1689,42 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         832
       ],
       "netid_count": 1
     },
     "0xeb9320": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         834
       ],
       "netid_count": 1
     },
     "0x10731c0": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -1223,25 +1735,32 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         894
       ],
       "netid_count": 1
     },
     "0x1073e50": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         1048
       ],
       "netid_count": 1
     },
     "0x105dd70": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -1252,85 +1771,107 @@
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1115
       ],
       "netid_count": 1
     },
     "0xfd5bd0": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         1180
       ],
       "netid_count": 1
     },
     "0xfa85b0": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         448
       ],
       "netid_count": 1
     },
     "0xf87b70": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         673
       ],
       "netid_count": 1
     },
     "0x103a3b0": {
-      "class": "TagOnlyOrNoFields",
-      "comment": "No field writes captured \u2014 likely tag-only or decoder bailed.",
+      "riot_class_primary": "(no field writes captured)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "shape-match",
+      "shape": "no field writes",
       "fields": {},
-      "confidence": "auto-generated",
       "netids": [
         752
       ],
       "netid_count": 1
     },
     "0x1050b90": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         772
       ],
       "netid_count": 1
     },
     "0x104e4a0": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0014": {
           "name": "field_at_0x14",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1025
       ],
       "netid_count": 1
     },
     "0x106a140": {
-      "class": "TwoField",
-      "comment": "Two-field packet (SwapItem / RemoveItem shape).",
+      "riot_class_primary": "(small 2-field event)",
+      "riot_class_candidates": [
+        "PKT_S2C_RemoveItem_s",
+        "PKT_NPC_BuffRemove2_s",
+        "PKT_S2C_AmmoUpdate_s",
+        "PKT_S2C_SetSpellLevel_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "2-field event",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
@@ -1341,42 +1882,52 @@
           "type": "f32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1033
       ],
       "netid_count": 1
     },
     "0xfb7ce0": {
-      "class": "SingleField",
-      "comment": "Single-field packet (HeroDie / EnterFog / LeaveFog shape).",
+      "riot_class_primary": "(single-id event)",
+      "riot_class_candidates": [
+        "PKT_NPC_Hero_Die_s",
+        "PKT_NPC_Die_Broadcast_s",
+        "PKT_OnLeaveVisibilityClient_s",
+        "PKT_S2C_OnEnterTeamVisibility_s"
+      ],
+      "riot_class_confidence": "shape-match",
+      "shape": "1-field event (id-only)",
       "fields": {
         "0x0010": {
           "name": "field_at_0x10",
           "type": "u32"
         }
       },
-      "confidence": "auto-generated",
       "netids": [
         1166
       ],
       "netid_count": 1
     },
     "0xfbd8f0": {
-      "class": "Netid19_specific",
-      "comment": "Decoder for netid 19 specifically (found via indirect-init secondary vtable).",
+      "riot_class_primary": "(unidentified \u2014 netid 19 only)",
+      "riot_class_candidates": [
+        "PKT_S2C_AddBuffModifier_s",
+        "PKT_S2C_AlwaysFaceTarget_s"
+      ],
+      "riot_class_confidence": "speculative",
+      "shape": "9 fields, netid 19 only (18 blocks)",
       "fields": {},
-      "confidence": "hand-curated",
       "netids": [
         19
       ],
       "netid_count": 1
     },
     "0xe9dd20": {
-      "class": "TagOnlyStub",
-      "comment": "19-byte stub function (init returns immediately). netid 543 is tag-only \u2014 the netid IS the entire packet content.",
+      "riot_class_primary": "(tag-only stub \u2014 netid 543 has no payload to decode)",
+      "riot_class_candidates": [],
+      "riot_class_confidence": "tag-only",
+      "shape": "19-byte init stub. netid 543 is signaled by its netid alone.",
       "fields": {},
-      "confidence": "hand-curated",
       "netids": [
         543
       ],

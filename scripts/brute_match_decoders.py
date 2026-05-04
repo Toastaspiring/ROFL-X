@@ -30,16 +30,40 @@ ANALYSIS = Path(os.environ["USERPROFILE"]) / "Tools" / "analysis" / "16-9"
 PATCH_DIR = ROOT / "patch"
 REPLAYS = Path(os.environ["USERPROFILE"]) / "Documents" / "League of Legends" / "replays"
 
-# Top high-frequency netids we want to identify decoders for.
-# (netid_decimal, freq_in_replay, payload_size_signature)
+# Top high-frequency netids we want to identify decoders for. The brute
+# force is per-pair x ~1 sec, so 30 netids x 41 candidates ~= 20 min.
+# Priority order: highest replay-frequency first.
 TARGET_NETIDS = [
-    (1068, 1056617, "constant 2B (heartbeat)"),
-    (707, 124548, "constant 2-3B"),
-    (684, 117519, "constant 3B"),
-    (652, 94426, "constant 17B"),
-    (806, 93383, "constant 136B"),
-    (446, 58200, "variable 58-493B"),
-    (876, 20517, "constant 30B"),
+    (1068, 283279, "0x042c"),
+    (707,   44376, "0x02c3"),
+    (652,   35310, "0x028c"),
+    (806,   27301, "0x0326"),
+    (916,   23159, "0x0394 (mov, confirmed)"),
+    (406,   19734, "0x0196"),
+    (684,   18414, "0x02ac"),
+    (1112,  12019, "0x0458"),
+    (717,   10807, "0x02cd"),
+    (1055,  10674, "0x041f"),
+    (100,   10538, "0x0064"),
+    (132,   9230,  "0x0084"),
+    (347,   9061,  "0x015b"),
+    (438,   8332,  "0x01b6"),
+    (201,   7636,  "0x00c9"),
+    (876,   6686,  "0x036c"),
+    (828,   6550,  "0x033c"),
+    (807,   6494,  "0x0327"),
+    (89,    6348,  "0x0059"),
+    (598,   5793,  "0x0256"),
+    (446,   5500,  "0x01be"),
+    (1102,  5000,  "0x044e"),
+    (782,   4500,  "0x030e"),
+    (1117,  4000,  "0x045d"),
+    (52,    3500,  "0x0034"),
+    (124,   3200,  "0x007c"),
+    (1062,  3000,  "0x0426"),
+    (476,   2800,  "0x01dc"),
+    (1083,  2600,  "0x043b"),
+    (1061,  2400,  "0x0425"),
 ]
 
 

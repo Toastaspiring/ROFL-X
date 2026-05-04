@@ -161,6 +161,42 @@ pub fn build_output_json(
     game
 }
 
+/// Format a contiguous byte run captured at the FIRST write per offset
+/// into a JSON object that lets a downstream consumer read the value
+/// as the most likely concrete type.
+///
+/// We don't know which interpretation is right per offset (it depends
+/// on the packet class), so we surface all of them — `u32_le`, `i32_le`,
+/// `f32_le`, `u64_le` — and let the consumer pick.
+fn field_summary(offset: u16, bytes: &[u8]) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert("offset".to_string(), json!(offset));
+    out.insert(
+        "hex".to_string(),
+        json!(bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()),
+    );
+    if bytes.len() >= 4 {
+        let mut buf = [0u8; 4];
+        buf.copy_from_slice(&bytes[..4]);
+        let u = u32::from_le_bytes(buf);
+        out.insert("u32_le".to_string(), json!(u));
+        out.insert("i32_le".to_string(), json!(u as i32));
+        out.insert(
+            "f32_le".to_string(),
+            json!(f32::from_le_bytes(buf) as f64),
+        );
+    }
+    if bytes.len() >= 8 {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&bytes[..8]);
+        out.insert("u64_le".to_string(), json!(u64::from_le_bytes(buf)));
+    }
+    Value::Object(out)
+}
+
 fn metadata_to_json(header: &FileHeader, m: &Metadata) -> Value {
     let players: Vec<Value> = m
         .players
@@ -351,10 +387,74 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                         .iter()
                         .map(|b| format!("{:02x}", b))
                         .collect();
+
+                    // Pre-obfuscation field extraction.
+                    //
+                    // Riot's decoders typically write a field as a single
+                    // atomic 4-byte (or 8-byte) `mov` first — that's the
+                    // plaintext value — then run a byte-by-byte obfuscation
+                    // loop that overwrites with the encrypted form. Same for
+                    // values stored as inline constants (an `f32 const` like
+                    // -1.0 or 2.0) and for variable-length-decoded values
+                    // (a callee writes the result as one wide store).
+                    //
+                    // We split the writes into:
+                    //   - "atomic" writes (size >= 4): the function's
+                    //     intentional field stores. We keep these.
+                    //   - "byte" writes (size 1, 2): typically the
+                    //     obfuscation transform. We ignore these.
+                    //
+                    // For each offset we keep the FIRST atomic write — that's
+                    // the pre-obfuscation plaintext value of the field.
+                    let mut first_writes: BTreeMap<u16, (u8, u64)> = BTreeMap::new();
+                    for (off, sz, val) in &decoded.writes {
+                        if *sz < 4 {
+                            continue; // skip byte-level obfuscation passes
+                        }
+                        first_writes.entry(*off).or_insert((*sz, *val));
+                    }
+                    // Walk first_writes and reconstruct contiguous runs as
+                    // possible field values.
+                    let mut decoded_fields: Vec<Value> = Vec::new();
+                    let mut bytes_at_offset: BTreeMap<u16, u8> = BTreeMap::new();
+                    for (off, (sz, val)) in &first_writes {
+                        let val_le = val.to_le_bytes();
+                        for i in 0..*sz {
+                            let byte_off = off + i as u16;
+                            // Only set if not already (first write wins).
+                            bytes_at_offset.entry(byte_off).or_insert(val_le[i as usize]);
+                        }
+                    }
+                    // Group contiguous bytes into 4-byte aligned spans where
+                    // possible.
+                    let mut group_off: Option<u16> = None;
+                    let mut group_bytes: Vec<u8> = Vec::new();
+                    let offsets: Vec<u16> = bytes_at_offset.keys().copied().collect();
+                    let mut prev: Option<u16> = None;
+                    for o in &offsets {
+                        if let Some(p) = prev {
+                            if *o != p + 1 || group_bytes.len() >= 4 {
+                                if let Some(g) = group_off {
+                                    decoded_fields.push(field_summary(g, &group_bytes));
+                                }
+                                group_off = Some(*o);
+                                group_bytes.clear();
+                            }
+                        } else {
+                            group_off = Some(*o);
+                        }
+                        group_bytes.push(bytes_at_offset[o]);
+                        prev = Some(*o);
+                    }
+                    if let Some(g) = group_off {
+                        decoded_fields.push(field_summary(g, &group_bytes));
+                    }
+
                     json!({
                         "timestamp": ts,
                         "writes": writes,
                         "struct_hex": struct_hex,
+                        "decoded_fields": decoded_fields,
                     })
                 })
                 .collect();

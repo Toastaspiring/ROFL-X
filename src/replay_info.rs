@@ -325,6 +325,19 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     // the `extra_decoders` field of the output JSON for downstream
     // inspection. This is the long-term path to "every packet decoded":
     // archive entries here grow as more decoders get RE'd.
+    //
+    // Sampling strategy:
+    //   - Decode every block, but cache by payload bytes: many netids
+    //     (especially heartbeat-class) repeat the same payload thousands
+    //     of times. We emulate each unique payload once and attribute
+    //     the result to all occurrences.
+    //   - Cap samples emitted per class via env `ROFL_X_MAX_SAMPLES`
+    //     (default 0 = unlimited). Set this when building a small
+    //     summary JSON; leave unset for full event timelines.
+    let max_samples_per_class: usize = std::env::var("ROFL_X_MAX_SAMPLES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     let mut extras: BTreeMap<String, Vec<(f32, crate::emulator::unicorn::ExtraDecoded)>> =
         BTreeMap::new();
     for ed in &config.extra_decoders {
@@ -332,26 +345,48 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         if hits.is_empty() {
             continue;
         }
-        let mut entries: Vec<(f32, crate::emulator::unicorn::ExtraDecoded)> = Vec::new();
-        // Cap per-class samples so we don't blow the JSON up to gigabytes
-        // on heartbeat-class netids that fire millions of times.
-        const MAX_SAMPLES_PER_EXTRA: usize = 30;
-        for batch in hits.chunks(BATCH_SIZE).take(
-            (MAX_SAMPLES_PER_EXTRA + BATCH_SIZE - 1) / BATCH_SIZE,
-        ) {
-            let mut emu = StubEmulator::new(config.clone());
-            emu.setup()?;
-            for (timestamp, payload) in batch.iter().take(MAX_SAMPLES_PER_EXTRA - entries.len()) {
-                emu.setup_args(payload)?;
-                if let Ok(decoded) = emu.call_decrypt_extra(ed.rva_start, ed.rva_end, ed.struct_size)
-                {
-                    entries.push((*timestamp, decoded));
-                }
-                emu.reset()?;
-                if entries.len() >= MAX_SAMPLES_PER_EXTRA {
-                    break;
-                }
+        let total_hits = hits.len();
+        let limit = if max_samples_per_class == 0 {
+            total_hits
+        } else {
+            max_samples_per_class.min(total_hits)
+        };
+        let mut entries: Vec<(f32, crate::emulator::unicorn::ExtraDecoded)> =
+            Vec::with_capacity(limit);
+        // Per-class payload cache: identical payload bytes -> previously
+        // decoded result. Avoids re-emulating the same bytes thousands
+        // of times for heartbeat-class packets.
+        let mut payload_cache: HashMap<Vec<u8>, crate::emulator::unicorn::ExtraDecoded> =
+            HashMap::new();
+        let mut emu = StubEmulator::new(config.clone());
+        emu.setup()?;
+        let mut emu_calls_this_class: usize = 0;
+        for (timestamp, payload) in hits.iter() {
+            if entries.len() >= limit {
+                break;
             }
+            let decoded_clone = if let Some(cached) = payload_cache.get(payload) {
+                cached.clone()
+            } else {
+                emu.setup_args(payload)?;
+                let result = emu.call_decrypt_extra(ed.rva_start, ed.rva_end, ed.struct_size);
+                emu.reset()?;
+                emu_calls_this_class += 1;
+                // Periodically rebuild the emulator: the per-call mem
+                // hook is removed but accumulated state still grows.
+                if emu_calls_this_class % BATCH_SIZE == 0 {
+                    emu = StubEmulator::new(config.clone());
+                    emu.setup()?;
+                }
+                match result {
+                    Ok(d) => {
+                        payload_cache.insert(payload.clone(), d.clone());
+                        d
+                    }
+                    Err(_) => continue,
+                }
+            };
+            entries.push((*timestamp, decoded_clone));
         }
         let label = format!("{}_netid{}", ed.name, ed.netid);
         extras.insert(label, entries);

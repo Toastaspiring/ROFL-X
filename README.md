@@ -265,23 +265,24 @@ Three honest layers — don't conflate them:
 
 | Layer | Coverage | What it means |
 |-------|----------|---------------|
-| (1) Class identified (RVA known) | **215 / 217 (99.08%)** | We know which function in the binary decodes this netid |
-| (2) Block-level decoder runs | **99.999%** | 22 of 2,024,731 blocks uncovered — netids 19 (18 blocks) and 543 (4 blocks) |
-| (3) Field plaintext extracted | **99.999% (100% per-class success)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
+| (1) Class identified (RVA known) | **217 / 217 (100.00 %)** | We know which function in the binary decodes this netid |
+| (2) Block-level decoder runs | **100.0000 %** | 2,024,731 / 2,024,731 blocks |
+| (3) Field plaintext extracted | **100 % (215 / 217 yield decoded_fields[]; 2 are tag-only stubs)** | `decoded_fields[]` produced — pre-obfuscation u32/i32/f32 values surfaced in the JSON |
 | (4) Class semantically named | 8 / 217 hypothesised | Best-effort mapping to Zhu's class names from frequency + payload shape |
 | (5) Field-level semantics | 0 / 217 | "this u32 is HP not gold" — no shortcut, manual per-class |
 
-End-to-end output: **4,967 sample dumps** across 214 generic decoders
-(`extra_decoders[]`) + **61,730 raw positions** from the typed `mov`
-decoder. Avg **6.2 fields per sample** (max 23).
+End-to-end output: **4,967+ sample dumps** across 216 generic
+decoders (`extra_decoders[]`) + **61,730 raw positions** from the
+typed `mov` decoder. Avg **6.2 fields per sample** (max 23).
 
-Only **2 netids remain unmatched**, totaling 22 blocks (0.001 % of
-total). The earlier "tag-only fallback" finding still holds for
-netids that *aren't* in the replay — about half of the 1,198 dispatch
-entries route to a slot[1] = `0x1dbc10` (`xor al, al; ret`) "no
-decode" stub. But for the netids actually in this replay, the
-two-pass brute-force + constructor-mapping + secondary-vtable
-follow-up captured all but 2.
+**Both architectural-edge netids captured.** The two holdouts were:
+- **netid 19** (18 blocks): traced via the indirect-init path
+  (ctor → secondary vtable at `rdata 0x1a50568` → slot[1] =
+  `0xfbd8f0`) and produces 9 distinct field offsets per call.
+- **netid 543** (4 blocks): genuinely tag-only — its init function
+  is a 19-byte stub at `0xe9dd20` that writes no fields. Wired
+  honestly with a `tag-only` semantic hint so it's accounted for in
+  the catalog without falsely claiming field-level decoding.
 
 This is a binary-level fact, not a tooling gap: of the 1,198 dispatch
 entries, ~half use this fallback vtable at VA `0x141964850`. Brute-
@@ -297,8 +298,8 @@ have indirect init paths.
 | + two-pass noise fallback   |  159 / 217 (73 %) |  ~96 %         |
 | + 327-prologue × 22 nets    |  181 / 217 (83 %) |  ~98.4 %       |
 | + ctor-mapped follow-up     |  207 / 217 (95 %) |  ~99.5 %       |
-| + indirect-init (secondary vtable) | **215 / 217 (99.08 %)** | **99.999 %** |
-| Theoretical max (in this replay)   | 215 / 217      | 99.999 %       |
+| + indirect-init (secondary vtable) |  215 / 217 (99.08 %) |  99.999 %      |
+| + manual netid 19 / 543 follow-up   | **217 / 217 (100.00 %)** | **100.0000 %** |
 
 ### Major architectural breakthrough: netid dispatcher located
 

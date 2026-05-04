@@ -29,9 +29,23 @@ PATCH_PATH = ROOT / "patch" / "16-9.patch"
 RESULTS_PATH = ANALYSIS / "brute_match_results.json"
 BINARY_PATH = ANALYSIS / "league_16-9.exe"
 
-MIN_GAP = 2          # winner must lead runner-up by at least this many writes
-NOISE_THRESHOLD = 3  # an RVA that wins for >= N netids is "noisy"
-MIN_WRITES = 3       # winner must produce at least this many distinct offsets
+MIN_GAP = 2                             # winner must lead runner-up by this many writes (loose)
+NOISE_THRESHOLD = int(os.environ.get("NOISE_THRESHOLD", "8"))  # wins-as-top across >= N netids = "noisy"
+MIN_WRITES = 3                          # winner must produce >= N distinct offsets
+# Tightened heuristic (per README "Tighten the noise filter" TODO):
+# real per-class decoders write to a moderate number of offsets — not
+# heartbeat-style 1-2 (those won't even pass MIN_WRITES) and not the
+# 50+-write loud helpers. Only enforced when STRICT_NOISE is true.
+#
+# NOTE on NOISE_THRESHOLD: setting it too low (e.g. 3) discards real
+# specialized decoders whose own packet shape happens to also parse
+# cleanly for related netids (Replication-family base decoders win
+# for 5-10 netids legitimately). Default raised to 8 so only obvious
+# shared loud-deserializers (eba9e0=69, f8f840=24, fd6270=12,
+# fcfd30=11, f6ab10=11, f9d4e0=10) are filtered.
+STRICT_NOISE = os.environ.get("STRICT_NOISE", "1") != "0"
+STRICT_GAP = int(os.environ.get("STRICT_GAP", "3"))
+STRICT_MAX_WRITES = int(os.environ.get("STRICT_MAX_WRITES", "30"))
 
 
 def load_pdata_sizes(binary_path: Path) -> dict[int, int]:
@@ -81,31 +95,73 @@ def main() -> int:
     print(f"noisy RVAs (winning >= {NOISE_THRESHOLD} netids): {sorted(noisy)}")
     print()
 
-    # Pick best non-noisy match per netid with gap filter
+    # Pick best match per netid using a two-pass strategy:
+    #  Pass 1: ignore "noisy" RVAs (top winners across many netids that
+    #          mostly produce >>30 offsets — true shared deserializers).
+    #  Pass 2: if no clean candidate found, fall back to noisy candidates
+    #          IF their offset count is in the reasonable [3, 30] range
+    #          (typical specialized decoder shape). This catches
+    #          legitimate "shared per-family" decoders like f9d4e0 that
+    #          handle many Replication-style netids correctly.
     confirmed: list[tuple[int, str, int, int, int]] = []  # (netid, rva, writes, gap, size)
+    skipped: dict[str, int] = {"noisy": 0, "min_writes": 0, "gap": 0, "size": 0, "loud": 0, "no_hits": 0}
+    REASONABLE_RANGE = (MIN_WRITES, STRICT_MAX_WRITES)
     for netid_s, hits in brute["results"].items():
         netid = int(netid_s)
-        # Filter out noisy RVAs from the candidate list
-        clean = [h for h in hits if h["rva"] not in noisy]
-        if not clean:
+        if not hits:
+            skipped["no_hits"] += 1
             continue
-        top = clean[0]
-        runner_up = clean[1] if len(clean) > 1 else None
-        gap = top["distinct_offsets"] - (runner_up["distinct_offsets"] if runner_up else 0)
-        if top["distinct_offsets"] < MIN_WRITES:
-            continue
-        if gap < MIN_GAP:
-            continue
-        rva_int = int(top["rva"], 16)
-        size = fn_size.get(rva_int, 0)
-        if size == 0:
-            continue
-        confirmed.append((netid, top["rva"], top["distinct_offsets"], gap, size))
+        # Two passes: prefer non-noisy, fall back to noisy-but-reasonable
+        for pass_num in (1, 2):
+            if pass_num == 1:
+                candidates = [h for h in hits if h["rva"] not in noisy]
+            else:
+                # Pass 2: include all hits, but require offset in reasonable range
+                candidates = [
+                    h for h in hits
+                    if REASONABLE_RANGE[0] <= h["distinct_offsets"] <= REASONABLE_RANGE[1]
+                ]
+            if not candidates:
+                continue
+            top = candidates[0]
+            runner_up = candidates[1] if len(candidates) > 1 else None
+            gap = top["distinct_offsets"] - (runner_up["distinct_offsets"] if runner_up else 0)
+            if top["distinct_offsets"] < MIN_WRITES:
+                if pass_num == 2:
+                    skipped["min_writes"] += 1
+                continue
+            if STRICT_NOISE:
+                if top["distinct_offsets"] > STRICT_MAX_WRITES:
+                    if pass_num == 2:
+                        skipped["loud"] += 1
+                    continue
+                if gap < STRICT_GAP:
+                    if pass_num == 2:
+                        skipped["gap"] += 1
+                    continue
+            else:
+                if gap < MIN_GAP:
+                    if pass_num == 2:
+                        skipped["gap"] += 1
+                    continue
+            rva_int = int(top["rva"], 16)
+            size = fn_size.get(rva_int, 0)
+            if size == 0:
+                if pass_num == 2:
+                    skipped["size"] += 1
+                continue
+            confirmed.append((netid, top["rva"], top["distinct_offsets"], gap, size))
+            break  # done with this netid
+        else:
+            # No pass succeeded
+            skipped["noisy"] += 1
 
     print(f"=== {len(confirmed)} confidently matched netids ===")
     print(f'{"netid":>6}  {"decoder":>10}  {"writes":>6}  {"gap":>4}  {"size":>5}')
     for netid, rva, writes, gap, size in sorted(confirmed):
         print(f"{netid:>6}  {rva:>10}  {writes:>6}  {gap:>4}  {size:>5}")
+    print()
+    print(f"skipped breakdown: {skipped}")
     print()
 
     # Update patch

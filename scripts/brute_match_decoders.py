@@ -28,7 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ROFL_X = ROOT / "target" / "release" / "rofl-x.exe"
 ANALYSIS = Path(os.environ["USERPROFILE"]) / "Tools" / "analysis" / "16-9"
 PATCH_DIR = ROOT / "patch"
-REPLAYS = Path(os.environ["USERPROFILE"]) / "Documents" / "League of Legends" / "replays"
+# Replays directory: Riot uses "Replays" (capital R) on Windows but lowercase
+# elsewhere; check both.
+_REPLAY_BASE = Path(os.environ["USERPROFILE"]) / "Documents" / "League of Legends"
+REPLAYS = _REPLAY_BASE / "Replays" if (_REPLAY_BASE / "Replays").exists() else _REPLAY_BASE / "replays"
 
 # Top high-frequency netids we want to identify decoders for. The brute
 # force is per-pair x ~1 sec, so 30 netids x 41 candidates ~= 20 min.
@@ -304,10 +307,12 @@ def main() -> int:
     candidates = load_high_confidence()
     print(f"loaded {len(candidates)} high-confidence candidates")
 
-    # Pick the largest 16.9 replay
-    rofls = sorted(REPLAYS.glob("EUW1-7841*.rofl"), key=lambda p: p.stat().st_size, reverse=True)
+    # Pick the largest 16.9 replay. Older runs hard-coded EUW1-7841* (the
+    # specific replay used during initial RE); for portability we just take
+    # the largest .rofl in the Replays dir.
+    rofls = sorted(REPLAYS.glob("*.rofl"), key=lambda p: p.stat().st_size, reverse=True)
     if not rofls:
-        print("no 16.9 replays found")
+        print(f"no replays found in {REPLAYS}")
         return 1
     replay = rofls[0]
     print(f"using replay: {replay.name}")

@@ -1,0 +1,61 @@
+{
+  "_comment": "Per-netid semantic field naming map. Maps offsets in the decoder's output struct to human-readable field names + type hints. Refined per class as Ghidra-decompiled C is reviewed.",
+  "_source": "Hypothesised from frequency + payload size + decoded-fields shape; cross-referenced with Henry Zhu's S12 packet schema (CREDITS.md).",
+  "16.9": {
+    "1068": {
+      "class": "UpdateState_or_LeaveFog",
+      "comment": "46.5% of blocks; constant 2B payload; single 4B output. Heartbeat-class.",
+      "fields": {
+        "0x0010": {"name": "state_or_visibility_flag", "type": "u32"}
+      }
+    },
+    "916": {
+      "class": "WaypointGroup_mov_decrypt",
+      "comment": "Variable 18-352B payload. Inline final position + waypoint vector.",
+      "fields": {
+        "0x0010": {"name": "waypoint_vector_ptr", "type": "u64"},
+        "0x0018": {"name": "waypoint_vector_size", "type": "u32"},
+        "0x0020": {"name": "final_x", "type": "f32"},
+        "0x0024": {"name": "final_y", "type": "f32"}
+      }
+    },
+    "707": {
+      "class": "EnterFog_or_visibility",
+      "comment": "5.5%; 2-3B fixed payload; small visibility event.",
+      "fields": {
+        "0x0010": {"name": "entity_id_or_flag", "type": "u32"}
+      }
+    },
+    "684": {
+      "class": "DoSetCooldown_candidate",
+      "comment": "5.2%; 3B payload; 1B at 0x8 (slot?) + 4B at 0xc (cooldown_ms?).",
+      "fields": {
+        "0x0008": {"name": "spell_slot", "type": "u8"},
+        "0x000c": {"name": "cooldown_ms", "type": "u32"}
+      }
+    },
+    "652": {
+      "class": "Replication_short",
+      "comment": "4.2%; 17B fixed payload; multi-property update with -1/0/1/2 enum values.",
+      "fields": {
+        "0x0010": {"name": "property_id", "type": "u32"},
+        "0x0014": {"name": "property_value", "type": "i32"}
+      }
+    },
+    "806": {
+      "class": "BuffAdd_or_Replication_long",
+      "comment": "4.1%; 136B payload; large struct (status effect or many-property packet).",
+      "fields": {}
+    },
+    "446": {
+      "class": "Replication_variable",
+      "comment": "2.6%; variable 58-493B = property dict. Henry Zhu's S12 Replication = 15.8%.",
+      "fields": {}
+    },
+    "876": {
+      "class": "CastSpellAns_candidate",
+      "comment": "0.9%; 30B fixed payload; cast metadata (caster, spell, targets).",
+      "fields": {}
+    }
+  }
+}

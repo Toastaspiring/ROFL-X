@@ -406,12 +406,20 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                     //
                     // For each offset we keep the FIRST atomic write — that's
                     // the pre-obfuscation plaintext value of the field.
+                    // Track the LAST atomic write per offset, with size >= 4.
+                    // For a constant-only branch this is identical to the
+                    // first write. For variable-length-decoded fields, the
+                    // initial constant gets overwritten by the variable
+                    // value (often by a callee writing a wide store), so
+                    // last-write captures the actually-decoded payload.
+                    // Byte-level transforms (size 1) are excluded because
+                    // they're the obfuscation pass.
                     let mut first_writes: BTreeMap<u16, (u8, u64)> = BTreeMap::new();
                     for (off, sz, val) in &decoded.writes {
                         if *sz < 4 {
-                            continue; // skip byte-level obfuscation passes
+                            continue;
                         }
-                        first_writes.entry(*off).or_insert((*sz, *val));
+                        first_writes.insert(*off, (*sz, *val));
                     }
                     // Walk first_writes and reconstruct contiguous runs as
                     // possible field values.

@@ -474,7 +474,7 @@ fn trace_decoder(
     // produced which values, most-common byte-size.
     let mut offset_writes: HashMap<u16, Vec<(u8, u64)>> = HashMap::new();
 
-    for (i, (ts, payload)) in to_trace.iter().enumerate() {
+    for (i, (ts, payload, _param)) in to_trace.iter().enumerate() {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
         emu.setup_args(payload)?;

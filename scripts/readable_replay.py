@@ -318,6 +318,63 @@ def main() -> int:
             top_str = ", ".join(f"{t}={n}" for t, n in top)
             f.write(f"  {m:>4}  {per_min_total[m]:>7}  {top_str}\n")
 
+        # Per-entity event counts. The block-level entity_id wired in
+        # by replay_info.rs (the framing-header `param` field) lets us
+        # attribute each replication / cooldown / death / etc. to a
+        # specific game entity. Players resolve to champion names; the
+        # rest stay as raw 0x... ids (and could be heroes' minions,
+        # towers, jungle monsters, summons, ...).
+        f.write(f"\n--- Per-entity event counts ---\n")
+        per_entity = defaultdict(lambda: defaultdict(int))
+        for e in deduped:
+            eid = e.get("entity_id")
+            if not eid:
+                continue
+            per_entity[eid][e.get("type", "?")] += e.get("repeat_count", 1)
+        # Player rows first (registry order), then top-N other entities.
+        f.write(f"  Players:\n")
+        for eid, info in entities.items():
+            counts = per_entity.get(eid, {})
+            total = sum(counts.values())
+            top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+            top_str = ", ".join(f"{t}={n}" for t, n in top) or "(no events)"
+            f.write(
+                f"    {eid}  {info.get('champion','?'):14s} {total:>7,}  {top_str}\n"
+            )
+        # Top non-player entities by event count, filtered to entity-id-
+        # shaped values (>= 0x40000000). The block-level `param` doesn't
+        # mean "entity id" for every netid — for some packet classes it's
+        # a spell or buff id (small integer). Riot's runtime entity ids
+        # all live above 0x40000000, so that's a reliable filter.
+        non_player_real = [(eid, sum(c.values())) for eid, c in per_entity.items()
+                           if eid not in entities
+                           and isinstance(eid, str) and eid.startswith("0x")
+                           and len(eid) >= 6]  # 0x40000000+ has 8 hex digits
+        # Drop small-int "param" values that aren't real entity ids.
+        non_player_real = [(eid, t) for (eid, t) in non_player_real
+                           if int(eid, 16) >= 0x40000000]
+        non_player_real.sort(key=lambda kv: -kv[1])
+        f.write(f"  Other entities (top 15 of {len(non_player_real):,} real entity ids):\n")
+        for eid, total in non_player_real[:15]:
+            counts = per_entity[eid]
+            top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+            top_str = ", ".join(f"{t}={n}" for t, n in top)
+            f.write(f"    {eid:14s}  {total:>7,}  {top_str}\n")
+        # Also surface non-entity params: those are valid for packet
+        # classes where `param` carries a different field (spell id, buff
+        # id, ...). Worth knowing about but not counted as entities.
+        non_player_other = [(eid, sum(c.values())) for eid, c in per_entity.items()
+                            if eid not in entities
+                            and (not isinstance(eid, str)
+                                 or not eid.startswith("0x")
+                                 or int(eid, 16) < 0x40000000)]
+        if non_player_other:
+            non_player_other.sort(key=lambda kv: -kv[1])
+            f.write(
+                f"  Note: {len(non_player_other):,} non-entity param values "
+                f"(small ints — likely spell/buff ids for some packet classes)\n"
+            )
+
         # Movement summary per player
         f.write(f"\n--- Movement summary ---\n")
         # Note: Movement events from raw_positions[] don't have entity_id

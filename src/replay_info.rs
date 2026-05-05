@@ -23,9 +23,15 @@ use crate::rofl::metadata::{Metadata, Role, Team};
 use crate::rofl::stream::StreamTag;
 use crate::rofl::Replay;
 
-/// Pair of `(timestamp, payload)` pulled from every block with a given
-/// `packet_id` in the game-chunk stream.
-type BlockHits = Vec<(f32, Vec<u8>)>;
+/// Triple of `(timestamp, payload, param)` pulled from every block with
+/// a given `packet_id` in the game-chunk stream. `param` is the block-
+/// level u32 carried alongside the encrypted payload — empirically it
+/// holds the **target entity id** for entity-bound packets (e.g. for
+/// the heartbeat netid 1068 we see 6,650 distinct param values in the
+/// player_id_start range, one per live entity). For some netids it's
+/// always 0 (e.g. mov_decrypt, which carries no entity binding at the
+/// block level).
+type BlockHits = Vec<(f32, Vec<u8>, u32)>;
 
 /// Walk all game-chunk stream chunks, decompress, split into blocks, and
 /// collect every block whose `packet_id` matches the target netid.
@@ -40,7 +46,7 @@ pub fn blocks_with_netid(replay: &Replay<'_>, netid: u16) -> Result<BlockHits> {
         for block in BlockIterator::new(&body) {
             let block = block?;
             if block.packet_id == netid {
-                hits.push((block.timestamp, block.payload.to_vec()));
+                hits.push((block.timestamp, block.payload.to_vec(), block.param));
             }
         }
     }
@@ -289,7 +295,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     for batch in ward_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload) in batch {
+        for (timestamp, payload, _param) in batch {
             emu.setup_args(payload)?;
             if let Ok(p) = emu.call_decrypt_ward_spawn_packet(
                 config.ward_spawn_decrypt.rva,
@@ -306,7 +312,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     for batch in path_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload) in batch {
+        for (timestamp, payload, _param) in batch {
             emu.setup_args(payload)?;
             if let Ok(p) = emu.call_decrypt_pos_packet(
                 config.mov_decrypt.rva,
@@ -338,7 +344,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let mut extras: BTreeMap<String, Vec<(f32, crate::emulator::unicorn::ExtraDecoded)>> =
+    let mut extras: BTreeMap<String, Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)>> =
         BTreeMap::new();
     for ed in &config.extra_decoders {
         let hits = blocks_with_netid(replay, ed.netid as u16)?;
@@ -351,17 +357,19 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         } else {
             max_samples_per_class.min(total_hits)
         };
-        let mut entries: Vec<(f32, crate::emulator::unicorn::ExtraDecoded)> =
+        let mut entries: Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)> =
             Vec::with_capacity(limit);
         // Per-class payload cache: identical payload bytes -> previously
         // decoded result. Avoids re-emulating the same bytes thousands
-        // of times for heartbeat-class packets.
+        // of times for heartbeat-class packets. The `param` (entity_id)
+        // is per-block so we don't cache it — only the decoded struct
+        // depends on payload bytes.
         let mut payload_cache: HashMap<Vec<u8>, crate::emulator::unicorn::ExtraDecoded> =
             HashMap::new();
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
         let mut emu_calls_this_class: usize = 0;
-        for (timestamp, payload) in hits.iter() {
+        for (timestamp, payload, param) in hits.iter() {
             if entries.len() >= limit {
                 break;
             }
@@ -386,7 +394,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                     Err(_) => continue,
                 }
             };
-            entries.push((*timestamp, decoded_clone));
+            entries.push((*timestamp, *param, decoded_clone));
         }
         let label = format!("{}_netid{}", ed.name, ed.netid);
         extras.insert(label, entries);
@@ -411,7 +419,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         for (label, entries) in extras {
             let arr: Vec<Value> = entries
                 .iter()
-                .map(|(ts, decoded)| {
+                .map(|(ts, param, decoded)| {
                     let writes: Vec<Value> = decoded
                         .writes
                         .iter()
@@ -518,8 +526,18 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                         "rcx": decoded.final_regs.rcx,
                     });
 
+                    // Block-level entity id from the framing header. For
+                    // many netids `param` is the receiving entity (verified
+                    // empirically: e.g. netid 0x42c sees 6650 distinct
+                    // values, all in the player_id_start range — heartbeat
+                    // for 6650 game entities). Surface it raw alongside an
+                    // 0x-prefixed hex string for human readers. Consumers
+                    // that need to correlate by entity should prefer this
+                    // over heuristic field-name matching.
                     json!({
                         "timestamp": ts,
+                        "entity_id": *param,
+                        "entity_id_hex": format!("0x{:x}", param),
                         "writes": writes,
                         "struct_hex": struct_hex,
                         "decoded_fields": decoded_fields,

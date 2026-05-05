@@ -11,8 +11,13 @@ use crate::replay_info::blocks_with_netid;
 use crate::Replay;
 
 /// One extracted payload, with the timestamp from its enclosing block.
+///
+/// `entity_id` is the block's `param` field, which for many netids carries
+/// the receiving entity id (verified empirically on heartbeat/replication
+/// netids). Handler tests can use it to anchor fixture-driven correlations.
 pub struct Fixture {
     pub timestamp: f32,
+    pub entity_id: u32,
     pub payload: Vec<u8>,
 }
 
@@ -26,7 +31,11 @@ pub fn collect(replay: &Replay<'_>, netid: u16, count: usize) -> Result<Vec<Fixt
     Ok(hits
         .into_iter()
         .take(count)
-        .map(|(timestamp, payload)| Fixture { timestamp, payload })
+        .map(|(timestamp, payload, entity_id)| Fixture {
+            timestamp,
+            entity_id,
+            payload,
+        })
         .collect())
 }
 
@@ -60,6 +69,8 @@ pub fn write_fixtures(
         "fixtures": fixtures.iter().enumerate().map(|(i, f)| json!({
             "file": format!("{name}_{i}.bin"),
             "timestamp_seconds": f.timestamp,
+            "entity_id": f.entity_id,
+            "entity_id_hex": format!("0x{:x}", f.entity_id),
             "size_bytes": f.payload.len(),
         })).collect::<Vec<_>>(),
     });

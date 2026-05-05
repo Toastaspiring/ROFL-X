@@ -175,7 +175,15 @@ def main() -> int:
             ts = s.get("timestamp")
             decoded = s.get("decoded_fields", []) or []
             named_fields = {}
-            entity_id = None
+            # Prefer the block-level entity_id (the framing-header `param`
+            # field, which empirically carries the receiving entity for
+            # most netids — including the high-volume heartbeat/replication
+            # streams). Fall back to heuristic name-matching only when the
+            # block didn't supply one.
+            block_eid = s.get("entity_id")
+            entity_id = (
+                f"0x{block_eid:x}" if isinstance(block_eid, int) and block_eid != 0 else None
+            )
             for f in decoded:
                 off = f.get("offset")
                 off_hex = f"0x{off:04x}" if isinstance(off, int) else off

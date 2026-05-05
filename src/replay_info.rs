@@ -493,11 +493,38 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                         decoded_fields.push(field_summary(g, &group_bytes));
                     }
 
+                    // Heap-side writes (helper accumulators, alloc'd
+                    // buffer contents). Filtered down to the most
+                    // recent write per offset so the per-sample log
+                    // doesn't balloon. These are the "values that the
+                    // helper wrote into a scratch buffer" — useful when
+                    // the helper returns a pointer instead of writing
+                    // into the struct.
+                    let mut last_heap_write: BTreeMap<u32, (u8, u64)> = BTreeMap::new();
+                    for (off, sz, val) in &decoded.heap_writes {
+                        last_heap_write.insert(*off, (*sz, *val));
+                    }
+                    let heap_summary: Vec<Value> = last_heap_write
+                        .iter()
+                        .map(|(off, (sz, val))| json!([*off, *sz, *val]))
+                        .collect();
+
+                    // Register state at decoder return. The helper's
+                    // return value lives in RAX; for some packet
+                    // classes the only place the decoded value lands.
+                    let regs = json!({
+                        "rax": decoded.final_regs.rax,
+                        "rdx": decoded.final_regs.rdx,
+                        "rcx": decoded.final_regs.rcx,
+                    });
+
                     json!({
                         "timestamp": ts,
                         "writes": writes,
                         "struct_hex": struct_hex,
                         "decoded_fields": decoded_fields,
+                        "heap_writes": heap_summary,
+                        "final_regs": regs,
                     })
                 })
                 .collect();

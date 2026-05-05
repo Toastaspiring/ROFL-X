@@ -96,6 +96,63 @@ def fields_signal_score(fields):
     return score
 
 
+def build_variance_index(events):
+    """For each (netid, field_name), count how many distinct values
+    appear across all events of that netid. A high count means the field
+    carries per-packet data (interesting); a count of 1 means the field
+    is structural / sentinel (uninteresting).
+
+    Returns: {(netid, field_name): variance_score} where variance_score
+    is the number of distinct values seen.
+    """
+    seen: dict[tuple[int, str], set] = {}
+    for e in events:
+        netid = e.get("netid")
+        if netid is None:
+            continue
+        fields = e.get("fields") or {}
+        for k, v in fields.items():
+            key = (netid, k)
+            seen.setdefault(key, set())
+            # Hashable representation
+            if isinstance(v, dict):
+                rep = (v.get("u32"), v.get("f32"))
+            else:
+                rep = v
+            try:
+                seen[key].add(rep)
+            except TypeError:
+                # unhashable — bucket as a single "complex" value
+                seen[key].add("__nonhashable__")
+        # Also bucket return_value variance — it's per-packet too.
+        rv = e.get("return_value")
+        if rv is not None:
+            key = (netid, "__return_value__")
+            seen.setdefault(key, set())
+            try:
+                seen[key].add(rv)
+            except TypeError:
+                pass
+    return {k: len(s) for k, s in seen.items()}
+
+
+def variance_signal_score(event, variance_index):
+    """Score using variance — a field is 'interesting' if it varies
+    across the netid's other samples, regardless of value. Falls back
+    to is_default_value heuristic if we have no variance data."""
+    netid = event.get("netid")
+    if netid is None:
+        return fields_signal_score(event.get("fields") or {})
+    score = 0
+    for k, v in (event.get("fields") or {}).items():
+        if variance_index.get((netid, k), 0) >= 2 and not is_default_value(v):
+            score += 1
+    # Variable return value is a strong signal too
+    if variance_index.get((netid, "__return_value__"), 0) >= 5:
+        score += 1
+    return score
+
+
 def event_to_text(e, entities):
     """One-line text rendering of an event."""
     t = fmt_t(e.get("t", 0))
@@ -169,11 +226,23 @@ def main() -> int:
     entities = timeline.get("entities", {})
     metadata = timeline.get("metadata", {})
 
-    # Filter: drop events with all-default fields (unless --keep-all)
+    # Build the variance index BEFORE filtering — we need to see the
+    # full set of values per (netid, field) to know which fields carry
+    # per-packet signal.
+    variance_index = build_variance_index(events)
+    print(f"variance: indexed {len(variance_index)} (netid, field) keys")
+    high_variance_fields = sum(1 for v in variance_index.values() if v >= 5)
+    print(f"  {high_variance_fields} fields have >= 5 distinct values per netid (high signal)")
+
+    # Filter: drop events whose fields are all structural-constant /
+    # sentinel-default. Variance-aware: if the field varies across
+    # other samples of the same netid, treat as interesting regardless
+    # of value (was previously discarded by value-heuristic alone).
     if not args.keep_all:
         before = len(events)
         events = [e for e in events
                   if e.get("type") in ("Movement",)
+                     or variance_signal_score(e, variance_index) > 0
                      or fields_signal_score(e.get("fields") or {}) > 0]
         print(f"filtered: kept {len(events)} of {before} ({len(events)/before*100:.1f}%)")
 

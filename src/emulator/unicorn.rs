@@ -37,6 +37,36 @@ pub struct ExtraDecoded {
     /// Final struct bytes after the decoder returned, capped at
     /// `extra_decoder.struct_size`.
     pub struct_bytes: Vec<u8>,
+    /// `(heap_offset_from_HEAP_BASE, write_size_bytes, value)` for every
+    /// 4-or-8-byte write into the emulator heap that DID NOT land inside
+    /// the packet struct.
+    ///
+    /// This is the helper-side capture path. Variable-length decoder
+    /// helpers (`f41410`, `f35050`, `f3aef0`, ...) sometimes accumulate
+    /// their result in scratch heap memory before doing a final move
+    /// into the packet struct, AND the alloc1 stub (vector resize)
+    /// stores its bump-pointer + size at the packet field that points
+    /// at the actual decoded buffer. Capturing those writes lets the
+    /// post-processor pull the real decoded value out even when the
+    /// packet-struct hook would have missed it.
+    pub heap_writes: Vec<(u32, u8, u64)>,
+    /// CPU register state at the moment the decoder returned (or the
+    /// emulator stopped). Useful for catching values that the helper
+    /// returned via `RAX` instead of writing into the output struct
+    /// (some packet classes route the decoded payload through the
+    /// return value of an inner helper).
+    pub final_regs: ExtraRegs,
+}
+
+/// Snapshot of the CPU registers at decoder exit. Only the registers
+/// that historically carry decoded values (RAX, RDX, RCX) plus the
+/// stack pointer for sanity.
+#[derive(Debug, Clone, Default)]
+pub struct ExtraRegs {
+    pub rax: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub rsp: u64,
 }
 
 /// Wraps a Unicorn VM configured to run the game client's own decrypt
@@ -420,20 +450,41 @@ impl<'a> StubEmulator<'a> {
 
         let writes_log: Arc<Mutex<Vec<(u16, u8, u64)>>> = Arc::new(Mutex::new(Vec::new()));
         let writes_log_clone = Arc::clone(&writes_log);
+        let heap_log: Arc<Mutex<Vec<(u32, u8, u64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let heap_log_clone = Arc::clone(&heap_log);
         let packet_addr = self.packet_addr;
         let cap = struct_size.min(self.packet_size as u64);
+        let struct_lo = packet_addr;
+        let struct_hi = packet_addr + cap;
+        let heap_lo = Self::HEAP_BASE;
+        let heap_hi = Self::HEAP_BASE + Self::HEAP_SIZE as u64;
+
         let hook_id = self
             .uc
             .add_mem_hook(
                 HookType::MEM_WRITE,
-                packet_addr,
-                packet_addr + cap,
+                heap_lo,
+                heap_hi,
                 move |_uc, _type, addr, size, value| {
-                    let offset = (addr - packet_addr) as u16;
-                    writes_log_clone
-                        .lock()
-                        .unwrap()
-                        .push((offset, size as u8, value as u64));
+                    if struct_lo <= addr && addr < struct_hi {
+                        // Inside the output struct — record under writes[].
+                        let offset = (addr - struct_lo) as u16;
+                        writes_log_clone
+                            .lock()
+                            .unwrap()
+                            .push((offset, size as u8, value as u64));
+                    } else if size >= 4 {
+                        // Heap-side helper write (variable-length decoder
+                        // accumulators, alloc1 stubs writing buffer ptrs,
+                        // etc.). Only keep wide stores — byte-level
+                        // obfuscation passes are noise here and would
+                        // explode the log.
+                        let offset = (addr - heap_lo) as u32;
+                        heap_log_clone
+                            .lock()
+                            .unwrap()
+                            .push((offset, size as u8, value as u64));
+                    }
                     true
                 },
             )
@@ -445,6 +496,16 @@ impl<'a> StubEmulator<'a> {
             0,
             0,
         );
+
+        // Snapshot the register state BEFORE removing the hook, while the
+        // emulator is still in its post-call state. Used to catch values
+        // returned via RAX that never landed in the output struct.
+        let final_regs = ExtraRegs {
+            rax: self.uc.reg_read(RegisterX86::RAX).unwrap_or(0),
+            rdx: self.uc.reg_read(RegisterX86::RDX).unwrap_or(0),
+            rcx: self.uc.reg_read(RegisterX86::RCX).unwrap_or(0),
+            rsp: self.uc.reg_read(RegisterX86::RSP).unwrap_or(0),
+        };
 
         // Remove the hook so successive calls on the same emulator don't
         // accumulate dead hooks. Each batch processes ~100 samples; without
@@ -458,9 +519,12 @@ impl<'a> StubEmulator<'a> {
             .map_err(|e| uc_runtime_err("extra struct snapshot", e))?;
 
         let writes = writes_log.lock().unwrap().clone();
+        let heap_writes = heap_log.lock().unwrap().clone();
         Ok(ExtraDecoded {
             writes,
             struct_bytes,
+            heap_writes,
+            final_regs,
         })
     }
 

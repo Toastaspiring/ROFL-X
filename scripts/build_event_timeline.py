@@ -209,6 +209,15 @@ def main() -> int:
                 "riot_confidence": confidence,
                 "fields": named_fields,
             }
+            # Surface the helper's return value (RAX at decoder exit). For
+            # several packet classes the actual decoded payload comes back
+            # in RAX rather than landing in the output struct, so capturing
+            # it here keeps that signal accessible to consumers without
+            # them having to dig back into the per-sample raw output.
+            regs = s.get("final_regs") or {}
+            rax = regs.get("rax")
+            if rax is not None:
+                ev["return_value"] = rax
             if riot_candidates and len(riot_candidates) > 1:
                 ev["riot_candidates"] = riot_candidates
             if entity_id:

@@ -149,23 +149,23 @@ def validate_set_cooldown(events):
 
 
 def validate_npc_buff_add(events):
-    """buffed_entity_net_id is real; at least one of field_d/field_e is
-    a real entity (often the buff source)."""
+    """buff_target should be a real entity (>= 0x40000000) almost
+    always. caster_or_source should be a real entity most of the time
+    (some system buffs have no caster -> 0). The catalog-named
+    misc_id_at_0x18 is documented as NOT being an entity id, so it's
+    not graded here."""
     if not events:
         return None
-    real_buffed = 0
-    has_source = 0
-    for e in events:
-        if is_entity_id(e.get("buffed_entity_net_id")):
-            real_buffed += 1
-        if (is_entity_id(e.get("field_d_u32"))
-                or is_entity_id(e.get("field_e_u32"))):
-            has_source += 1
+    real_target = sum(1 for e in events if is_entity_id(e.get("buff_target")))
+    real_caster = sum(1 for e in events if is_entity_id(e.get("caster_or_source")))
     return {
         "samples": len(events),
-        "buffed_is_entity_pct": real_buffed / len(events),
-        "has_source_id_pct": has_source / len(events),
-        "verdict": grade(real_buffed / len(events), pass_threshold=0.50),
+        "buff_target_is_entity_pct": real_target / len(events),
+        "caster_is_entity_pct": real_caster / len(events),
+        # buff_target is the load-bearing field: if 95%+ of samples
+        # have a valid entity there, the offset is right and the
+        # class assignment is plausibly proven.
+        "verdict": grade(real_target / len(events), pass_threshold=0.95, weak_threshold=0.50),
     }
 
 

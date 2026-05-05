@@ -169,23 +169,45 @@ pub struct AddBuffModifier {
 }
 
 /// New buff added on an NPC (minion / monster / champion). Used for
-/// items, dragon stacks, blue/red buffs, ability buffs, etc. Many
-/// fields are typed-as-ambiguous in the catalog and exposed as both
-/// u32 and f32 so consumers can pick.
+/// items, dragon stacks, blue/red buffs, ability buffs, etc.
 ///
 /// Decoder: 0xfcd970 — PKT_NPC_BuffAdd2_s.
+///
+/// Field semantics nailed down by the cross-replay validator:
+///
+///   offset  validator data (40K samples)             our name
+///   ------  ---------------------------------------  -----------------
+///   0x18    only 12% entity-shape (catalog mis-name) misc_id_at_0x18
+///   0x2c    98% entity-shape, 1.4% zero              buff_target
+///   0x34    86% entity-shape, 14% zero               caster_or_source
+///
+/// The catalog labels offset 0x18 as `entity_net_id`, which the
+/// validator showed is wrong: it almost always reads as something
+/// else (a buff/property/spell id). The real receiving entity is at
+/// 0x2c, and the buff source / caster is at 0x34. Both renamed
+/// here; the catalog remains untouched (it's regenerated from the
+/// emulator and re-introducing a manual edit there would get clobbered).
 #[derive(Debug, Clone, Serialize)]
 pub struct NpcBuffAdd {
     pub timestamp: f32,
     pub entity_id: u32,
-    pub buffed_entity_net_id: u32,
+    /// Misnomer in the catalog. Empirically not the buffed entity —
+    /// reads as a small id ~88% of the time. Kept in the struct for
+    /// completeness; consumers should use `buff_target` instead when
+    /// they want the entity receiving the buff.
+    pub misc_id_at_0x18: u32,
     pub field_b_u32: u32,
     pub field_b_f32: f32,
     pub field_c_u32: u32,
     pub field_c_f32: f32,
-    pub field_d_u32: u32,
+    /// The entity receiving the buff. 98% entity-shape across 40K
+    /// samples on the benchmark replay.
+    pub buff_target: u32,
     pub field_d_f32: f32,
-    pub field_e_u32: u32,
+    /// The caster / source applying the buff. 86% entity-shape;
+    /// 14% zero (system buffs, e.g. dragon soul applied without
+    /// a champion source).
+    pub caster_or_source: u32,
     pub field_e_f32: f32,
     pub field_f: f32,
     pub field_g_u32: u32,
@@ -285,14 +307,14 @@ impl TypedPacket {
             "0xfcd970" => Some(TypedPacket::NpcBuffAdd(NpcBuffAdd {
                 timestamp,
                 entity_id,
-                buffed_entity_net_id: s.u32_at(0x18)?,
+                misc_id_at_0x18: s.u32_at(0x18)?,
                 field_b_u32: s.u32_at(0x1c)?,
                 field_b_f32: s.f32_at(0x1c)?,
                 field_c_u32: s.u32_at(0x20)?,
                 field_c_f32: s.f32_at(0x20)?,
-                field_d_u32: s.u32_at(0x2c)?,
+                buff_target: s.u32_at(0x2c)?,
                 field_d_f32: s.f32_at(0x2c)?,
-                field_e_u32: s.u32_at(0x34)?,
+                caster_or_source: s.u32_at(0x34)?,
                 field_e_f32: s.f32_at(0x34)?,
                 field_f: s.f32_at(0x38)?,
                 field_g_u32: s.u32_at(0x3c)?,

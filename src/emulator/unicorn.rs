@@ -416,6 +416,46 @@ impl<'a> StubEmulator<'a> {
             } => {
                 let x = self.read_f32_on(self.packet_addr + inline_x_offset)?;
                 let y = self.read_f32_on(self.packet_addr + inline_y_offset)?;
+                // Try to also recover the waypoint vector at struct
+                // offsets 0x10 (buf_ptr) + 0x18 (count). On 16.9 the
+                // decoder allocates a 16-byte-stride vector here and
+                // populates each entry via a per-element vtable thunk.
+                // Our alloc1 stub (Mowokuma's bump shellcode) writes
+                // (ptr, count) but doesn't initialize the entry vtable
+                // pointers, so the per-element thunks crash on a real
+                // multi-waypoint packet. For packets that take the
+                // fast-path (no waypoints) the vector is empty (count =
+                // 0) and we just return the inline final pos. For
+                // packets that take the slow path, what we read here
+                // depends on how far the decoder got before bailing —
+                // surfacing it lets the consumer see partial data.
+                let buf_ptr = self
+                    .read_ptr_on(self.packet_addr + 0x10)
+                    .unwrap_or(0);
+                let count = self
+                    .read_u32_on(self.packet_addr + 0x18)
+                    .unwrap_or(0) as usize;
+                let heap_lo = Self::HEAP_BASE;
+                let heap_hi = Self::HEAP_BASE + Self::HEAP_SIZE as u64;
+                if buf_ptr >= heap_lo
+                    && buf_ptr < heap_hi
+                    && count > 0
+                    && count < 1024
+                {
+                    let bytes_needed = count.saturating_mul(16);
+                    if buf_ptr + bytes_needed as u64 <= heap_hi {
+                        if let Ok(data) = self.read_buffer_on(buf_ptr, bytes_needed) {
+                            let pp = PathPacket::from_inline_with_waypoints(timestamp, &data);
+                            // Only use the buffer-derived packet if it
+                            // actually recovered any waypoints. An empty
+                            // result means the alloc stub never let the
+                            // slow-path complete — fall back to inline.
+                            if !pp.waypoints.is_empty() {
+                                return Ok(pp);
+                            }
+                        }
+                    }
+                }
                 Ok(PathPacket::from_inline_floats(timestamp, x, y))
             }
         }

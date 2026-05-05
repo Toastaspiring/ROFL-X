@@ -71,6 +71,65 @@ impl PathPacket {
         }
     }
 
+    /// Build a `PathPacket` from a parsed waypoint buffer that the decoder
+    /// allocated and populated.
+    ///
+    /// The decoder allocates a 16-byte-stride vector at struct offsets
+    /// 0x10 (storage ptr) + 0x18 (count) and pushes one entry per
+    /// waypoint. Each entry is `[vtable_ptr u64][data 8 bytes]`. The
+    /// data field is filled by a per-entry vtable thunk; on 16.9 we
+    /// observe `(f32 x, f32 y)` packed there.
+    ///
+    /// LIMITATION: our alloc1 stub (Mowokuma's bump-allocator
+    /// shellcode) sets `(buf_ptr, count)` correctly but does NOT
+    /// initialize each entry's vtable pointer. So when the decoder's
+    /// per-entry vtable thunk calls `(*(code**)(*entry+8))(...)` it
+    /// reads garbage and the slow-path crashes mid-loop. The buffer
+    /// stays mostly zero in that case. Real waypoint reconstruction
+    /// requires either (a) replacing alloc1 with a smarter stub that
+    /// also writes a known waypoint-vtable into each entry, or (b)
+    /// running the real `FUN_1410053f0` (vector resize) without
+    /// stubbing it, which needs a working emulator heap allocator.
+    /// Tracked but not done — when fixed, this constructor delivers
+    /// the full path. Until then it returns whatever survived.
+    ///
+    /// We do NOT append the inline `(x, y)` from the post-decoder
+    /// struct as a fake endpoint: those bytes are post-obfuscation
+    /// and don't represent map coordinates (they're tag-encoded enum
+    /// values that get further transformed). Synthesizing a final
+    /// point from them would be misleading.
+    pub fn from_inline_with_waypoints(
+        timestamp: f32,
+        waypoints_data: &[u8],
+    ) -> Self {
+        let mut waypoints = Vec::with_capacity(waypoints_data.len() / 16);
+        let mut i = 0usize;
+        while i + 16 <= waypoints_data.len() {
+            let vtbl = u64::from_le_bytes(waypoints_data[i..i + 8].try_into().unwrap());
+            if vtbl == 0 {
+                // Heap-zero entry — alloc stub didn't init it. Skip
+                // rather than emit (0, 0) which would be a lie.
+                i += 16;
+                continue;
+            }
+            let x = f32::from_le_bytes(waypoints_data[i + 8..i + 12].try_into().unwrap());
+            let y = f32::from_le_bytes(waypoints_data[i + 12..i + 16].try_into().unwrap());
+            // Filter to plausible map range. Off-map / NaN / inf values
+            // come from un-decoded heap garbage that survived past the
+            // vtable check, not real waypoints.
+            if x.is_finite() && y.is_finite() && (0.0..=20_000.0).contains(&x) && (0.0..=20_000.0).contains(&y) {
+                waypoints.push((x, y));
+            }
+            i += 16;
+        }
+        Self {
+            timestamp,
+            id: 0,
+            speed: 0.0,
+            waypoints,
+        }
+    }
+
     /// Parse a movement-packet body (post-decryption) into waypoints.
     ///
     /// Verbatim port of Mowokuma's `PathPacket::parse`. The unusual

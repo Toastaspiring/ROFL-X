@@ -370,25 +370,28 @@ impl TypedPacket {
 /// `mov`, then a byte-by-byte XOR pass overwrites it with the encrypted
 /// form. The decoder's final `struct_bytes` is therefore POST-encryption
 /// — useless. To get plaintext we walk the writes log and keep the FIRST
-/// atomic 4-byte (or wider) write per offset.
+/// atomic 4-byte (or wider) write per offset, plus the FIRST byte write
+/// per offset for u8 fields (where wider writes don't cover them).
 ///
 /// This mirrors the logic in `replay_info.rs` that builds the
 /// `decoded_fields` JSON; both consumers want the same reconstruction.
 struct PlaintextStruct {
-    /// Maps byte_offset -> plaintext byte. Byte-level (size 1, 2)
-    /// writes are filtered out — those are the obfuscation pass and
-    /// never carry the real value.
+    /// Maps byte_offset -> plaintext byte. Populated from wide writes
+    /// (size >= 4) using last-wide-wins, then padded with first-byte
+    /// writes at offsets the wide pass didn't touch. The byte-level
+    /// fallback is needed for u8 fields like `spell_slot` that the
+    /// decoder writes only as a 1-byte `mov`; without it those fields
+    /// would always read None and 99% of SetCooldown samples would
+    /// fail the strict-Some constructor.
     bytes: std::collections::BTreeMap<u16, u8>,
 }
 
 impl PlaintextStruct {
     fn from(decoded: &ExtraDecoded) -> Self {
-        // Last wide write wins: for variable-length-decoded fields the
-        // initial inline-default constant gets overwritten by a callee
-        // store with the real value. For constant-only branches the
-        // last write equals the first. Either way, we want what was
-        // there *before* the byte-XOR obfuscation pass — and the XOR
-        // pass uses size-1 writes, which we exclude.
+        // Pass 1: last wide write per offset wins. For variable-length-
+        // decoded fields the initial inline-default constant gets
+        // overwritten by a callee store with the real value. For
+        // constant-only branches the last write equals the first.
         let mut last_wide: std::collections::BTreeMap<u16, (u8, u64)> = Default::default();
         for (off, sz, val) in &decoded.writes {
             if *sz < 4 {
@@ -402,6 +405,19 @@ impl PlaintextStruct {
             for i in 0..*sz {
                 bytes.insert(off + i as u16, val_le[i as usize]);
             }
+        }
+        // Pass 2: for byte writes at offsets the wide pass didn't
+        // already cover, take the FIRST byte write. Riot's
+        // obfuscation pass overwrites with `byte ^= key`, so the
+        // first byte write at a given offset is the plaintext and
+        // any later write is encrypted noise. We use `entry().or_insert()`
+        // so wide-write coverage takes precedence (a 4-byte write
+        // already wrote the right plaintext to this offset).
+        for (off, sz, val) in &decoded.writes {
+            if *sz != 1 {
+                continue;
+            }
+            bytes.entry(*off).or_insert((val & 0xff) as u8);
         }
         Self { bytes }
     }
@@ -538,6 +554,68 @@ mod tests {
         let p = TypedPacket::from_extra("0xfdb200", 0.0, 0, &extra).unwrap();
         if let TypedPacket::SetCooldown(p) = p {
             assert_eq!(p.cooldown_remaining_ms, 500.0, "byte writes leaked through");
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn u8_field_via_byte_fallback() {
+        // SetCooldown's spell_slot is at 0x0c and the decoder writes
+        // it as a 1-byte mov (it's a u8 field). The wide-write filter
+        // (size >= 4) excludes byte writes, so without the byte-
+        // fallback path the spell_slot would always read as None.
+        // This test confirms the fallback picks up the FIRST byte
+        // write at 0x0c and the rest of the struct's wide writes
+        // still resolve.
+        let mut writes = vec![
+            // First byte write at 0x0c — plaintext slot value.
+            (0x0c, 1, 4u64),
+            // Later byte writes at 0x0c — obfuscation pass overwrites
+            // with garbage. Must NOT be picked up by the fallback.
+            (0x0c, 1, 0xab),
+            (0x0c, 1, 0xcd),
+        ];
+        // Wide writes for the other fields:
+        writes.extend(writes_log(&[
+            (0x10, 250.0f32.to_bits() as u64, 4),
+            (0x18, 1500.0f32.to_bits() as u64, 4),
+            (0x1c, 0x40000099, 4),
+            (0x24, 200.0f32.to_bits() as u64, 4),
+        ]));
+        let extra = extra_with(writes);
+        let p = TypedPacket::from_extra("0xfdb200", 0.0, 0, &extra).unwrap();
+        if let TypedPacket::SetCooldown(p) = p {
+            assert_eq!(p.spell_slot, 4, "byte-fallback returned wrong slot");
+            assert_eq!(p.cooldown_remaining_ms, 250.0);
+            assert_eq!(p.cooldown_total_ms, 1500.0);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn wide_write_takes_precedence_over_byte_writes() {
+        // If a wide write covers an offset, byte writes at that
+        // offset must NOT override it. The wide write IS the
+        // plaintext for fields >= 4 bytes; byte writes at the same
+        // offset are guaranteed to be obfuscation noise.
+        let mut writes = writes_log(&[(0x10, 500.0f32.to_bits() as u64, 4)]);
+        // Add a byte write at offset 0x10 that would corrupt the f32
+        // if the byte-fallback didn't respect wide-write coverage.
+        writes.push((0x10, 1, 0xff));
+        // Plus the rest of the struct.
+        writes.extend(writes_log(&[
+            (0x0c, 2, 4),
+            (0x18, 1000.0f32.to_bits() as u64, 4),
+            (0x1c, 0x40000099, 4),
+            (0x24, 450.0f32.to_bits() as u64, 4),
+        ]));
+        let extra = extra_with(writes);
+        let p = TypedPacket::from_extra("0xfdb200", 0.0, 0, &extra).unwrap();
+        if let TypedPacket::SetCooldown(p) = p {
+            assert_eq!(p.cooldown_remaining_ms, 500.0,
+                       "wide write at 0x10 was corrupted by byte write");
         } else {
             panic!("wrong variant");
         }

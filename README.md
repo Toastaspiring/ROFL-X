@@ -517,15 +517,41 @@ Done in this branch, top to bottom of the original list:
 5. **State correlation.** Framework laid down,  proof not yet done.
    `scripts/validate_typed_events.py` runs internal sanity checks
    (positions in map bounds, spell slots in 0..7, entity ids in
-   0x40000000+) and reports PASS / WEAK / FAIL per class. On
-   EUW1-7841558966: OnLeaveVisibility WEAK, BasicAttackPos WEAK,
-   SetCooldown FAIL (strict-Some filtering hits gaps in the writes
-   log), NpcBuffAdd FAIL (offset 0x18 isn't actually buffed_entity,
-   though field_d / field_e at later offsets are entity-shaped 99%
-   of the time — catalog mis-naming). `scripts/correlate_match_v5.py`
-   is a framework that takes a Match-V5 timeline JSON and reports
-   per-anchor timestamp deltas + entity overlap. Plug in a Match-V5
-   dump to run it; no API call from the script.
+   0x40000000+) and reports PASS / WEAK / FAIL per class.
+   `scripts/validate_across_replays.py` aggregates across many games:
+   first run on 4 user replays gives `OnLeaveVisibility WEAK x4`,
+   `BasicAttackPos WEAK x4`, `SetCooldown FAIL x3`, `NpcBuffAdd FAIL x4`.
+   The consistency tells us the catalog has real but small offset
+   bugs (e.g. NpcBuffAdd's "buffed_entity_net_id" at 0x18 hits 8%
+   entity-shape; field_d / field_e at later offsets hit 99% — the
+   real entity reference is at a different offset, not this one).
+   `scripts/correlate_match_v5.py` is a framework that takes a Match-V5
+   timeline JSON and reports per-anchor timestamp deltas + entity
+   overlap. Plug in a Match-V5 dump to run it; no API call from the
+   script.
+
+Plus three new improvements landed in this batch:
+
+6. ~~**Tests: schema + opcode coverage.**~~ Done. `tests/schema_compat.rs`
+   pins the JSON output contract (top-level keys, nested shapes for
+   wards / extra_decoders / typed_events) so downstream consumers
+   don't break silently. `tests/opcode_coverage.rs` walks
+   ROFL_X_SAMPLES_DIR and asserts ≥ 85% catalog coverage on 16.9
+   replays — fires when scripts/build_riot_catalog.py drops decoder
+   mappings. Both gate cleanly when the samples / patch archives are
+   missing.
+7. ~~**Multi-replay validation.**~~ Done.
+   `scripts/validate_across_replays.py` runs the full pipeline + the
+   typed-event validator across N replays in parallel-ish (subprocess
+   per replay, ~3 min each), then aggregates per-class verdicts.
+   Promotion threshold from "shape-match" to "proven" is documented
+   in the script. The first cross-replay run is committed as
+   `cross-replay-report.json` for diffability.
+8. ~~**JSONL streaming output.**~~ Partial G. `rofl-x file
+   --typed-jsonl <path>` writes `typed_events` one per line, on top
+   of the existing master JSON. Consumers can `head`, `grep`, `awk`
+   without loading multi-GB JSON. Parallel emulation (the rest of G)
+   still pending.
 
 Coverage milestones along the way (in commit order):
 

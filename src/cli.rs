@@ -34,6 +34,13 @@ pub enum Command {
         /// `5-5.patch`). Defaults to `./patch`.
         #[arg(long, default_value = "./patch")]
         patch_dir: PathBuf,
+
+        /// Optional path to dump `typed_events` as JSONL (one event per
+        /// line). When set, downstream tools can stream events without
+        /// loading the multi-GB master JSON. The master JSON is still
+        /// written to `--output`.
+        #[arg(long)]
+        typed_jsonl: Option<PathBuf>,
     },
     /// Parse a single replay and print a transport-layer summary.
     ///
@@ -182,7 +189,8 @@ pub fn run(cli: Cli) -> Result<()> {
             replay,
             output,
             patch_dir,
-        } => file(replay, output, patch_dir),
+            typed_jsonl,
+        } => file(replay, output, patch_dir, typed_jsonl),
         Command::Inspect { replay, histogram } => inspect(replay, histogram),
         Command::ExtractPatch { binary, output } => extract_patch(binary, output),
         Command::TraceDecoder {
@@ -547,7 +555,12 @@ fn extract_patch(binary: PathBuf, output: PathBuf) -> Result<()> {
 }
 
 #[cfg(feature = "emulator")]
-fn file(replay: PathBuf, output: PathBuf, patch_dir: PathBuf) -> Result<()> {
+fn file(
+    replay: PathBuf,
+    output: PathBuf,
+    patch_dir: PathBuf,
+    typed_jsonl: Option<PathBuf>,
+) -> Result<()> {
     use crate::emulator::config::Config;
     use crate::replay_info::parse_and_decode;
     use crate::RoflError;
@@ -573,13 +586,40 @@ fn file(replay: PathBuf, output: PathBuf, patch_dir: PathBuf) -> Result<()> {
     let config = Config::parse(&patch_file)?;
 
     let game = parse_and_decode(&parsed, &config)?;
+
+    // Optional JSONL sidecar: stream typed_events one per line so
+    // downstream tools can `head`, `grep`, `awk` without loading the
+    // multi-GB master JSON.
+    if let Some(jsonl_path) = typed_jsonl {
+        if let Some(arr) = game.get("typed_events").and_then(|v| v.as_array()) {
+            use std::io::Write;
+            let f = std::fs::File::create(&jsonl_path)?;
+            let mut w = std::io::BufWriter::new(f);
+            for ev in arr {
+                writeln!(w, "{}", ev)?;
+            }
+            w.flush()?;
+            eprintln!("wrote {} typed events to {}", arr.len(), jsonl_path.display());
+        } else {
+            eprintln!(
+                "no typed_events in output; skipping JSONL write to {}",
+                jsonl_path.display()
+            );
+        }
+    }
+
     std::fs::write(&output, game.to_string().as_bytes())?;
     eprintln!("wrote {}", output.display());
     Ok(())
 }
 
 #[cfg(not(feature = "emulator"))]
-fn file(_replay: PathBuf, _output: PathBuf, _patch_dir: PathBuf) -> Result<()> {
+fn file(
+    _replay: PathBuf,
+    _output: PathBuf,
+    _patch_dir: PathBuf,
+    _typed_jsonl: Option<PathBuf>,
+) -> Result<()> {
     Err(crate::RoflError::Io(std::io::Error::other(
         "file subcommand requires the `emulator` feature at build time",
     )))

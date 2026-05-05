@@ -67,17 +67,41 @@ pub enum TypedPacket {
 /// Basic attack landed: caster, target, end-position, spell hash,
 /// windup, cooldown, mana cost, ability slot.
 ///
-/// Decoder: 0x1074580 — PKT_Basic_Attack_Pos_s. Field offsets:
-/// 0x18 caster, 0x20 source_xy, 0x30 target, 0x38 target_xy,
-/// 0x40 target_end_xy, 0x48 spell_param_a, 0x50 spell_hash, 0x58 windup,
-/// 0x5c cooldown, 0x60 mana, 0x64 slot.
+/// Decoder: 0x1074580 — PKT_Basic_Attack_Pos_s.
+///
+/// CAVEAT: the catalog's offset assignments here are wrong on at
+/// least three fields. A 32K-sample probe across all hits found:
+///
+///   offset  empirical shape                          catalog says
+///   ------  ---------------------------------------  ----------------
+///   0x18    100% zero — never written non-zero       caster_or_source
+///   0x28    99.5% entity-shape (NEW, not in catalog) (no name)
+///   0x30    97% zero — rarely written non-zero       target_id
+///   0x44    33% entity-shape                         target_end_pos_x
+///   0x5c    67% entity-shape                         cooldown_ms
+///   0x60    52% slot-shape (0..7)                    mana_cost
+///   0x64    52% slot-shape (0..7)                    level_or_slot
+///
+/// We expose the catalog-named fields as-is so the catalog stays the
+/// single source of truth, plus add an `entity_at_0x28` field for
+/// the 99.5% confidence entity reference the probe surfaced. Future
+/// catalog refinement should rewire the named fields onto correct
+/// offsets — this commit doesn't do that, just documents the
+/// mismatch in the struct.
 #[derive(Debug, Clone, Serialize)]
 pub struct BasicAttackPos {
     pub timestamp: f32,
     pub entity_id: u32,
+    /// Per catalog at 0x18, but empirically always zero.
     pub caster_or_source_id: u32,
     pub source_position_x: f32,
     pub source_position_y: f32,
+    /// 99.5% entity-shape at offset 0x28. Likely the real caster /
+    /// target reference; catalog doesn't name this offset. Surfaced
+    /// here so consumers can correlate even though the catalog
+    /// thinks the entity is elsewhere.
+    pub entity_at_0x28: u32,
+    /// Per catalog at 0x30, but empirically mostly zero.
     pub target_id: u32,
     pub target_position_x: f32,
     pub target_position_y: f32,
@@ -245,6 +269,12 @@ impl TypedPacket {
                 caster_or_source_id: s.u32_at(0x18)?,
                 source_position_x: s.f32_at(0x20)?,
                 source_position_y: s.f32_at(0x24)?,
+                // Optional — only ~14% of samples have a wide write
+                // here, but when they do it's 99%+ entity-shape.
+                // Defaulting to 0 lets the rest of the strict-Some
+                // pattern decode the field without dragging down
+                // sample yield.
+                entity_at_0x28: s.u32_at(0x28).unwrap_or(0),
                 target_id: s.u32_at(0x30)?,
                 target_position_x: s.f32_at(0x38)?,
                 target_position_y: s.f32_at(0x3c)?,
@@ -477,6 +507,7 @@ mod tests {
             (0x18, 123, 4),
             (0x20, 7000.0f32.to_bits() as u64, 4),
             (0x24, 8000.0f32.to_bits() as u64, 4),
+            (0x28, 0x40000099, 4),
             (0x30, 456, 4),
             (0x38, 9000.0f32.to_bits() as u64, 4),
             (0x3c, 10000.0f32.to_bits() as u64, 4),
@@ -494,6 +525,7 @@ mod tests {
         if let TypedPacket::BasicAttackPos(p) = p {
             assert_eq!(p.entity_id, 0x40000099);
             assert_eq!(p.caster_or_source_id, 123);
+            assert_eq!(p.entity_at_0x28, 0x40000099);
             assert_eq!(p.target_id, 456);
             assert_eq!(p.spell_hash, 0xcafe_babe_dead_beef);
             assert_eq!(p.level_or_slot, 3);

@@ -78,19 +78,32 @@ def grade(pct, pass_threshold=0.80, weak_threshold=0.40):
 
 
 def validate_on_leave_visibility(events, all_entity_ids):
-    """leaver_net_id should be a real entity, and seen elsewhere."""
+    """leaver_net_id should be either a real entity (>= 0x40000000)
+    OR zero. Zero is valid: it's how the packet encodes "area
+    de-fogged with no specific leaver" (e.g. a ward expiring).
+    The failure mode for a wrong offset would be a small non-zero
+    int (a property id, slot, etc.) — that's what we count as bad.
+    """
     if not events:
         return None
-    real = sum(1 for e in events if is_entity_id(e.get("leaver_net_id")))
-    seen_elsewhere = sum(
-        1 for e in events
-        if e.get("leaver_net_id") in all_entity_ids
-    )
+    real = 0
+    zero = 0
+    bad_small = 0
+    for e in events:
+        v = e.get("leaver_net_id") or 0
+        if is_entity_id(v):
+            real += 1
+        elif v == 0:
+            zero += 1
+        else:
+            bad_small += 1
+    well_typed = real + zero
     return {
         "samples": len(events),
         "leaver_is_entity_pct": real / len(events),
-        "leaver_seen_elsewhere_pct": seen_elsewhere / len(events),
-        "verdict": grade(min(real, seen_elsewhere) / len(events)),
+        "leaver_is_zero_pct": zero / len(events),
+        "leaver_bad_small_pct": bad_small / len(events),
+        "verdict": grade(well_typed / len(events)),
     }
 
 

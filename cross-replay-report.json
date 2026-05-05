@@ -1,0 +1,162 @@
+{
+  "n_replays_run": 4,
+  "n_replays_skipped": 1,
+  "skipped_replays": [
+    "EUW1-7811790972.rofl"
+  ],
+  "per_replay": {
+    "EUW1-7841223050.rofl": {
+      "OnLeaveVisibility": {
+        "samples": 19883,
+        "leaver_is_entity_pct": 0.821354926318966,
+        "leaver_seen_elsewhere_pct": 0.4974601418297038,
+        "verdict": "WEAK"
+      },
+      "BasicAttackPos": {
+        "samples": 8243,
+        "all_positions_in_map_pct": 0.9553560596870072,
+        "valid_slot_pct": 0.395001819725828,
+        "verdict": "WEAK"
+      },
+      "SetCooldown": {
+        "samples": 108,
+        "valid_slot_pct": 1.0,
+        "valid_cooldown_total_pct": 0.0,
+        "remaining_le_total_pct": 0.0,
+        "slot_distribution": {
+          "2": 88,
+          "1": 19,
+          "0": 1
+        },
+        "verdict": "FAIL"
+      },
+      "NpcBuffAdd": {
+        "samples": 63736,
+        "buffed_is_entity_pct": 0.08177482113719091,
+        "has_source_id_pct": 0.9995293083971382,
+        "verdict": "FAIL"
+      },
+      "AddBuffModifier": null
+    },
+    "EUW1-7841288585.rofl": {
+      "OnLeaveVisibility": {
+        "samples": 30033,
+        "leaver_is_entity_pct": 0.8312855858555589,
+        "leaver_seen_elsewhere_pct": 0.5322145639796224,
+        "verdict": "WEAK"
+      },
+      "BasicAttackPos": {
+        "samples": 10315,
+        "all_positions_in_map_pct": 0.9501696558410082,
+        "valid_slot_pct": 0.5304895782840523,
+        "verdict": "WEAK"
+      },
+      "SetCooldown": {
+        "samples": 7,
+        "valid_slot_pct": 1.0,
+        "valid_cooldown_total_pct": 0.0,
+        "remaining_le_total_pct": 0.0,
+        "slot_distribution": {
+          "1": 6,
+          "0": 1
+        },
+        "verdict": "FAIL"
+      },
+      "NpcBuffAdd": {
+        "samples": 92839,
+        "buffed_is_entity_pct": 0.0779198397225304,
+        "has_source_id_pct": 0.9994506618985556,
+        "verdict": "FAIL"
+      },
+      "AddBuffModifier": null
+    },
+    "EUW1-7841358769.rofl": {
+      "OnLeaveVisibility": {
+        "samples": 12311,
+        "leaver_is_entity_pct": 0.7997725611241979,
+        "leaver_seen_elsewhere_pct": 0.5643733246689953,
+        "verdict": "WEAK"
+      },
+      "BasicAttackPos": {
+        "samples": 6132,
+        "all_positions_in_map_pct": 0.9611872146118722,
+        "valid_slot_pct": 0.38111545988258316,
+        "verdict": "WEAK"
+      },
+      "SetCooldown": null,
+      "NpcBuffAdd": {
+        "samples": 34146,
+        "buffed_is_entity_pct": 0.07453288818602471,
+        "has_source_id_pct": 0.9994435658642301,
+        "verdict": "FAIL"
+      },
+      "AddBuffModifier": null
+    },
+    "EUW1-7841558966.rofl": {
+      "OnLeaveVisibility": {
+        "samples": 15193,
+        "leaver_is_entity_pct": 0.7947739090370566,
+        "leaver_seen_elsewhere_pct": 0.4958862634107813,
+        "verdict": "WEAK"
+      },
+      "BasicAttackPos": {
+        "samples": 8792,
+        "all_positions_in_map_pct": 0.9144676979071884,
+        "valid_slot_pct": 0.543221110100091,
+        "verdict": "WEAK"
+      },
+      "SetCooldown": {
+        "samples": 7,
+        "valid_slot_pct": 1.0,
+        "valid_cooldown_total_pct": 0.0,
+        "remaining_le_total_pct": 0.0,
+        "slot_distribution": {
+          "1": 7
+        },
+        "verdict": "FAIL"
+      },
+      "NpcBuffAdd": {
+        "samples": 40712,
+        "buffed_is_entity_pct": 0.12276478679504814,
+        "has_source_id_pct": 0.9989929259186481,
+        "verdict": "FAIL"
+      },
+      "AddBuffModifier": null
+    }
+  },
+  "aggregate": {
+    "OnLeaveVisibility": {
+      "verdicts": {
+        "WEAK": 4
+      },
+      "n_replays": 4,
+      "consensus": "weak_consistent"
+    },
+    "BasicAttackPos": {
+      "verdicts": {
+        "WEAK": 4
+      },
+      "n_replays": 4,
+      "consensus": "weak_consistent"
+    },
+    "SetCooldown": {
+      "verdicts": {
+        "FAIL": 3
+      },
+      "n_replays": 3,
+      "consensus": "fail_consistent"
+    },
+    "NpcBuffAdd": {
+      "verdicts": {
+        "FAIL": 4
+      },
+      "n_replays": 4,
+      "consensus": "fail_consistent"
+    },
+    "AddBuffModifier": {
+      "verdicts": {},
+      "n_replays": 0,
+      "consensus": "no_data"
+    }
+  }
+}

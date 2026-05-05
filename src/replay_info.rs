@@ -346,6 +346,13 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         .unwrap_or(0);
     let mut extras: BTreeMap<String, Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)>> =
         BTreeMap::new();
+    // Typed handlers run alongside the raw `extras` capture: every
+    // decoded sample is also offered to `TypedPacket::from_extra`, which
+    // returns Some for the small set of classes with hand-written
+    // schemas (top 5 by event volume). The result is a single sorted
+    // stream of typed events that downstream consumers can iterate
+    // without revisiting the raw struct bytes.
+    let mut typed_events: Vec<crate::packet_handlers::TypedPacket> = Vec::new();
     for ed in &config.extra_decoders {
         let hits = blocks_with_netid(replay, ed.netid as u16)?;
         if hits.is_empty() {
@@ -359,6 +366,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         };
         let mut entries: Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)> =
             Vec::with_capacity(limit);
+        let decoder_rva_str = format!("0x{:x}", ed.rva_start);
         // Per-class payload cache: identical payload bytes -> previously
         // decoded result. Avoids re-emulating the same bytes thousands
         // of times for heartbeat-class packets. The `param` (entity_id)
@@ -394,11 +402,30 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                     Err(_) => continue,
                 }
             };
+            // Offer to the typed-handler dispatch. Only matches the
+            // top 5 classes by volume; others get None and aren't
+            // emitted as typed events (still available raw via
+            // `extra_decoders`).
+            if let Some(typed) = crate::packet_handlers::TypedPacket::from_extra(
+                &decoder_rva_str,
+                *timestamp,
+                *param,
+                &decoded_clone,
+            ) {
+                typed_events.push(typed);
+            }
             entries.push((*timestamp, *param, decoded_clone));
         }
         let label = format!("{}_netid{}", ed.name, ed.netid);
         extras.insert(label, entries);
     }
+    // Stable order across runs: by timestamp, then by class label.
+    typed_events.sort_by(|a, b| {
+        a.timestamp()
+            .partial_cmp(&b.timestamp())
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.class_label().cmp(b.class_label()))
+    });
 
     let mut json = build_output_json(
         &replay.header,
@@ -549,6 +576,19 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
             by_name.insert(label, Value::Array(arr));
         }
         json["extra_decoders"] = Value::Object(by_name);
+    }
+
+    // Serialize the typed-handler stream. Layout:
+    //   "typed_events": [
+    //     { "kind": "BasicAttackPos", "timestamp": 12.34, "entity_id": ...,
+    //       "caster_or_source_id": ..., "target_id": ..., ... },
+    //     ...
+    //   ]
+    // Only the top 5 classes by volume currently produce typed events.
+    // The rest stay raw under `extra_decoders`. See `packet_handlers.rs`
+    // for the dispatch table and field-offset documentation.
+    if !typed_events.is_empty() {
+        json["typed_events"] = serde_json::to_value(&typed_events)?;
     }
 
     Ok(json)

@@ -10,6 +10,7 @@ pub mod emulator;
 pub mod error;
 pub mod extract_patch;
 pub mod fixture;
+pub mod packet_handlers;
 pub mod replay_info;
 pub mod rofl;
 pub mod scaffold;

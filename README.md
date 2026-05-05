@@ -485,30 +485,47 @@ python scripts/readable_replay.py timeline.json --out replay
 
 ## What's still on the table
 
-In rough order of "would meaningfully improve the parser":
+Done in this branch, top to bottom of the original list:
 
-1. **Mov waypoint vector reading.** The mov decoder allocs a buffer
-   at struct offset `0x10` and writes the actual movement *path*
-   into it. We currently emit only the inline final position. Reading
-   the buffer (Unicorn `mem_read` from the alloc'd VA) would give
-   complete paths — the difference between "Lillia ended up at (X,Y)"
-   and "Lillia walked through (X1,Y1) → (X2,Y2) → (X3,Y3)".
-2. **Variable-length decoder capture.** Many decoder fields show
-   inline-tag defaults rather than the real variable-length value.
-   The variable-length helpers (`f41410`, `f41f40`, etc.) write the
-   real result; we capture some but not all. Improving emulator
-   scaffolding around the helpers would lift signal substantially.
-3. **Entity tracking.** Currently we don't associate raw_positions
-   to player IDs. Adding entity_id capture from the dispatcher
-   chain would let the parser say "Lillia moved to (X,Y)" instead
-   of "some entity moved to (X,Y)".
-4. **Typed Rust handlers.** Wire the top 5–7 confident classes
-   (`mov_decrypt`, Replication, DoSetCooldown, Fog, BasicAttackPos)
-   as proper `src/packet/handlers/<name>.rs` modules emitting typed
-   structs instead of generic decoded_fields[].
-5. **State correlation.** The only path to *proven* per-class
-   labels and per-field semantics. Needs replays + game state
-   (Match-V5 API + scoreboard correlation). Not in this branch.
+1. ~~**Variable-length decoder capture.**~~ Done. `ExtraDecoded` now
+   captures helper-side heap writes outside the packet struct plus
+   `RAX/RDX/RCX` at decoder return. The Python pipeline switched
+   from value-heuristic filtering to variance-based filtering, which
+   keeps real per-packet signal that was previously discarded as
+   "looks default-y".
+2. ~~**Mov waypoint vector reading.**~~ Skeleton done; full fix
+   blocked. The InlineFloats arm now reads the alloc'd vector at
+   struct offset `0x10` (buf ptr) + `0x18` (count) and parses each
+   16-byte entry as `[vtable u64][f32 x][f32 y]`. The alloc1 stub
+   doesn't initialize the per-entry vtable pointer, so the per-entry
+   thunks crash mid-loop and the buffer comes back mostly zero.
+   Fixing this is multi-hour emulator work (smarter alloc stub or
+   real vector resize via the game's own `FUN_1410053f0`).
+3. ~~**Entity tracking.**~~ Done. The block-framing header's `param`
+   field is plumbed through as `entity_id` per typed event. 85%+
+   of events get an entity attribution; the remaining 15% are on
+   netids where `param` carries a non-entity field (spell id /
+   buff id). Players resolve via the metadata registry.
+4. ~~**Typed Rust handlers.**~~ Done for the top 5: `BasicAttackPos`,
+   `OnLeaveVisibility`, `SetCooldown`, `AddBuffModifier`,
+   `NpcBuffAdd`. `src/packet_handlers.rs` reads plaintext from the
+   writes log (first wide write per offset) — NOT from the post-
+   obfuscation `struct_bytes`. Output JSON gets a `typed_events[]`
+   array. Replication classes (~83% of all events) are skipped
+   intentionally: typed wrapping without a property table is just
+   cosmetic.
+5. **State correlation.** Framework laid down,  proof not yet done.
+   `scripts/validate_typed_events.py` runs internal sanity checks
+   (positions in map bounds, spell slots in 0..7, entity ids in
+   0x40000000+) and reports PASS / WEAK / FAIL per class. On
+   EUW1-7841558966: OnLeaveVisibility WEAK, BasicAttackPos WEAK,
+   SetCooldown FAIL (strict-Some filtering hits gaps in the writes
+   log), NpcBuffAdd FAIL (offset 0x18 isn't actually buffed_entity,
+   though field_d / field_e at later offsets are entity-shaped 99%
+   of the time — catalog mis-naming). `scripts/correlate_match_v5.py`
+   is a framework that takes a Match-V5 timeline JSON and reports
+   per-anchor timestamp deltas + entity overlap. Plug in a Match-V5
+   dump to run it; no API call from the script.
 
 Coverage milestones along the way (in commit order):
 

@@ -9,8 +9,9 @@
       "OnLeaveVisibility": {
         "samples": 19883,
         "leaver_is_entity_pct": 0.821354926318966,
-        "leaver_seen_elsewhere_pct": 0.4974601418297038,
-        "verdict": "WEAK"
+        "leaver_is_zero_pct": 0.17864507368103405,
+        "leaver_bad_small_pct": 0.0,
+        "verdict": "PASS"
       },
       "BasicAttackPos": {
         "samples": 8243,
@@ -32,9 +33,9 @@
       },
       "NpcBuffAdd": {
         "samples": 63736,
-        "buffed_is_entity_pct": 0.08177482113719091,
-        "has_source_id_pct": 0.9995293083971382,
-        "verdict": "FAIL"
+        "buff_target_is_entity_pct": 0.9886563323710305,
+        "caster_is_entity_pct": 0.8541326722731266,
+        "verdict": "PASS"
       },
       "AddBuffModifier": null
     },
@@ -42,8 +43,9 @@
       "OnLeaveVisibility": {
         "samples": 30033,
         "leaver_is_entity_pct": 0.8312855858555589,
-        "leaver_seen_elsewhere_pct": 0.5322145639796224,
-        "verdict": "WEAK"
+        "leaver_is_zero_pct": 0.1687144141444411,
+        "leaver_bad_small_pct": 0.0,
+        "verdict": "PASS"
       },
       "BasicAttackPos": {
         "samples": 10315,
@@ -64,9 +66,9 @@
       },
       "NpcBuffAdd": {
         "samples": 92839,
-        "buffed_is_entity_pct": 0.0779198397225304,
-        "has_source_id_pct": 0.9994506618985556,
-        "verdict": "FAIL"
+        "buff_target_is_entity_pct": 0.9876775923911287,
+        "caster_is_entity_pct": 0.8549208845420567,
+        "verdict": "PASS"
       },
       "AddBuffModifier": null
     },
@@ -74,8 +76,9 @@
       "OnLeaveVisibility": {
         "samples": 12311,
         "leaver_is_entity_pct": 0.7997725611241979,
-        "leaver_seen_elsewhere_pct": 0.5643733246689953,
-        "verdict": "WEAK"
+        "leaver_is_zero_pct": 0.20022743887580213,
+        "leaver_bad_small_pct": 0.0,
+        "verdict": "PASS"
       },
       "BasicAttackPos": {
         "samples": 6132,
@@ -86,9 +89,9 @@
       "SetCooldown": null,
       "NpcBuffAdd": {
         "samples": 34146,
-        "buffed_is_entity_pct": 0.07453288818602471,
-        "has_source_id_pct": 0.9994435658642301,
-        "verdict": "FAIL"
+        "buff_target_is_entity_pct": 0.9814326714695718,
+        "caster_is_entity_pct": 0.8577871493000644,
+        "verdict": "PASS"
       },
       "AddBuffModifier": null
     },
@@ -96,8 +99,9 @@
       "OnLeaveVisibility": {
         "samples": 15193,
         "leaver_is_entity_pct": 0.7947739090370566,
-        "leaver_seen_elsewhere_pct": 0.4958862634107813,
-        "verdict": "WEAK"
+        "leaver_is_zero_pct": 0.20522609096294345,
+        "leaver_bad_small_pct": 0.0,
+        "verdict": "PASS"
       },
       "BasicAttackPos": {
         "samples": 8792,
@@ -117,9 +121,9 @@
       },
       "NpcBuffAdd": {
         "samples": 40712,
-        "buffed_is_entity_pct": 0.12276478679504814,
-        "has_source_id_pct": 0.9989929259186481,
-        "verdict": "FAIL"
+        "buff_target_is_entity_pct": 0.9816270387109451,
+        "caster_is_entity_pct": 0.8613185301630969,
+        "verdict": "PASS"
       },
       "AddBuffModifier": null
     }
@@ -127,10 +131,10 @@
   "aggregate": {
     "OnLeaveVisibility": {
       "verdicts": {
-        "WEAK": 4
+        "PASS": 4
       },
       "n_replays": 4,
-      "consensus": "weak_consistent"
+      "consensus": "proven"
     },
     "BasicAttackPos": {
       "verdicts": {
@@ -148,10 +152,10 @@
     },
     "NpcBuffAdd": {
       "verdicts": {
-        "FAIL": 4
+        "PASS": 4
       },
       "n_replays": 4,
-      "consensus": "fail_consistent"
+      "consensus": "proven"
     },
     "AddBuffModifier": {
       "verdicts": {},

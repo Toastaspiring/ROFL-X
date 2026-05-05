@@ -514,17 +514,29 @@ Done in this branch, top to bottom of the original list:
    array. Replication classes (~83% of all events) are skipped
    intentionally: typed wrapping without a property table is just
    cosmetic.
-5. **State correlation.** Framework laid down,  proof not yet done.
-   `scripts/validate_typed_events.py` runs internal sanity checks
-   (positions in map bounds, spell slots in 0..7, entity ids in
-   0x40000000+) and reports PASS / WEAK / FAIL per class.
-   `scripts/validate_across_replays.py` aggregates across many games:
-   first run on 4 user replays gives `OnLeaveVisibility WEAK x4`,
-   `BasicAttackPos WEAK x4`, `SetCooldown FAIL x3`, `NpcBuffAdd FAIL x4`.
-   The consistency tells us the catalog has real but small offset
-   bugs (e.g. NpcBuffAdd's "buffed_entity_net_id" at 0x18 hits 8%
-   entity-shape; field_d / field_e at later offsets hit 99% — the
-   real entity reference is at a different offset, not this one).
+5. **State correlation.** Framework done; **2 of 5 classes promoted
+   to "proven" across 4 replays.** `scripts/validate_typed_events.py`
+   runs internal sanity checks (positions in map bounds, entity ids
+   >= 0x40000000, slot values in range) and reports PASS / WEAK / FAIL.
+   `scripts/validate_across_replays.py` aggregates verdicts across
+   games. First-run consensus on 4 user replays:
+
+   ```
+   OnLeaveVisibility      PASS x4    proven
+   NpcBuffAdd             PASS x4    proven
+   BasicAttackPos         WEAK x4    weak_consistent
+   SetCooldown            FAIL x3    fail_consistent
+   AddBuffModifier        no data    (netid never fires on these replays)
+   ```
+
+   The two PASS classes were lifted from initial WEAK/FAIL by the
+   validator-driven offset corrections it surfaced — for NpcBuffAdd,
+   the catalog's "buffed_entity_net_id" at 0x18 was wrong (8%
+   entity-shape across 40K samples); the real buff target is at 0x2c
+   (98% entity-shape) and the caster is at 0x34. The catalog wasn't
+   edited (it's regenerated from the emulator) — `src/packet_handlers.rs`
+   carries the corrections with provenance comments.
+
    `scripts/correlate_match_v5.py` is a framework that takes a Match-V5
    timeline JSON and reports per-anchor timestamp deltas + entity
    overlap. Plug in a Match-V5 dump to run it; no API call from the

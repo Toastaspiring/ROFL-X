@@ -57,6 +57,7 @@ use crate::emulator::unicorn::ExtraDecoded;
 #[serde(tag = "kind")]
 pub enum TypedPacket {
     BasicAttackPos(BasicAttackPos),
+    BasicAttack(BasicAttack),
     OnLeaveVisibility(OnLeaveVisibility),
     SetCooldown(SetCooldown),
     AddBuffModifier(AddBuffModifier),
@@ -88,6 +89,32 @@ pub struct BasicAttackPos {
     pub cooldown_ms: f32,
     pub mana_cost: f32,
     pub level_or_slot: u32,
+}
+
+/// Smaller variant of BasicAttackPos used for ~3K events on the
+/// benchmark replay (vs ~22K for BasicAttackPos). Lacks the windup /
+/// cooldown / spell-hash fields — likely the "auto-attack already
+/// resolved" packet vs BasicAttackPos's "spell starting" packet.
+///
+/// Decoder: 0xf9bae0 — PKT_Basic_Attack_s.
+#[derive(Debug, Clone, Serialize)]
+pub struct BasicAttack {
+    pub timestamp: f32,
+    pub entity_id: u32,
+    pub source_or_caster_id: u32,
+    pub position_a_x: f32,
+    pub position_a_y: f32,
+    pub position_b_x: f32,
+    pub position_b_y: f32,
+    pub scalar_a_u32: u32,
+    pub scalar_a_f32: f32,
+    pub scalar_b_u32: u32,
+    pub scalar_b_f32: f32,
+    pub scalar_c_u32: u32,
+    pub scalar_c_f32: f32,
+    pub trailing_id_or_flag: u32,
+    pub trailing_value: u32,
+    pub trailing_value_b: u32,
 }
 
 /// Entity left visibility (fog of war). Pairs with EnterVisibility
@@ -208,6 +235,24 @@ impl TypedPacket {
                 mana_cost: s.f32_at(0x60)?,
                 level_or_slot: s.u32_at(0x64)?,
             })),
+            "0xf9bae0" => Some(TypedPacket::BasicAttack(BasicAttack {
+                timestamp,
+                entity_id,
+                source_or_caster_id: s.u32_at(0x10)?,
+                position_a_x: s.f32_at(0x18)?,
+                position_a_y: s.f32_at(0x1c)?,
+                position_b_x: s.f32_at(0x20)?,
+                position_b_y: s.f32_at(0x24)?,
+                scalar_a_u32: s.u32_at(0x2c)?,
+                scalar_a_f32: s.f32_at(0x2c)?,
+                scalar_b_u32: s.u32_at(0x30)?,
+                scalar_b_f32: s.f32_at(0x30)?,
+                scalar_c_u32: s.u32_at(0x34)?,
+                scalar_c_f32: s.f32_at(0x34)?,
+                trailing_id_or_flag: s.u32_at(0x40)?,
+                trailing_value: s.u32_at(0x48)?,
+                trailing_value_b: s.u32_at(0x4c)?,
+            })),
             "0xfaffc0" => Some(TypedPacket::OnLeaveVisibility(OnLeaveVisibility {
                 timestamp,
                 entity_id,
@@ -263,6 +308,7 @@ impl TypedPacket {
     pub fn class_label(&self) -> &'static str {
         match self {
             TypedPacket::BasicAttackPos(_) => "PKT_Basic_Attack_Pos_s",
+            TypedPacket::BasicAttack(_) => "PKT_Basic_Attack_s",
             TypedPacket::OnLeaveVisibility(_) => "PKT_OnLeaveVisibilityClient_s",
             TypedPacket::SetCooldown(_) => "PKT_CHAR_SetCooldown_Broadcast_s",
             TypedPacket::AddBuffModifier(_) => "PKT_S2C_AddBuffModifier_s",
@@ -274,6 +320,7 @@ impl TypedPacket {
     pub fn timestamp(&self) -> f32 {
         match self {
             TypedPacket::BasicAttackPos(p) => p.timestamp,
+            TypedPacket::BasicAttack(p) => p.timestamp,
             TypedPacket::OnLeaveVisibility(p) => p.timestamp,
             TypedPacket::SetCooldown(p) => p.timestamp,
             TypedPacket::AddBuffModifier(p) => p.timestamp,
@@ -286,6 +333,7 @@ impl TypedPacket {
     pub fn entity_id(&self) -> u32 {
         match self {
             TypedPacket::BasicAttackPos(p) => p.entity_id,
+            TypedPacket::BasicAttack(p) => p.entity_id,
             TypedPacket::OnLeaveVisibility(p) => p.entity_id,
             TypedPacket::SetCooldown(p) => p.entity_id,
             TypedPacket::AddBuffModifier(p) => p.entity_id,

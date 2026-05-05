@@ -16,25 +16,26 @@
       "BasicAttackPos": {
         "samples": 8243,
         "all_positions_in_map_pct": 0.9553560596870072,
-        "valid_slot_pct": 0.395001819725828,
-        "verdict": "WEAK"
+        "entity_at_0x28_present_pct": 0.0,
+        "entity_at_0x28_when_present_pct": 0.0,
+        "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 108,
-        "valid_slot_pct": 1.0,
+        "samples": 278,
+        "valid_slot_pct": 0.9964028776978417,
         "valid_cooldown_total_pct": 0.0,
         "remaining_le_total_pct": 0.0,
         "slot_distribution": {
-          "2": 88,
+          "2": 257,
           "1": 19,
           "0": 1
         },
         "verdict": "FAIL"
       },
       "NpcBuffAdd": {
-        "samples": 63736,
-        "buff_target_is_entity_pct": 0.9886563323710305,
-        "caster_is_entity_pct": 0.8541326722731266,
+        "samples": 63754,
+        "buff_target_is_entity_pct": 0.9886595350879944,
+        "caster_is_entity_pct": 0.85417385575807,
         "verdict": "PASS"
       },
       "AddBuffModifier": null
@@ -50,24 +51,26 @@
       "BasicAttackPos": {
         "samples": 10315,
         "all_positions_in_map_pct": 0.9501696558410082,
-        "valid_slot_pct": 0.5304895782840523,
-        "verdict": "WEAK"
+        "entity_at_0x28_present_pct": 0.0,
+        "entity_at_0x28_when_present_pct": 0.0,
+        "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 7,
-        "valid_slot_pct": 1.0,
+        "samples": 112,
+        "valid_slot_pct": 0.625,
         "valid_cooldown_total_pct": 0.0,
         "remaining_le_total_pct": 0.0,
         "slot_distribution": {
+          "0": 63,
           "1": 6,
-          "0": 1
+          "2": 1
         },
         "verdict": "FAIL"
       },
       "NpcBuffAdd": {
-        "samples": 92839,
-        "buff_target_is_entity_pct": 0.9876775923911287,
-        "caster_is_entity_pct": 0.8549208845420567,
+        "samples": 92855,
+        "buff_target_is_entity_pct": 0.9876797156857466,
+        "caster_is_entity_pct": 0.8549458833665392,
         "verdict": "PASS"
       },
       "AddBuffModifier": null
@@ -83,14 +86,15 @@
       "BasicAttackPos": {
         "samples": 6132,
         "all_positions_in_map_pct": 0.9611872146118722,
-        "valid_slot_pct": 0.38111545988258316,
-        "verdict": "WEAK"
+        "entity_at_0x28_present_pct": 0.0,
+        "entity_at_0x28_when_present_pct": 0.0,
+        "verdict": "PASS"
       },
       "SetCooldown": null,
       "NpcBuffAdd": {
-        "samples": 34146,
-        "buff_target_is_entity_pct": 0.9814326714695718,
-        "caster_is_entity_pct": 0.8577871493000644,
+        "samples": 34156,
+        "buff_target_is_entity_pct": 0.9814381075067338,
+        "caster_is_entity_pct": 0.8578287855720811,
         "verdict": "PASS"
       },
       "AddBuffModifier": null
@@ -106,23 +110,24 @@
       "BasicAttackPos": {
         "samples": 8792,
         "all_positions_in_map_pct": 0.9144676979071884,
-        "valid_slot_pct": 0.543221110100091,
-        "verdict": "WEAK"
+        "entity_at_0x28_present_pct": 0.0,
+        "entity_at_0x28_when_present_pct": 0.0,
+        "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 7,
+        "samples": 33,
         "valid_slot_pct": 1.0,
         "valid_cooldown_total_pct": 0.0,
         "remaining_le_total_pct": 0.0,
         "slot_distribution": {
-          "1": 7
+          "1": 33
         },
         "verdict": "FAIL"
       },
       "NpcBuffAdd": {
-        "samples": 40712,
-        "buff_target_is_entity_pct": 0.9816270387109451,
-        "caster_is_entity_pct": 0.8613185301630969,
+        "samples": 40722,
+        "buff_target_is_entity_pct": 0.9816315505132361,
+        "caster_is_entity_pct": 0.8613525858258435,
         "verdict": "PASS"
       },
       "AddBuffModifier": null
@@ -138,10 +143,10 @@
     },
     "BasicAttackPos": {
       "verdicts": {
-        "WEAK": 4
+        "PASS": 4
       },
       "n_replays": 4,
-      "consensus": "weak_consistent"
+      "consensus": "proven"
     },
     "SetCooldown": {
       "verdicts": {

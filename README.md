@@ -514,28 +514,48 @@ Done in this branch, top to bottom of the original list:
    array. Replication classes (~83% of all events) are skipped
    intentionally: typed wrapping without a property table is just
    cosmetic.
-5. **State correlation.** Framework done; **2 of 5 classes promoted
+5. **State correlation.** Framework done; **3 of 5 classes promoted
    to "proven" across 4 replays.** `scripts/validate_typed_events.py`
    runs internal sanity checks (positions in map bounds, entity ids
    >= 0x40000000, slot values in range) and reports PASS / WEAK / FAIL.
    `scripts/validate_across_replays.py` aggregates verdicts across
-   games. First-run consensus on 4 user replays:
+   games. Final consensus on 4 user replays:
 
    ```
    OnLeaveVisibility      PASS x4    proven
    NpcBuffAdd             PASS x4    proven
-   BasicAttackPos         WEAK x4    weak_consistent
+   BasicAttackPos         PASS x4    proven
    SetCooldown            FAIL x3    fail_consistent
    AddBuffModifier        no data    (netid never fires on these replays)
    ```
 
-   The two PASS classes were lifted from initial WEAK/FAIL by the
-   validator-driven offset corrections it surfaced — for NpcBuffAdd,
-   the catalog's "buffed_entity_net_id" at 0x18 was wrong (8%
-   entity-shape across 40K samples); the real buff target is at 0x2c
-   (98% entity-shape) and the caster is at 0x34. The catalog wasn't
-   edited (it's regenerated from the emulator) — `src/packet_handlers.rs`
-   carries the corrections with provenance comments.
+   The three PASS classes were lifted from initial WEAK/FAIL by
+   validator-driven offset corrections that the framework surfaced:
+
+   - **NpcBuffAdd**: catalog's "buffed_entity_net_id" at 0x18 was
+     wrong (8% entity-shape across 40K samples); the real buff
+     target is at 0x2c (98% entity-shape) and the caster is at 0x34.
+   - **BasicAttackPos**: catalog's caster (0x18) and target (0x30)
+     are always-zero offsets. The actual entity reference is at
+     0x28 (99.5% entity-shape across 4.5K samples that have it).
+     Catalog also mis-names 0x60/0x64 as `mana_cost` / `level_or_slot`
+     when they're 50/50 slot-shape vs random garbage; not graded.
+   - **OnLeaveVisibility**: leaver_net_id at 0x10 is correctly named;
+     ~20% of samples have leaver=0 (legitimate "no specific leaver"
+     for area de-fog), which the validator now treats as well-typed
+     rather than a failure.
+
+   The catalog itself wasn't edited (it's regenerated from the emulator
+   probe and a manual edit there would get clobbered) —
+   `src/packet_handlers.rs` carries the corrections with provenance
+   comments.
+
+   SetCooldown is the remaining hard case: 99.8% of samples have a
+   wide write at 0x10 but it's almost always 0 or 0xffffffff
+   (sentinel "no cooldown"). The current netid (452) might be a
+   reset/init variant rather than the typical cooldown-set pattern.
+   Other netids in the class set (157, 268, 533, 955) aren't
+   captured for emulation in 16.9 — re-enabling them would help.
 
    `scripts/correlate_match_v5.py` is a framework that takes a Match-V5
    timeline JSON and reports per-anchor timestamp deltas + entity

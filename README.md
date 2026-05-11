@@ -29,6 +29,8 @@ Ending state:
 | Full decode time on benchmark replay (44 min game)      | **2 min 24 s**  |
 | Riot's real packet class vocabulary recovered           | **320 PKT_*_s names** |
 | Decoders mapped to Riot class names (shape-anchored)    | 53 / 53         |
+| Typed Rust handlers (9 packet classes)                  | 9 / 9 round-trip-tested |
+| Empirically proven across ≥5 replays (state correlation)| **7 PROVEN, 1 WEAK** (of 8 validated) |
 | `rofl → typed event timeline` end-to-end                | ✓ (~5 minutes total) |
 
 The branch ships:
@@ -522,25 +524,54 @@ Done in this branch, top to bottom of the original list:
    contract). Replication classes (~83% of all events) are skipped
    intentionally: typed wrapping without a property table is just
    cosmetic.
-5. **State correlation.** Framework done; **3 of 5 original classes
-   promoted to "proven" across 4 replays.** The 3 new classes added in
-   item 4 have validators wired into both `validate_typed_events.py`
-   and `validate_across_replays.py`, but a fresh cross-replay run
-   hasn't been done since they landed — their consensus will appear in
-   the next `cross-replay-report.json` refresh.
+5. **State correlation.** Framework done; **7 of 8 typed classes
+   promoted to "proven" across 5 replays, 8th lifted from FAIL to
+   WEAK.** Up from 3 of 5 in the previous run. The lift came from:
+
+   - `scripts/wire_catalog_decoders.py` (new) added 22 catalog-mapped
+     netids into `patch/16-9.patch`'s `extra_decoders[]`:
+     - 12 for `NpcHeroDie` (0xfd6270)
+     - 3 for `AddFollowTargetPosition` (0x10371f0)
+     - 3 for `AddBuffModifier` (0x107c470)  *(1 conflict, skipped)*
+     - 4 for `SetCooldown` (0xfdb200)  *(1 conflict, skipped)*
+
+     Brute-force never matched those netids — the catalog's structural
+     netid->decoder map (walked from the 0xe83930 dispatcher's
+     constructor chain) had them but the brute-force pipeline never
+     ran on them. The 2 conflict netids (89 claimed by an existing
+     `0xfcfd30` wire, and 452 by the same) were kept on their
+     existing wires: brute-force evidence on real payloads beats
+     structural inference. Archive went from 39 to 61 entries.
+   - The 3 newly typed classes from item 4 + the previously no-data
+     `AddBuffModifier` now produce typed events and grade against
+     the validators introduced in the previous commit.
+
    `scripts/validate_typed_events.py` runs internal sanity checks
    (positions in map bounds, entity ids >= 0x40000000, slot values in
    range) and reports PASS / WEAK / FAIL. `scripts/validate_across_replays.py`
-   aggregates verdicts across games. Last recorded consensus on 4 user
-   replays:
+   aggregates verdicts across games. Consensus on 5 user replays:
 
    ```
-   OnLeaveVisibility      PASS x4    proven
-   NpcBuffAdd             PASS x4    proven
-   BasicAttackPos         PASS x4    proven
-   SetCooldown            FAIL x3    fail_consistent
-   AddBuffModifier        no data    (netid never fires on these replays)
+   OnLeaveVisibility         PASS x5    proven
+   BasicAttackPos            PASS x5    proven
+   NpcBuffAdd                PASS x5    proven
+   AddBuffModifier           PASS x5    proven   <- lifted (newly wired)
+   NpcHeroDie                PASS x5    proven   <- lifted (newly wired)
+   NpcDieMapView             PASS x5    proven   <- lifted (already wired)
+   AddFollowTargetPosition   PASS x5    proven   <- lifted (newly wired)
+   SetCooldown               WEAK x5    weak_consistent  <- lifted from FAIL
    ```
+
+   SetCooldown sample counts jumped from 3-278 (single netid 438) to
+   102-822 (five netids 157/268/438/533/955) — adding the catalog
+   netids brought in the actual cooldown-set traffic, where the prior
+   wire was capturing a reset/init variant. WEAK means the validator's
+   composite score (slot-in-range + total-in-(0,600s] + remaining<=total)
+   averages 0.40-0.79 across samples; the offsets have real signal but
+   not every sample satisfies all three rules. To clear PASS the
+   validator would need to relax its constraints (treat 0 / 0xffffffff
+   total as a valid sentinel for "no cooldown") or the offsets need
+   per-netid tuning. Either is a separate piece of work.
 
    The three PASS classes were lifted from initial WEAK/FAIL by
    validator-driven offset corrections that the framework surfaced:

@@ -1,5 +1,5 @@
 {
-  "n_replays_run": 4,
+  "n_replays_run": 5,
   "n_replays_skipped": 1,
   "skipped_replays": [
     "EUW1-7811790972.rofl"
@@ -21,16 +21,16 @@
         "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 278,
-        "valid_slot_pct": 0.9964028776978417,
-        "valid_cooldown_total_pct": 0.0,
-        "remaining_le_total_pct": 0.0,
+        "samples": 635,
+        "valid_slot_pct": 0.5165354330708661,
+        "valid_cooldown_total_pct": 0.5196850393700787,
+        "remaining_le_total_pct": 0.5070866141732283,
         "slot_distribution": {
-          "2": 257,
-          "1": 19,
-          "0": 1
+          "2": 268,
+          "1": 42,
+          "0": 18
         },
-        "verdict": "FAIL"
+        "verdict": "WEAK"
       },
       "NpcBuffAdd": {
         "samples": 63754,
@@ -38,7 +38,28 @@
         "caster_is_entity_pct": 0.85417385575807,
         "verdict": "PASS"
       },
-      "AddBuffModifier": null
+      "AddBuffModifier": {
+        "samples": 38,
+        "entity_id_is_entity_pct": 0.9736842105263158,
+        "small_id_pct": 0.9210526315789473,
+        "verdict": "PASS"
+      },
+      "NpcHeroDie": {
+        "samples": 294,
+        "entity_id_is_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcDieMapView": {
+        "samples": 1282,
+        "entity_id_is_entity_pct": 1.0,
+        "id_pair_has_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "AddFollowTargetPosition": {
+        "samples": 102,
+        "position_in_map_bounds_pct": 1.0,
+        "verdict": "PASS"
+      }
     },
     "EUW1-7841288585.rofl": {
       "OnLeaveVisibility": {
@@ -56,16 +77,16 @@
         "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 112,
-        "valid_slot_pct": 0.625,
-        "valid_cooldown_total_pct": 0.0,
-        "remaining_le_total_pct": 0.0,
+        "samples": 822,
+        "valid_slot_pct": 0.17639902676399027,
+        "valid_cooldown_total_pct": 0.8260340632603407,
+        "remaining_le_total_pct": 0.8138686131386861,
         "slot_distribution": {
-          "0": 63,
-          "1": 6,
-          "2": 1
+          "0": 100,
+          "1": 23,
+          "2": 22
         },
-        "verdict": "FAIL"
+        "verdict": "WEAK"
       },
       "NpcBuffAdd": {
         "samples": 92855,
@@ -73,7 +94,28 @@
         "caster_is_entity_pct": 0.8549458833665392,
         "verdict": "PASS"
       },
-      "AddBuffModifier": null
+      "AddBuffModifier": {
+        "samples": 48,
+        "entity_id_is_entity_pct": 0.9791666666666666,
+        "small_id_pct": 0.9791666666666666,
+        "verdict": "PASS"
+      },
+      "NpcHeroDie": {
+        "samples": 662,
+        "entity_id_is_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcDieMapView": {
+        "samples": 1341,
+        "entity_id_is_entity_pct": 1.0,
+        "id_pair_has_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "AddFollowTargetPosition": {
+        "samples": 55,
+        "position_in_map_bounds_pct": 1.0,
+        "verdict": "PASS"
+      }
     },
     "EUW1-7841358769.rofl": {
       "OnLeaveVisibility": {
@@ -90,14 +132,46 @@
         "entity_at_0x28_when_present_pct": 0.0,
         "verdict": "PASS"
       },
-      "SetCooldown": null,
+      "SetCooldown": {
+        "samples": 632,
+        "valid_slot_pct": 0.16930379746835442,
+        "valid_cooldown_total_pct": 0.9272151898734177,
+        "remaining_le_total_pct": 0.8908227848101266,
+        "slot_distribution": {
+          "1": 42,
+          "0": 36,
+          "2": 29
+        },
+        "verdict": "WEAK"
+      },
       "NpcBuffAdd": {
         "samples": 34156,
         "buff_target_is_entity_pct": 0.9814381075067338,
         "caster_is_entity_pct": 0.8578287855720811,
         "verdict": "PASS"
       },
-      "AddBuffModifier": null
+      "AddBuffModifier": {
+        "samples": 56,
+        "entity_id_is_entity_pct": 1.0,
+        "small_id_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcHeroDie": {
+        "samples": 443,
+        "entity_id_is_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcDieMapView": {
+        "samples": 1236,
+        "entity_id_is_entity_pct": 1.0,
+        "id_pair_has_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "AddFollowTargetPosition": {
+        "samples": 10,
+        "position_in_map_bounds_pct": 1.0,
+        "verdict": "PASS"
+      }
     },
     "EUW1-7841558966.rofl": {
       "OnLeaveVisibility": {
@@ -115,14 +189,16 @@
         "verdict": "PASS"
       },
       "SetCooldown": {
-        "samples": 33,
-        "valid_slot_pct": 1.0,
-        "valid_cooldown_total_pct": 0.0,
-        "remaining_le_total_pct": 0.0,
+        "samples": 324,
+        "valid_slot_pct": 0.2654320987654321,
+        "valid_cooldown_total_pct": 0.8117283950617284,
+        "remaining_le_total_pct": 0.75,
         "slot_distribution": {
-          "1": 33
+          "1": 49,
+          "0": 19,
+          "2": 18
         },
-        "verdict": "FAIL"
+        "verdict": "WEAK"
       },
       "NpcBuffAdd": {
         "samples": 40722,
@@ -130,42 +206,142 @@
         "caster_is_entity_pct": 0.8613525858258435,
         "verdict": "PASS"
       },
-      "AddBuffModifier": null
+      "AddBuffModifier": {
+        "samples": 52,
+        "entity_id_is_entity_pct": 0.9615384615384616,
+        "small_id_pct": 0.9615384615384616,
+        "verdict": "PASS"
+      },
+      "NpcHeroDie": {
+        "samples": 287,
+        "entity_id_is_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcDieMapView": {
+        "samples": 1053,
+        "entity_id_is_entity_pct": 1.0,
+        "id_pair_has_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "AddFollowTargetPosition": {
+        "samples": 28,
+        "position_in_map_bounds_pct": 1.0,
+        "verdict": "PASS"
+      }
+    },
+    "EUW1-7841615094.rofl": {
+      "OnLeaveVisibility": {
+        "samples": 8551,
+        "leaver_is_entity_pct": 0.8437609636299848,
+        "leaver_is_zero_pct": 0.1562390363700152,
+        "leaver_bad_small_pct": 0.0,
+        "verdict": "PASS"
+      },
+      "BasicAttackPos": {
+        "samples": 3556,
+        "all_positions_in_map_pct": 0.9488188976377953,
+        "entity_at_0x28_present_pct": 0.0,
+        "entity_at_0x28_when_present_pct": 0.0,
+        "verdict": "PASS"
+      },
+      "SetCooldown": {
+        "samples": 102,
+        "valid_slot_pct": 0.19607843137254902,
+        "valid_cooldown_total_pct": 0.8431372549019608,
+        "remaining_le_total_pct": 0.8333333333333334,
+        "slot_distribution": {
+          "1": 11,
+          "2": 6,
+          "0": 3
+        },
+        "verdict": "WEAK"
+      },
+      "NpcBuffAdd": {
+        "samples": 26443,
+        "buff_target_is_entity_pct": 0.9802972431267254,
+        "caster_is_entity_pct": 0.8518700601293347,
+        "verdict": "PASS"
+      },
+      "AddBuffModifier": {
+        "samples": 43,
+        "entity_id_is_entity_pct": 1.0,
+        "small_id_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcHeroDie": {
+        "samples": 119,
+        "entity_id_is_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "NpcDieMapView": {
+        "samples": 509,
+        "entity_id_is_entity_pct": 1.0,
+        "id_pair_has_entity_pct": 1.0,
+        "verdict": "PASS"
+      },
+      "AddFollowTargetPosition": {
+        "samples": 11,
+        "position_in_map_bounds_pct": 1.0,
+        "verdict": "PASS"
+      }
     }
   },
   "aggregate": {
     "OnLeaveVisibility": {
       "verdicts": {
-        "PASS": 4
+        "PASS": 5
       },
-      "n_replays": 4,
+      "n_replays": 5,
       "consensus": "proven"
     },
     "BasicAttackPos": {
       "verdicts": {
-        "PASS": 4
+        "PASS": 5
       },
-      "n_replays": 4,
+      "n_replays": 5,
       "consensus": "proven"
     },
     "SetCooldown": {
       "verdicts": {
-        "FAIL": 3
+        "WEAK": 5
       },
-      "n_replays": 3,
-      "consensus": "fail_consistent"
+      "n_replays": 5,
+      "consensus": "weak_consistent"
     },
     "NpcBuffAdd": {
       "verdicts": {
-        "PASS": 4
+        "PASS": 5
       },
-      "n_replays": 4,
+      "n_replays": 5,
       "consensus": "proven"
     },
     "AddBuffModifier": {
-      "verdicts": {},
-      "n_replays": 0,
-      "consensus": "no_data"
+      "verdicts": {
+        "PASS": 5
+      },
+      "n_replays": 5,
+      "consensus": "proven"
+    },
+    "NpcHeroDie": {
+      "verdicts": {
+        "PASS": 5
+      },
+      "n_replays": 5,
+      "consensus": "proven"
+    },
+    "NpcDieMapView": {
+      "verdicts": {
+        "PASS": 5
+      },
+      "n_replays": 5,
+      "consensus": "proven"
+    },
+    "AddFollowTargetPosition": {
+      "verdicts": {
+        "PASS": 5
+      },
+      "n_replays": 5,
+      "consensus": "proven"
     }
   }
 }

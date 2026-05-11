@@ -179,7 +179,7 @@ In order of expected leverage:
 
 A reasonable two-week target: `Replication` + `UnitApplyDamage` +
 `NPCDieMapView` decoded on 16.9 — that's HP bars, kill feed, and NPC
-deaths all working in the viewer.
+deaths all decoded end-to-end.
 
 ## Cross-patch maintenance
 

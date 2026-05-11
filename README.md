@@ -506,20 +506,33 @@ Done in this branch, top to bottom of the original list:
    of events get an entity attribution; the remaining 15% are on
    netids where `param` carries a non-entity field (spell id /
    buff id). Players resolve via the metadata registry.
-4. ~~**Typed Rust handlers.**~~ Done for the top 5: `BasicAttackPos`,
-   `OnLeaveVisibility`, `SetCooldown`, `AddBuffModifier`,
-   `NpcBuffAdd`. `src/packet_handlers.rs` reads plaintext from the
-   writes log (first wide write per offset) — NOT from the post-
-   obfuscation `struct_bytes`. Output JSON gets a `typed_events[]`
-   array. Replication classes (~83% of all events) are skipped
+4. ~~**Typed Rust handlers.**~~ Done for 9 packet classes:
+   `BasicAttackPos`, `BasicAttack`, `OnLeaveVisibility`, `SetCooldown`,
+   `AddBuffModifier`, `NpcBuffAdd`, plus `NpcHeroDie`, `NpcDieMapView`,
+   `AddFollowTargetPosition` — the latter three picked off the
+   catalog's hand-curated entries with well-defined shapes ("id +
+   scalar", "killer + killed + flag", "2 floats + scalar + trailing").
+   Covers death events and camera follow targets that the original 5
+   missed. `src/packet_handlers.rs` reads plaintext from the writes
+   log (first wide write per offset) — NOT from the post-obfuscation
+   `struct_bytes`. Output JSON gets a `typed_events[]` array. Each
+   handler has a unit round-trip test (15 tests total in
+   `packet_handlers::tests`, covering all 9 handlers plus 6 edge-case
+   tests for the plaintext-reconstruction logic and the strict-Some
+   contract). Replication classes (~83% of all events) are skipped
    intentionally: typed wrapping without a property table is just
    cosmetic.
-5. **State correlation.** Framework done; **3 of 5 classes promoted
-   to "proven" across 4 replays.** `scripts/validate_typed_events.py`
-   runs internal sanity checks (positions in map bounds, entity ids
-   >= 0x40000000, slot values in range) and reports PASS / WEAK / FAIL.
-   `scripts/validate_across_replays.py` aggregates verdicts across
-   games. Final consensus on 4 user replays:
+5. **State correlation.** Framework done; **3 of 5 original classes
+   promoted to "proven" across 4 replays.** The 3 new classes added in
+   item 4 have validators wired into both `validate_typed_events.py`
+   and `validate_across_replays.py`, but a fresh cross-replay run
+   hasn't been done since they landed — their consensus will appear in
+   the next `cross-replay-report.json` refresh.
+   `scripts/validate_typed_events.py` runs internal sanity checks
+   (positions in map bounds, entity ids >= 0x40000000, slot values in
+   range) and reports PASS / WEAK / FAIL. `scripts/validate_across_replays.py`
+   aggregates verdicts across games. Last recorded consensus on 4 user
+   replays:
 
    ```
    OnLeaveVisibility      PASS x4    proven

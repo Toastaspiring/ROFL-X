@@ -97,6 +97,12 @@ def run_validator(validator: Path, output_json: Path) -> dict:
             by_kind.get("NpcBuffAdd", [])),
         "AddBuffModifier": v.validate_add_buff_modifier(
             by_kind.get("AddBuffModifier", [])),
+        "NpcHeroDie": v.validate_npc_hero_die(
+            by_kind.get("NpcHeroDie", [])),
+        "NpcDieMapView": v.validate_npc_die_map_view(
+            by_kind.get("NpcDieMapView", [])),
+        "AddFollowTargetPosition": v.validate_add_follow_target_position(
+            by_kind.get("AddFollowTargetPosition", [])),
     }
 
 
@@ -148,7 +154,8 @@ def main() -> int:
           f"({len(skipped)} skipped) ===")
     aggregate = {}
     classes = ["OnLeaveVisibility", "BasicAttackPos",
-               "SetCooldown", "NpcBuffAdd", "AddBuffModifier"]
+               "SetCooldown", "NpcBuffAdd", "AddBuffModifier",
+               "NpcHeroDie", "NpcDieMapView", "AddFollowTargetPosition"]
     print(f"{'Class':>20s}  {'PASS':>5s}  {'WEAK':>5s}  {'FAIL':>5s}  consensus")
     for kind in classes:
         verdicts = []

@@ -19,6 +19,17 @@
 //!   PKT_CHAR_SetCooldown_Broadcast_s                1%  handled here
 //!   PKT_S2C_AddBuffModifier_s                       1%  handled here
 //!   PKT_NPC_BuffAdd2_s                              1%  handled here
+//!   PKT_NPC_Hero_Die_s                              ?   handled here (a)
+//!   PKT_NPC_Die_MapView_s                           ?   handled here (a)
+//!   PKT_S2C_AddFollowTargetPosition_s               ?   handled here (a)
+//!
+//! (a) Added after the initial share table was measured. Per-class
+//! frequencies on the benchmark replay haven't been re-checked since;
+//! these three were picked off the catalog because they have hand-curated
+//! field layouts and well-defined shapes ("id + scalar", "killer +
+//! killed + flag", "2 floats + scalar + trailing"). They cover packet
+//! classes from the death / level-up / camera families that the original
+//! 5 handlers don't touch.
 //!
 //! The replication classes are intentionally skipped: their payload is a
 //! property-id + a free-form value, and the property table isn't decoded
@@ -62,6 +73,9 @@ pub enum TypedPacket {
     SetCooldown(SetCooldown),
     AddBuffModifier(AddBuffModifier),
     NpcBuffAdd(NpcBuffAdd),
+    NpcHeroDie(NpcHeroDie),
+    NpcDieMapView(NpcDieMapView),
+    AddFollowTargetPosition(AddFollowTargetPosition),
 }
 
 /// Basic attack landed: caster, target, end-position, spell hash,
@@ -239,6 +253,83 @@ pub struct NpcBuffAdd {
     pub field_h: f32,
 }
 
+/// NPC or hero death event — or one of three related "id + scalar"
+/// classes that share this decoder. The catalog tags it as the primary
+/// `PKT_NPC_Hero_Die_s`, but the shape also matches
+/// `PKT_NPC_LevelUp_s`, `PKT_NPC_LevelUp_Global_s`, and
+/// `PKT_S2C_SetSpellLevel_s`, and the decoder fires across 12 netids in
+/// the benchmark replay — likely a shared decoder for a small family.
+/// State correlation (item E in the roadmap) is the path to
+/// disambiguate; for now, consumers should treat the `kind` label as a
+/// best guess and use the netid (available via `extra_decoders[]`) when
+/// they need to distinguish family members.
+///
+/// Decoder: 0xfd6270.
+///
+/// Field layout:
+/// - `entity_id` (from block.param) is the affected entity.
+/// - `primary_value` at 0x14 is 4 bytes the catalog can't pre-classify
+///   as int vs float; both interpretations exposed.
+/// - `secondary_value` at 0x20 is u32-shaped per the catalog.
+#[derive(Debug, Clone, Serialize)]
+pub struct NpcHeroDie {
+    pub timestamp: f32,
+    pub entity_id: u32,
+    pub primary_value_u32: u32,
+    pub primary_value_f32: f32,
+    pub secondary_value: u32,
+}
+
+/// Map-view broadcast for a unit death (minion / monster / champion).
+/// Catalog primary `PKT_NPC_Die_MapView_s`, with `PKT_NPC_Die_Broadcast_s`,
+/// `PKT_NPC_Hero_Die_s`, and `PKT_S2C_RemoveItem_s` as alternative
+/// candidates that share the same three-field "killer + killed + flag"
+/// shape. The decoder fires for 6 netids in the benchmark replay.
+///
+/// Decoder: 0x10843b0.
+///
+/// Field layout:
+/// - `primary_id` at 0x14 — likely the killer entity.
+/// - `secondary_id` at 0x18 — likely the killed entity.
+/// - `tertiary_value` at 0x1c — u32_or_f32 per the catalog; both
+///   interpretations exposed. Probably a flag, score, or death-cause id.
+#[derive(Debug, Clone, Serialize)]
+pub struct NpcDieMapView {
+    pub timestamp: f32,
+    pub entity_id: u32,
+    pub primary_id: u32,
+    pub secondary_id: u32,
+    pub tertiary_value_u32: u32,
+    pub tertiary_value_f32: f32,
+}
+
+/// Add a follow-target position for camera tracking, AI follow, or a
+/// scripted unit anchor. Catalog primary `PKT_S2C_AddFollowTargetPosition_s`,
+/// with `PKT_S2C_AddFollowTargetTeleport_s` as an alternative candidate
+/// sharing the same "2 floats + scalar + trailing" shape. The decoder
+/// fires for 3 netids in the benchmark replay.
+///
+/// Decoder: 0x10371f0.
+///
+/// Field layout:
+/// - `position_x` / `position_y` at 0x08 / 0x0c — the world position to
+///   follow. In-map values fall within Summoner's Rift bounds (~0..15000)
+///   when the packet fires for in-game targets; the validator uses this
+///   as the load-bearing PASS/FAIL signal.
+/// - `scalar_or_id` at 0x18 — u32-shaped. Likely the follow target's
+///   entity id when anchored to a unit.
+/// - `trailing_value` at 0x24 — u32_or_f32; both interpretations exposed.
+#[derive(Debug, Clone, Serialize)]
+pub struct AddFollowTargetPosition {
+    pub timestamp: f32,
+    pub entity_id: u32,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub scalar_or_id: u32,
+    pub trailing_value_u32: u32,
+    pub trailing_value_f32: f32,
+}
+
 impl TypedPacket {
     /// Try to decode an `ExtraDecoded` blob as the typed packet matching
     /// `decoder_rva`. Returns `None` if the RVA isn't recognized (the
@@ -351,6 +442,30 @@ impl TypedPacket {
                 field_g_f32: s.f32_at(0x3c)?,
                 field_h: s.f32_at(0x40)?,
             })),
+            "0xfd6270" => Some(TypedPacket::NpcHeroDie(NpcHeroDie {
+                timestamp,
+                entity_id,
+                primary_value_u32: s.u32_at(0x14)?,
+                primary_value_f32: s.f32_at(0x14)?,
+                secondary_value: s.u32_at(0x20)?,
+            })),
+            "0x10843b0" => Some(TypedPacket::NpcDieMapView(NpcDieMapView {
+                timestamp,
+                entity_id,
+                primary_id: s.u32_at(0x14)?,
+                secondary_id: s.u32_at(0x18)?,
+                tertiary_value_u32: s.u32_at(0x1c)?,
+                tertiary_value_f32: s.f32_at(0x1c)?,
+            })),
+            "0x10371f0" => Some(TypedPacket::AddFollowTargetPosition(AddFollowTargetPosition {
+                timestamp,
+                entity_id,
+                position_x: s.f32_at(0x08)?,
+                position_y: s.f32_at(0x0c)?,
+                scalar_or_id: s.u32_at(0x18)?,
+                trailing_value_u32: s.u32_at(0x24)?,
+                trailing_value_f32: s.f32_at(0x24)?,
+            })),
             _ => None,
         }
     }
@@ -365,6 +480,9 @@ impl TypedPacket {
             TypedPacket::SetCooldown(_) => "PKT_CHAR_SetCooldown_Broadcast_s",
             TypedPacket::AddBuffModifier(_) => "PKT_S2C_AddBuffModifier_s",
             TypedPacket::NpcBuffAdd(_) => "PKT_NPC_BuffAdd2_s",
+            TypedPacket::NpcHeroDie(_) => "PKT_NPC_Hero_Die_s",
+            TypedPacket::NpcDieMapView(_) => "PKT_NPC_Die_MapView_s",
+            TypedPacket::AddFollowTargetPosition(_) => "PKT_S2C_AddFollowTargetPosition_s",
         }
     }
 
@@ -377,6 +495,9 @@ impl TypedPacket {
             TypedPacket::SetCooldown(p) => p.timestamp,
             TypedPacket::AddBuffModifier(p) => p.timestamp,
             TypedPacket::NpcBuffAdd(p) => p.timestamp,
+            TypedPacket::NpcHeroDie(p) => p.timestamp,
+            TypedPacket::NpcDieMapView(p) => p.timestamp,
+            TypedPacket::AddFollowTargetPosition(p) => p.timestamp,
         }
     }
 
@@ -390,6 +511,9 @@ impl TypedPacket {
             TypedPacket::SetCooldown(p) => p.entity_id,
             TypedPacket::AddBuffModifier(p) => p.entity_id,
             TypedPacket::NpcBuffAdd(p) => p.entity_id,
+            TypedPacket::NpcHeroDie(p) => p.entity_id,
+            TypedPacket::NpcDieMapView(p) => p.entity_id,
+            TypedPacket::AddFollowTargetPosition(p) => p.entity_id,
         }
     }
 }
@@ -665,5 +789,182 @@ mod tests {
         // fails. The handler returns None on the first missing offset.
         let extra = extra_with(vec![]);
         assert!(TypedPacket::from_extra("0x1074580", 0.0, 0, &extra).is_none());
+    }
+
+    #[test]
+    fn basic_attack_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x10, 0x40000099, 4),
+            (0x18, 7000.0f32.to_bits() as u64, 4),
+            (0x1c, 8000.0f32.to_bits() as u64, 4),
+            (0x20, 9000.0f32.to_bits() as u64, 4),
+            (0x24, 10000.0f32.to_bits() as u64, 4),
+            (0x2c, 42, 4),
+            (0x30, 3.14f32.to_bits() as u64, 4),
+            (0x34, 0xdead_beef, 4),
+            (0x40, 1, 4),
+            (0x48, 100, 4),
+            (0x4c, 200, 4),
+        ]));
+        let p = TypedPacket::from_extra("0xf9bae0", 5.5, 0x40000077, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_Basic_Attack_s");
+        if let TypedPacket::BasicAttack(p) = p {
+            assert_eq!(p.entity_id, 0x40000077);
+            assert_eq!(p.source_or_caster_id, 0x40000099);
+            assert_eq!(p.position_a_x, 7000.0);
+            assert_eq!(p.position_b_y, 10000.0);
+            assert_eq!(p.scalar_a_u32, 42);
+            assert_eq!(p.trailing_id_or_flag, 1);
+            assert_eq!(p.trailing_value, 100);
+            assert_eq!(p.trailing_value_b, 200);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn on_leave_visibility_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x10, 0x40000123, 4),
+            (0x14, 7, 4),
+        ]));
+        let p = TypedPacket::from_extra("0xfaffc0", 12.0, 0x40000099, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_OnLeaveVisibilityClient_s");
+        if let TypedPacket::OnLeaveVisibility(p) = p {
+            assert_eq!(p.entity_id, 0x40000099);
+            assert_eq!(p.leaver_net_id, 0x40000123);
+            assert_eq!(p.visibility_flag_or_subtype, 7);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn npc_buff_add_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x18, 555, 4),
+            (0x1c, 0xdead_beef, 4),
+            (0x20, 0xcafe_babe, 4),
+            (0x2c, 0x40000077, 4),
+            (0x34, 0x40000099, 4),
+            (0x38, 2.5f32.to_bits() as u64, 4),
+            (0x3c, 0xfeed_face, 4),
+            (0x40, 100.0f32.to_bits() as u64, 4),
+        ]));
+        let p = TypedPacket::from_extra("0xfcd970", 50.0, 0x40000077, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_NPC_BuffAdd2_s");
+        if let TypedPacket::NpcBuffAdd(p) = p {
+            assert_eq!(p.entity_id, 0x40000077);
+            assert_eq!(p.misc_id_at_0x18, 555);
+            assert_eq!(p.buff_target, 0x40000077);
+            assert_eq!(p.caster_or_source, 0x40000099);
+            assert_eq!(p.field_h, 100.0);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn add_buff_modifier_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x14, 42, 4),
+            (0x18, 100, 4),
+            (0x1c, 200, 4),
+            (0x28, 333, 4),
+            (0x38, 444, 4),
+            (0x40, 1.5f32.to_bits() as u64, 4),
+            (0x44, 555, 4),
+        ]));
+        let p = TypedPacket::from_extra("0x107c470", 30.0, 0x40000099, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_S2C_AddBuffModifier_s");
+        if let TypedPacket::AddBuffModifier(p) = p {
+            assert_eq!(p.entity_id, 0x40000099);
+            assert_eq!(p.primary_id_or_value, 42);
+            assert_eq!(p.scalar_a_u32, 100);
+            assert_eq!(p.scalar_b_u32, 200);
+            assert_eq!(p.field_c, 333);
+            assert_eq!(p.field_d, 444);
+            assert_eq!(p.field_e, 1.5);
+            assert_eq!(p.field_f_u32, 555);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn npc_hero_die_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x14, 0x40000123, 4),
+            (0x20, 12, 4),
+        ]));
+        let p = TypedPacket::from_extra("0xfd6270", 600.0, 0x40000099, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_NPC_Hero_Die_s");
+        assert_eq!(p.timestamp(), 600.0);
+        if let TypedPacket::NpcHeroDie(p) = p {
+            assert_eq!(p.entity_id, 0x40000099);
+            assert_eq!(p.primary_value_u32, 0x40000123);
+            // f32 view of the same bits — primarily here to ensure
+            // both interpretations come from the same plaintext byte
+            // source rather than reading at a stale offset.
+            assert_eq!(p.primary_value_f32, f32::from_bits(0x40000123));
+            assert_eq!(p.secondary_value, 12);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn npc_die_map_view_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x14, 0x40000123, 4),
+            (0x18, 0x40000456, 4),
+            (0x1c, 99, 4),
+        ]));
+        let p = TypedPacket::from_extra("0x10843b0", 700.0, 0x40000099, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_NPC_Die_MapView_s");
+        if let TypedPacket::NpcDieMapView(p) = p {
+            assert_eq!(p.entity_id, 0x40000099);
+            assert_eq!(p.primary_id, 0x40000123);
+            assert_eq!(p.secondary_id, 0x40000456);
+            assert_eq!(p.tertiary_value_u32, 99);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn add_follow_target_position_round_trip() {
+        let extra = extra_with(writes_log(&[
+            (0x08, 5000.0f32.to_bits() as u64, 4),
+            (0x0c, 6000.0f32.to_bits() as u64, 4),
+            (0x18, 0x40000222, 4),
+            (0x24, 7, 4),
+        ]));
+        let p = TypedPacket::from_extra("0x10371f0", 100.0, 0x40000099, &extra).unwrap();
+        assert_eq!(p.class_label(), "PKT_S2C_AddFollowTargetPosition_s");
+        assert_eq!(p.entity_id(), 0x40000099);
+        if let TypedPacket::AddFollowTargetPosition(p) = p {
+            assert_eq!(p.position_x, 5000.0);
+            assert_eq!(p.position_y, 6000.0);
+            assert_eq!(p.scalar_or_id, 0x40000222);
+            assert_eq!(p.trailing_value_u32, 7);
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn new_handlers_return_none_on_empty() {
+        // Smoke test that the new handlers also follow the strict-Some
+        // contract on empty input. If a field is missing, the whole
+        // handler must yield None rather than building a struct with
+        // zero defaults that would silently lie to consumers.
+        let extra = extra_with(vec![]);
+        for rva in ["0xfd6270", "0x10843b0", "0x10371f0"] {
+            assert!(
+                TypedPacket::from_extra(rva, 0.0, 0, &extra).is_none(),
+                "{rva} should yield None when no writes are present"
+            );
+        }
     }
 }

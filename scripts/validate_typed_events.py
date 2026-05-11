@@ -211,18 +211,94 @@ def validate_npc_buff_add(events):
 
 
 def validate_add_buff_modifier(events):
-    """primary_id_or_value should be small (buff/modifier id < 100K)."""
+    """AddBuffModifier modifies an existing buff on a target entity. The
+    load-bearing signal is entity_id (block.param) being a real entity
+    most of the time — without that, the packet has no target to modify
+    and the class assignment is almost certainly wrong. We secondarily
+    check that primary_id_or_value looks like a small modifier/buff id.
+    The verdict is the worse of the two so a class that has a valid id
+    pool but no entity attachment still grades FAIL."""
     if not events:
         return None
+    real_entity = sum(1 for e in events if is_entity_id(e.get("entity_id")))
     small_id = sum(
         1 for e in events
         if isinstance(e.get("primary_id_or_value"), int)
         and 0 <= e["primary_id_or_value"] < 100_000
     )
+    entity_pct = real_entity / len(events)
+    id_pct = small_id / len(events)
     return {
         "samples": len(events),
-        "small_id_pct": small_id / len(events),
-        "verdict": grade(small_id / len(events)),
+        "entity_id_is_entity_pct": entity_pct,
+        "small_id_pct": id_pct,
+        # AddBuffModifier on a non-entity target makes no sense, so
+        # entity_id being entity-shaped is the harder constraint.
+        "verdict": grade(min(entity_pct, id_pct)),
+    }
+
+
+def validate_npc_hero_die(events):
+    """The decoder (0xfd6270) is shared across PKT_NPC_Hero_Die_s,
+    PKT_NPC_LevelUp_s, PKT_NPC_LevelUp_Global_s, and
+    PKT_S2C_SetSpellLevel_s. All four semantics have the same
+    load-bearing invariant: entity_id (block.param) is the affected
+    entity. We can't tell from shape alone which of the four families
+    a given sample belongs to, but we can prove the class assignment
+    isn't pointing at random non-entity blocks."""
+    if not events:
+        return None
+    real_entity = sum(1 for e in events if is_entity_id(e.get("entity_id")))
+    return {
+        "samples": len(events),
+        "entity_id_is_entity_pct": real_entity / len(events),
+        "verdict": grade(real_entity / len(events)),
+    }
+
+
+def validate_npc_die_map_view(events):
+    """The decoder (0x10843b0) fits a 'killer + killed + flag' shape.
+    Validator checks that entity_id (block.param) is a real entity AND
+    that at least one of {primary_id, secondary_id} is also entity-shaped
+    — the 'killer/killed' pair should produce at least one valid entity
+    reference per sample. The catalog's alternative candidate
+    PKT_S2C_RemoveItem_s would only have one entity reference (the
+    owner), so a per-sample 'at least one valid entity in the pair'
+    check covers both."""
+    if not events:
+        return None
+    real_entity = 0
+    pair_has_entity = 0
+    for e in events:
+        if is_entity_id(e.get("entity_id")):
+            real_entity += 1
+        if is_entity_id(e.get("primary_id")) or is_entity_id(e.get("secondary_id")):
+            pair_has_entity += 1
+    entity_pct = real_entity / len(events)
+    pair_pct = pair_has_entity / len(events)
+    return {
+        "samples": len(events),
+        "entity_id_is_entity_pct": entity_pct,
+        "id_pair_has_entity_pct": pair_pct,
+        "verdict": grade(min(entity_pct, pair_pct)),
+    }
+
+
+def validate_add_follow_target_position(events):
+    """The decoder (0x10371f0) writes a world position the camera or AI
+    should follow. Validator's load-bearing check is the position
+    falling inside the SR map bounds — a follow-target packet pointing
+    outside the map can't be a real game-world target."""
+    if not events:
+        return None
+    in_bounds = sum(
+        1 for e in events
+        if in_map_bounds(e.get("position_x")) and in_map_bounds(e.get("position_y"))
+    )
+    return {
+        "samples": len(events),
+        "position_in_map_bounds_pct": in_bounds / len(events),
+        "verdict": grade(in_bounds / len(events)),
     }
 
 
@@ -263,6 +339,10 @@ def main() -> int:
         ("SetCooldown", "PKT_CHAR_SetCooldown_Broadcast_s", validate_set_cooldown),
         ("NpcBuffAdd", "PKT_NPC_BuffAdd2_s", validate_npc_buff_add),
         ("AddBuffModifier", "PKT_S2C_AddBuffModifier_s", validate_add_buff_modifier),
+        ("NpcHeroDie", "PKT_NPC_Hero_Die_s", validate_npc_hero_die),
+        ("NpcDieMapView", "PKT_NPC_Die_MapView_s", validate_npc_die_map_view),
+        ("AddFollowTargetPosition", "PKT_S2C_AddFollowTargetPosition_s",
+         validate_add_follow_target_position),
     ]
 
     results = {}

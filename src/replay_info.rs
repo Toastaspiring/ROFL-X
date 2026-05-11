@@ -349,9 +349,10 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     // Typed handlers run alongside the raw `extras` capture: every
     // decoded sample is also offered to `TypedPacket::from_extra`, which
     // returns Some for the small set of classes with hand-written
-    // schemas (top 5 by event volume). The result is a single sorted
-    // stream of typed events that downstream consumers can iterate
-    // without revisiting the raw struct bytes.
+    // schemas (9 classes today; see `packet_handlers.rs` for the list
+    // and dispatch table). The result is a single sorted stream of
+    // typed events that downstream consumers can iterate without
+    // revisiting the raw struct bytes.
     let mut typed_events: Vec<crate::packet_handlers::TypedPacket> = Vec::new();
     for ed in &config.extra_decoders {
         let hits = blocks_with_netid(replay, ed.netid as u16)?;
@@ -403,9 +404,9 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
                 }
             };
             // Offer to the typed-handler dispatch. Only matches the
-            // top 5 classes by volume; others get None and aren't
-            // emitted as typed events (still available raw via
-            // `extra_decoders`).
+            // 9 classes with hand-written schemas; others get None
+            // and aren't emitted as typed events (still available raw
+            // via `extra_decoders`).
             if let Some(typed) = crate::packet_handlers::TypedPacket::from_extra(
                 &decoder_rva_str,
                 *timestamp,
@@ -584,9 +585,9 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     //       "caster_or_source_id": ..., "target_id": ..., ... },
     //     ...
     //   ]
-    // Only the top 5 classes by volume currently produce typed events.
-    // The rest stay raw under `extra_decoders`. See `packet_handlers.rs`
-    // for the dispatch table and field-offset documentation.
+    // 9 classes currently produce typed events. The rest stay raw
+    // under `extra_decoders`. See `packet_handlers.rs` for the
+    // dispatch table and field-offset documentation.
     if !typed_events.is_empty() {
         json["typed_events"] = serde_json::to_value(&typed_events)?;
     }

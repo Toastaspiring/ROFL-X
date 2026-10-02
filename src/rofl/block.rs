@@ -4,7 +4,9 @@ use crate::error::{Result, RoflError};
 pub const MARKER_TS_RELATIVE: u8 = 0x80;
 /// Marker bit: when set, `packet_id` is reused from the previous block.
 pub const MARKER_REUSE_PACKET_ID: u8 = 0x40;
-/// Marker bit: when set, `param` is a `u8` delta added to the previous param.
+/// Marker bit: when set, `param` is a signed `i8` delta added to the
+/// previous param (Mowokuma's parser adds it unsigned; see
+/// `docs/ROFL_FORMAT.md` § Block framing).
 pub const MARKER_PARAM_RELATIVE: u8 = 0x20;
 /// Marker bit: when set, `length` is a `u8`; otherwise a `u32`.
 pub const MARKER_LEN_U8: u8 = 0x10;
@@ -117,8 +119,8 @@ impl<'a> BlockIterator<'a> {
         };
 
         let param = if marker & MARKER_PARAM_RELATIVE != 0 {
-            let d = self.read_u8()?;
-            self.prev_param.wrapping_add(d as u32)
+            let d = self.read_u8()? as i8;
+            self.prev_param.wrapping_add_signed(d as i32)
         } else {
             self.read_u32()?
         };
@@ -210,6 +212,21 @@ mod tests {
         assert_eq!(b2.packet_id, 0x0100);
         assert_eq!(b2.param, 7);
         assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn param_delta_is_signed() {
+        // Block 1: absolute param 0x400000B1 (a hero net id).
+        let mut buf = vec![0x00u8];
+        buf.extend_from_slice(&0f32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0x0073u16.to_le_bytes());
+        buf.extend_from_slice(&0x4000_00B1u32.to_le_bytes());
+        // Block 2: relative param 0xFF = -1 -> 0x400000B0, not 0x400001B0.
+        buf.extend_from_slice(&[0xF0, 0, 0, 0xFF]);
+
+        let blocks: Vec<_> = BlockIterator::new(&buf).map(|b| b.unwrap()).collect();
+        assert_eq!(blocks[1].param, 0x4000_00B0);
     }
 
     #[test]

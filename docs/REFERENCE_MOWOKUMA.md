@@ -181,7 +181,7 @@ delta-encoded against their predecessor. The first byte of each block is a
 |       | else timestamp is absolute `f32`                     |
 | 0x40  | `packet_id` is reused from previous block            |
 |       | else read fresh `u16`                                |
-| 0x20  | `param` is `u8 delta + previous param`               |
+| 0x20  | `param` is `i8 delta + previous param` (she reads it as `u8`; see ROFL_FORMAT.md § Block framing) |
 |       | else read fresh `u32`                                |
 | 0x10  | `length` is `u8`                                     |
 |       | else `length` is `u32`                               |

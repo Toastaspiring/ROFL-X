@@ -303,7 +303,7 @@ bit 0x80  set → timestamp is a u8 delta (scaled by 0.001 s)
           clear → timestamp is an absolute f32
 bit 0x40  set → packet_id is reused from the previous block
           clear → packet_id is a fresh u16
-bit 0x20  set → param is a u8 delta (added to previous param)
+bit 0x20  set → param is a signed i8 delta (added to previous param)
           clear → param is a fresh u32
 bit 0x10  set → length is a u8
           clear → length is a u32
@@ -316,12 +316,28 @@ In all cases, fields appear in this order:
 1. `timestamp`: u8 delta (1 byte) or absolute f32 (4 bytes) per bit 0x80.
 2. `length`: u8 (1 byte) or u32 (4 bytes) per bit 0x10.
 3. `packet_id`: reused (0 bytes) or fresh u16 (2 bytes) per bit 0x40.
-4. `param`: u8 delta (1 byte) or fresh u32 (4 bytes) per bit 0x20.
+4. `param`: i8 delta (1 byte) or fresh u32 (4 bytes) per bit 0x20.
 5. `payload`: exactly `length` bytes.
 
 Parser state carried between blocks: `accumulated_time` (running f32),
 `previous_packet_id`, `previous_param`. Initialised to 0 at the start of
 each chunk.
+
+### `param` is the sender net id, and its delta is signed
+
+For packets addressed to a game object, `param` holds that object's net
+id; the deserializers never read it from the payload (see
+[DECODING.md](DECODING.md) § Net id). Tag: **VERIFIED** on patch 16.9.
+
+The one-byte delta is **signed**. Mowokuma's parser (and ROFL-X before
+October 2026) added it unsigned, which turns a `-1` step into `+255`:
+consecutive packets for heroes `0x400000B3`, `0x400000B2`, `0x400000B1`
+came out as `0x400000B3`, `0x400001B2`, `0x400002B1`. Evidence, one
+16.9 replay (EUW1-7841558966): read unsigned, `PKT_NPC_LevelUp_s` and
+`PKT_Update_HeroStats_KDA_s` land on 31 distinct hero-range ids, 21 of
+them phantom (`0x4000_01xx` .. `0x4000_05xx`); read signed, every one of
+them lands on exactly the ten hero net ids `0x400000AE`..`0x400000B7`.
+Her two decoders never use `param`, so her output is unaffected.
 
 ### Accumulated time
 
@@ -333,6 +349,8 @@ new absolute f32.
 
 - Minimum block: 1 marker + 1 ts-delta + 1 len-u8 + 0 (reuse pid) + 1
   param-delta + 0 payload = **4 bytes**.
+- The timestamp delta is unsigned: time never runs backwards inside a
+  chunk.
 - Maximum block header: 1 + 4 + 4 + 2 + 4 = **15 bytes**.
 - Payload can be anywhere from 0 to `u32::MAX` bytes in theory; in
   practice we see ~5–20 KB for dense keyframe payloads and 4–200 bytes

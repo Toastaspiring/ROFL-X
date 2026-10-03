@@ -32,6 +32,9 @@ use crate::rofl::Replay;
 const SHAPE_VOTE: f64 = 0.95;
 const SHAPE_MIN: usize = 5;
 
+/// How far a ward's corpse may spawn from where the ward was placed.
+const WARD_CORPSE_RADIUS: f32 = 200.0;
+
 /// Ward names placed by champions (trinkets, wards bought, rune wards).
 const WARD_NAMES: &[&str] = &[
     "YellowTrinket",
@@ -41,6 +44,15 @@ const WARD_NAMES: &[&str] = &[
     "VisionWard",
     "PerksZombieWard",
 ];
+
+/// A placed ward, until its corpse spawns.
+struct WardRecord {
+    placed: f32,
+    name: String,
+    owner: u32,
+    pos: [f32; 2],
+    died: Option<f32>,
+}
 
 #[derive(Debug, Clone)]
 pub struct TypedBlock {
@@ -264,8 +276,8 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
     let mut wards_placed = vec![0u32; n];
     let mut motion: Vec<Option<Motion>> = vec![None; n];
     let mut players_state: Vec<Value> = Vec::new();
-    let mut ward_list: Vec<(f32, String, u32, [f32; 2], Option<f32>)> = Vec::new();
-    let mut open_wards: HashMap<(u32, i32, i32), usize> = HashMap::new();
+    let mut ward_list: Vec<WardRecord> = Vec::new();
+    let mut open_wards: Vec<usize> = Vec::new();
     let mut next_tick = 1.0f32;
     let assists_of = assign_assists(typed, &roster, meta);
     // A recipe's result can land in a slot still holding one of its
@@ -369,16 +381,33 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
                 }));
             }
             GamePacket::Spawn(s) => {
-                let key = (s.owner, s.x.round() as i32, s.y.round() as i32);
                 if s.name.contains("Corpse") {
-                    if let Some(w) = open_wards.remove(&key) {
-                        ward_list[w].4 = Some(b.t);
+                    // The corpse spawns where the ward ended up, which can be
+                    // ~100 units from where it was placed: match the owner's
+                    // nearest live ward. Each death also spawns an unowned
+                    // corpse twin, skipped by the owner match.
+                    let nearest = open_wards
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, &w)| ward_list[w].owner == s.owner)
+                        .map(|(i, &w)| (i, distance(ward_list[w].pos, [s.x, s.y])))
+                        .filter(|(_, d)| *d <= WARD_CORPSE_RADIUS)
+                        .min_by(|a, b| a.1.total_cmp(&b.1));
+                    if let Some((i, _)) = nearest {
+                        let w = open_wards.swap_remove(i);
+                        ward_list[w].died = Some(b.t);
                     }
                 } else if WARD_NAMES.contains(&s.name.as_str()) {
                     let Some(p) = player_of(s.owner) else { continue };
                     wards_placed[p] += 1;
-                    open_wards.insert(key, ward_list.len());
-                    ward_list.push((b.t, s.name.clone(), s.owner, [s.x, s.y], None));
+                    open_wards.push(ward_list.len());
+                    ward_list.push(WardRecord {
+                        placed: b.t,
+                        name: s.name.clone(),
+                        owner: s.owner,
+                        pos: [s.x, s.y],
+                        died: None,
+                    });
                     events.push(json!({
                         "t": b.t, "type": "ward_placed", "player": p,
                         "ward": s.name, "x": s.x, "y": s.y,
@@ -413,16 +442,15 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
 
     let wards: Vec<Value> = ward_list
         .iter()
-        .filter_map(|(t, name, owner, pos, end)| {
-            let p = player_of(*owner)?;
-            let player = &meta.players[p];
+        .filter_map(|w| {
+            let player = &meta.players[player_of(w.owner)?];
             Some(json!({
-                "duration": end.map(|e| e - t),
-                "name": name,
+                "duration": w.died.map(|d| d - w.placed),
+                "name": w.name,
                 "owner": {"name": "", "role": role_label(player.role), "team": team_label(player.team)},
-                "pos": [pos[0] as i32, pos[1] as i32],
+                "pos": [w.pos[0] as i32, w.pos[1] as i32],
                 "team": team_label(player.team),
-                "timestamp": t,
+                "timestamp": w.placed,
             }))
         })
         .collect();
@@ -532,6 +560,10 @@ fn assign_assists(
         }
     }
     out
+}
+
+fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
 }
 
 fn state_at(t: f32, motion: &[Option<Motion>], meta: &crate::rofl::Metadata) -> Value {

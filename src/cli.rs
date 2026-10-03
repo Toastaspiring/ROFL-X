@@ -417,8 +417,8 @@ fn print_scoreboard(replay: &Replay<'_>) {
     };
     println!("Players ({}):", replay.metadata.players.len());
     println!(
-        "  {:<5} {:<8} {:<14} {}  {:>9} {:>3} {:>4} {:>6} {:>7}  riot id",
-        "team", "role", "champion", "W", "K/D/A", "lvl", "cs", "gold", "dmg"
+        "  {:<5} {:<8} {:<14} W  {:>9} {:>3} {:>4} {:>6} {:>7}  riot id",
+        "team", "role", "champion", "K/D/A", "lvl", "cs", "gold", "dmg"
     );
     for (p, raw) in replay.metadata.players.iter().zip(stats.iter()) {
         let id = p

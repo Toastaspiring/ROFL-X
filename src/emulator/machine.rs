@@ -79,7 +79,7 @@ impl MachineState {
     }
 
     fn touch(&mut self, addr: u64, size: usize) -> Option<std::ops::Range<usize>> {
-        if addr < HEAP_BASE || addr >= HEAP_BASE + HEAP_SIZE {
+        if !(HEAP_BASE..HEAP_BASE + HEAP_SIZE).contains(&addr) {
             return None;
         }
         let start = (addr - HEAP_BASE) as usize;

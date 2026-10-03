@@ -14,9 +14,10 @@
 //! | +0x38  | Riot string | object name, e.g. `YellowTrinket`       |
 //! | +0x58  | Riot string | skin name, e.g. `WardCorpse`            |
 //!
-//! Verified on 16.9 (netid 214): ward owners are the placing champion,
-//! a ward and its `*WardCorpse` share owner and position, and the spawn
-//! time equals the block timestamp.
+//! Verified on 16.9 (netid 214): ward spawns per champion equal statsJson
+//! `WARD_PLACED`; a ward's `*WardCorpse` has the same owner and spawns
+//! where the ward ended up (up to ~100 units from the placement point);
+//! the spawn time equals the block timestamp.
 
 use serde::Serialize;
 

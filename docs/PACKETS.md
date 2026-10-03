@@ -65,7 +65,8 @@ A batch of `(net id, speed, waypoints)` entries; Mowokuma's
 ### `SpawnMinion` names seen on Summoner's Rift
 
 `YellowTrinket`, `SightWard`, `JammerDevice` (wards), `S5Test_WardCorpse`
-/ `WardCorpse` (a ward died; same owner and position as the ward),
+/ `WardCorpse` (a ward died; same owner, spawned where the ward ended
+up, up to ~100 units from where it was placed, plus an unowned twin),
 `SRU_Plant_Vision` / `SRU_Plant_Satchel` / health plants,
 `SRU_CampRespawnMarker`, `MalzaharVoidling`, `PerksPerxie`,
 `LissandraPassive`, `TurretOvergrowth`, ... Lane minions spawn through
@@ -86,7 +87,9 @@ on 15.5). The decoder hands back the entry buffer described above;
 DOCUMENTED on 15.1 – 15.5 through Mowokuma's `ward_spawn_decrypt`
 (netid 571 on 15.5): name, owner id, ward id, x, y, captured from the
 decoder's struct writes. Placement names `YellowTrinket` / `SightWard` /
-`JammerDevice`; destruction is a `*Corpse` spawn at the same position.
+`JammerDevice`; destruction is a `*Corpse` spawn. Mowokuma matches it
+to the ward by exact position; on 16.9 the corpse can land ~100 units
+away, so ROFL-X matches the owner's nearest live ward instead.
 
 ---
 

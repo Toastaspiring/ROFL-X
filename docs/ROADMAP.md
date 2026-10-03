@@ -78,9 +78,8 @@ Ours is deterministic via `BTreeMap`. Commits: `fa2e059`, `deb7bf0`,
 
 Phase 3c deliverable: `rofl-x extract-patch` subcommand + RE
 methodology doc (`docs/RE_PATCH.md`) for producing a `.patch` archive
-on a new League version. Skeleton archive for 16.8 sits at
-`reference/patch-16-8-skeleton.patch`; filling in the RVAs is the
-multi-hour disassembler task documented in `RE_PATCH.md`.
+on a new League version. Superseded by Phase 4b's
+`scripts/build_patch.py`, which needs no manual RVA work.
 
 ---
 
@@ -120,11 +119,33 @@ Status as of commit `64ff98d`: catalog scaffolded in `docs/PACKETS.md`
 with two `DOCUMENTED` classes (MOVEMENT_PATH, WARD_SPAWN_OR_DESTROY),
 20 `OBSERVED-ONLY` classes (from Zhu's public schema), and 15
 `UNKNOWN` entries (top opcodes from sample_a's histogram, with
-frequency counts). `docs/COMPATIBILITY.md` lists per-patch coverage.
-Promoting an `OBSERVED-ONLY` or `UNKNOWN` entry to `DOCUMENTED`
-requires reverse-engineering a new decoder function in the League
-binary; that work is out of scope for a single chat session and is
-paused pending a contributor with disassembler access.
+frequency counts). Promoting an entry needed a new decoder function
+reverse-engineered per class, which is what Phase 4b removed.
+
+### Phase 4b, every class through the game's own code, DONE (16.9)
+
+The per-class bottleneck turned out to be avoidable: the game's netid
+factory builds a packet object with its real vtable, and vtable slot 1
+is that class's deserializer. Running the factory and the deserializer
+in the emulator decodes every class with no per-class work, and the
+deserializer's own verdict (returns true, consumes exactly the payload)
+checks every block. Riot's class names come back from the binary's
+`std::function` handler registrations. Method:
+[DECODING.md](DECODING.md).
+
+Delivered on 16.9 (five replays): every one of 7,927,123 blocks decoded
+clean; 315 netids named; 13 classes typed (deaths, respawns, K/D/A,
+levels, damage, the four item answers, NPC and building deaths,
+movement paths, unit spawns including wards); `scripts/build_patch.py`
+builds the archive from the binary in minutes. The discipline above
+still holds in spirit, with one change: fixtures are whole replays
+checked against statsJson (`tests/decode_replays.rs`) rather than
+byte slices, since a handler is only as good as the decode it reads.
+
+The detour that preceded it (brute-force netid → decoder matching on
+the `decrypt/tooling-and-16-9-recon` branch) produced a mapping that
+was wrong for several high-volume classes; it is gone from the tree
+and documented in [RE_PATCH.md](RE_PATCH.md) § History.
 
 ---
 
@@ -214,10 +235,29 @@ Initial pass delivered (commit `f791fd9`):
 Still outstanding:
 
 - `tests/zhu_schema_compat.rs` to assert our output can round-trip
-  every Zhu-class field. Currently our output schema only covers two
-  Zhu classes (`WaypointGroup` partial, `SpawnMinion`-ward partial),
-  so a strict compat test would trivially fail on the other 20. Worth
-  writing as a coverage-tracking baseline when the catalog grows.
+  every Zhu-class field. With Phase 4b, 8 of his 22 classes are typed
+  on 16.9 and 6 more are named ([PACKETS.md](PACKETS.md) § Henry Zhu's
+  classes on 16.9).
 - Raw-replay byte-diff: Zhu's dataset ships decoded JSON only, not
   source `.rofl` files. Still an open question whether the raw files
   are available anywhere.
+
+### Phase 5b, validation against the replay's own stats, DONE (16.9)
+
+A stronger reference than any external dataset sits in every replay:
+statsJson, Riot's end-of-game numbers per player. `rofl-x file`
+rebuilds them from decoded packets and compares: K/D/A, kills and
+assists from kill events, level, all seven final item slots, damage to
+champions, wards placed. 300 / 300 checks pass on the five 16.9
+replays; `tests/decode_replays.rs` keeps it that way.
+
+---
+
+## Phase 6, current patches, BLOCKED
+
+From some patch after 16.9 the shipped binary keeps its code encrypted
+on disk (16.19: `.riot0/.riot1/.riot2` sections, `.text` entropy 7.997).
+Format-2 archives need the code; getting it would mean defeating Riot's
+protection, which this project does not do. Current-patch replays get
+transport parsing and the statsJson scoreboard only. Details and what
+would unblock it: [COMPATIBILITY.md](COMPATIBILITY.md).

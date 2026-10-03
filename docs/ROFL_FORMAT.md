@@ -380,9 +380,12 @@ reinforced by UPSTREAM.
   functions, same approach Mowokuma takes and Henry Zhu documents.
 
 Our parser does **not** implement any packet-payload decoding in Rust
-directly. All per-opcode decoding is either (a) routed through the
-emulator with per-patch RVAs and struct offsets, or (b) marked
-`UNKNOWN` / `OBSERVED-ONLY` in the catalog.
+directly. All per-opcode decoding is routed through the emulator: with
+a format-2 archive, every class runs through the game's own factory and
+deserializer ([DECODING.md](DECODING.md)); with a format-1 archive,
+only the two decoders Mowokuma reverse-engineered. The one buffer
+parsed in Rust is the WaypointGroup entry list the movement
+deserializer hands back ([PACKETS.md](PACKETS.md)).
 
 ---
 

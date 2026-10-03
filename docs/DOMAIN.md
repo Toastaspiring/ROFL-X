@@ -185,7 +185,9 @@ into the packet catalog.
 
 The numeric value of an opcode is **not stable across patches**. The
 *semantic name* (`WARD_SPAWN`, `TAKE_DAMAGE`, `CAST_SPELL`, ...) is the
-stable referent.
+stable referent. For most opcodes that name is Riot's own C++ class
+name (`PKT_NPC_Hero_Die_s`), recovered per patch from the binary
+([DECODING.md](DECODING.md) § 6).
 
 ### `Entity`
 

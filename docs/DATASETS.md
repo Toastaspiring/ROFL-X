@@ -85,13 +85,14 @@ Zhu's dataset defines 22 packet classes via Python dataclasses in
 
 ## What Zhu's dataset tells us about wards
 
-None of the 22 classes is a dedicated "ward" class. Wards almost
-certainly ride on `CreateTurret` (Zhu's category for stationary
-owner-tagged entities) or `CreateNeutral`. Our `WARD_SPAWN_OR_DESTROY`
-catalog entry is likely broader than any single Zhu class, since it
-covers both placement and destruction in one packet. This is a
-schema-shape divergence we'll cross-reference in
-[PACKETS.md](PACKETS.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+None of the 22 classes is a dedicated "ward" class. Wards ride on
+`SpawnMinion`: probing names in one 12.22 batch found `SightWard`,
+`VisionWard`, `JammerDevice`, `PlantVision` and `WardCorpse` spawns,
+and on 16.9 the same class (netid 214, recognised by shape) carries
+every ward a champion places, its owner, and a `*WardCorpse` spawn at
+the same position when it dies. Ward counts from it match statsJson
+`WARD_PLACED` for every player of every 16.9 replay we hold
+([PACKETS.md](PACKETS.md)).
 
 ## Coordinate naming
 

@@ -3,50 +3,74 @@
 What ROFL-X can do on each League patch it has been tested against.
 
 Columns:
-- **Transport**: can we parse the file structure (header, chunks,
-  block framing) without decoding packet semantics.
-- **Emulator config**: is there a usable `.patch` archive for this
-  patch.
-- **`MOVEMENT_PATH`**: can we decode the movement opcode end-to-end.
-- **`WARD_SPAWN_OR_DESTROY`**: can we decode ward events end-to-end.
-- **Mowokuma parity**: if run against her binary on a shared replay,
-  what does the diff look like.
+- **Transport**: header, metadata, chunks and block framing parse
+  cleanly (`rofl-x inspect`, `tests/transport_smoke.rs`). This includes
+  the end-of-game scoreboard in the metadata, so every patch gets
+  K/D/A, level, CS, gold, damage and items per player without any
+  archive.
+- **Archive**: the per-patch `.patch` archive the emulator needs, and
+  its format (1 = Mowokuma's two hand-RE'd decoders, 2 = every class
+  through the game's own factory and deserializers, see
+  [DECODING.md](DECODING.md)).
+- **Decode**: what `rofl-x file` produces on that patch.
 
-| Patch  | Transport | Emulator config         | MOVEMENT_PATH | WARD_SPAWN_OR_DESTROY | Mowokuma parity                     |
-|--------|-----------|-------------------------|---------------|-----------------------|-------------------------------------|
-| 15.1   | green     | Mowokuma `5-1.patch`    | netid 980     | netid 571             | untested                            |
-| 15.2   | green     | Mowokuma `5-2.patch`    | netid 980     | netid 571             | untested                            |
-| 15.3   | green     | Mowokuma `5-3.patch`    | netid 980     | netid 571             | untested                            |
-| 15.4   | green     | Mowokuma `5-4.patch`    | netid 980     | netid 571             | untested                            |
-| 15.5   | green     | Mowokuma `5-5.patch`    | netid 980     | netid 571             | metadata + wards byte-identical; 90.8 % of `players_state` records fully equal, 99.07 % of individual player entries match. (Mowokuma's own output diverges run-to-run on ~99.9 % of state records, so full byte-identity is not achievable.) |
-| 16.8   | green     | skeleton only (`reference/patch-16-8-skeleton.patch`); RVAs unresolved | **blocked** | **blocked** | blocked on emulator config |
+| Patch  | Transport | Archive | Decode |
+|--------|-----------|---------|--------|
+| 15.1 – 15.4 | green | format 1: Mowokuma `5-1` .. `5-4.patch` | positions + wards (her JSON). Parity untested |
+| 15.5   | green | format 1: Mowokuma `5-5.patch` | positions + wards. Parity with her binary: metadata and wards byte-identical; 99.07 % of player entries in `players_state` match (her own output drifts run to run, so full byte identity is not reachable) |
+| 16.7   | green (1 replay) | none: no binary of this patch kept | scoreboard only |
+| 16.8   | green (sample_a) | none: no binary of this patch kept | scoreboard only |
+| 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named; events, positions, wards, items; self-check against statsJson 300 / 300 |
+| 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
+| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | scoreboard only |
 
-Assumed but untested: 14.x replays. Mowokuma's release doesn't cover
-14.x, and the version-string length encoding probably changed at some
-point earlier in history. The transport smoke test accepts any version
-that starts with a digit, so parsing should work; semantic decode has
-no chance without an archive.
+## The 16.19 binary is packed
+
+From some patch after 16.9, `League of Legends.exe` ships with its
+code and data encrypted on disk. Measured on 16.19.823.722:
+
+| | 16.9 | 16.19 |
+|-|------|-------|
+| sections | `.text .rdata .data .pdata ... .stub` | adds `.riot0 .riot1 .riot2`; entry point inside `.riot1` |
+| `.text` entropy (64 KiB windows) | 5.9 – 6.4 | 7.997 everywhere |
+| `48 89 5C 24 08` (`mov [rsp+8], rbx`) occurrences in `.text` | 23,276 | 0 |
+
+The code is decrypted at runtime, inside a process Vanguard protects.
+Reading it would mean unpacking Riot's protection or reading the running
+game's memory; both are anti-cheat circumvention, which ROFL-X will not
+do (README § Non-goals). `scripts/build_patch.py` detects a packed
+binary and refuses it.
+
+What still works on such patches: everything that does not need the
+game's code. Transport parsing, the scoreboard (`rofl-x inspect`),
+opcode histograms. Packet payloads stay opaque.
+
+What would change this: Riot shipping an unpacked binary again, or an
+unpacked binary of a given patch becoming available by legitimate
+means. A format-2 archive builds from such a binary in a few minutes,
+with no manual reverse engineering.
+
+Assumed but untested: 14.x replays. The transport smoke test accepts
+any version that starts with a digit, so parsing should work; semantic
+decode needs that patch's binary.
 
 ## Known gaps
 
-1. **16.8 emulator config.** The hard-work item. See
-   [RE_PATCH.md](RE_PATCH.md) for methodology.
-2. **Parity run against Mowokuma on 15.1-15.4.** Cheap to do once the
-   parity harness is scripted.
-3. **Opcode numbers on 16.8 for the two decoded opcode classes.** Can
-   be inferred by diffing the sample_a histogram against the top
-   opcodes from a 15.5 replay and looking for numerically-nearby
-   candidates. `0x03D6 = 982` (close to 980) is a prime suspect for
-   `MOVEMENT_PATH` on 16.8.
+1. **Current patches.** Blocked by the packing above.
+2. **Parity runs against Mowokuma on 15.1 – 15.4.** Cheap once a script
+   runs both tools and diffs order-normalised JSON.
+3. **Game modes with more than two teams** (Arena). The format-2 team
+   registry stand-in uses the Summoner's Rift count (4); see
+   [DECODING.md](DECODING.md) § Limits.
 
 ## How to update this file when adding a new patch
 
-1. Run `rofl-x inspect --histogram -r <replay>` to confirm the
-   transport layer is clean on the new patch.
-2. If filling in an emulator config, run `rofl-x file` on a short
-   replay and spot-check the output.
-3. If doing a parity run against Mowokuma's binary, normalize both
-   outputs by sorting `players_state[].players` by `champ` and
-   `wards` by `(timestamp, pos)` before diffing. Her HashMap ordering
-   drifts every run; ours is deterministic.
+1. `rofl-x inspect --histogram -r <replay>`: the transport layer is
+   clean on the new patch.
+2. With the patch's binary: `python scripts/build_patch.py --binary
+   <exe> --output patch/<major>-<minor>.patch --replay <replay>`. The
+   validation line should read 100 % clean.
+3. `rofl-x file -r <replay> -o out.json`: every self-check line should
+   read `n/n`. `tests/decode_replays.rs` asserts the same over a whole
+   replay folder.
 4. Add a row to the table above.

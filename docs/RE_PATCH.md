@@ -1,429 +1,108 @@
-# Building a `.patch` archive for a new League patch
+# Building a `.patch` archive for a League patch
 
-A `.patch` archive is the per-game-patch config the emulator backend
-needs: three raw PE section blobs (`text.bin`, `data.bin`, `rdata.bin`)
-plus `result.json` with RVAs and struct offsets. The mechanical half
-(unpacking the PE) is already automated; the reverse-engineering half
-is manual and documented here.
+A `.patch` archive is the per-patch input the emulator needs: the
+binary's sections plus a `result.json` naming the game functions to run.
+Two formats exist:
 
-If you just want to produce a skeleton, skip to the "Skeleton generation"
-section below. Filling it in needs a disassembler (IDA Pro, Ghidra,
-Binary Ninja) and a few hours.
+- **Format 2** (current): every packet class through the game's own
+  factory and deserializers. Built automatically by
+  `scripts/build_patch.py`, no manual reverse engineering. Method and
+  evidence: [DECODING.md](DECODING.md).
+- **Format 1** (Mowokuma's, 15.x): two hand-reverse-engineered decoder
+  functions and the struct offsets to read back. Still read by
+  `rofl-x file`; reference below for anyone holding an old binary.
 
 ## Prerequisites
 
-- The exact `League of Legends.exe` for the target patch. Live-patched
-  Riot clients overwrite the binary in place, so if the target patch
-  has already moved on you will need a preserved copy.
-- A PE disassembler. Ghidra is free and adequate; IDA Pro is faster for
-  large binaries.
-- A matching `.rofl` replay on the target patch for end-to-end
-  validation.
-- The corresponding section blobs from a nearby working patch archive,
-  so byte-diff techniques are available. (Mowokuma's `5-5.patch` in her
-  GitHub release covers patch 15.5 and is the closest thing to a golden
-  reference right now.)
+- The exact `League of Legends.exe` of the target patch. The Riot
+  client patches it in place, so keep a copy before the patch moves on
+  (the `Game/` folder's `code-metadata.json` names the build).
+- The binary must be **unpacked**. 16.9 ships plain; 16.19 ships with
+  its code encrypted on disk and cannot be used (see
+  [COMPATIBILITY.md](COMPATIBILITY.md)). `build_patch.py` checks and
+  refuses packed binaries.
+- Python 3.10+ with `pefile`, `capstone`, `numpy`, `unicorn`
+  (`zstandard` too for `--replay` validation).
+- A replay of the same patch, to validate.
 
-## Skeleton generation
+## Format 2
 
 ```
-rofl-x extract-patch \
+python scripts/build_patch.py \
   --binary "C:\Riot Games\League of Legends\Game\League of Legends.exe" \
-  --output ./patch/<major>-<minor>.patch-skeleton
+  --output patch/<major>-<minor>.patch \
+  --replay "%USERPROFILE%\Documents\League of Legends\replays\<same patch>.rofl"
 ```
 
-Writes a zip archive containing:
-
-- `text.bin`, `data.bin`, `rdata.bin`, raw bytes of each PE section
-- `result.json` with RVA placeholders (`"NEEDS_RE"`) for every value
-  that must be reverse-engineered
-
-Rename to `<major>-<minor>.patch` once the placeholders are filled in.
-
-## Fields that must be reverse-engineered
-
-The full list of placeholders, with hints.
-
-### `player_id_start` (u32, hex string)
-
-The lowest entity id assigned to a human player. The ten players are
-in the range `[player_id_start, player_id_start + 9]`.
-
-- **Reference (15.5):** `0x40000099`.
-- **Signature:** search the binary for the constant `0x40000099` or
-  similar (`0x4000????`) and look at the call sites. It is typically
-  used as a base for a range-check loop.
-- **Cross-patch stability:** historically stable for long stretches.
-  Starting guess for any 15.x/16.x patch is `0x40000099`; verify by
-  running a replay and checking that player positions land on the
-  expected entity ids.
-
-### `alloc1_rva`, `alloc2_rva` (u64, hex strings)
-
-RVAs of two allocator wrapper functions Mowokuma's emulator replaces
-with a 91-byte bump-allocator shellcode. Neither needs to be analysed
-semantically; what matters is that calls into them from inside the
-decoder functions (ward_spawn_decrypt / mov_decrypt) get intercepted.
-
-- **Reference (15.5):** `alloc1_rva = 0xf60420`, `alloc2_rva = 0x1de520`.
-- **Signature:** calls to these functions in the decoder functions'
-  disassembly return a pointer and bump the allocator. In Mowokuma's
-  5-5 patch they both receive a size in RDX and return a pointer in
-  RAX. Check the two allocator-like helpers called from the decoder
-  prologues and use their RVAs.
-- **Cross-patch stability:** code relocates every patch; you must
-  re-find these each time.
-
-### `skip_rva` (u64, hex string)
-
-RVA of a safety-check function that the decoder function calls early
-and whose return value gates further execution. The shellcode we write
-at this RVA is just `mov rax, 1; ret`, so any function that blocks the
-decoder unless a condition is met can go here.
-
-- **Reference (15.5):** `0xfca950`.
-- **Signature:** a small, non-inlined function called near the top of
-  a decoder function, tested against zero, where a non-zero return
-  means "continue". In 15.5 it is the same for both decoders.
-- **Cross-patch stability:** volatile across patches.
-
-### `mov_decrypt.netid` (u32)
-
-The `packet_id` carried on movement packets in the target patch's
-block stream.
-
-- **Reference (15.5):** `980`.
-- **Finding it:** open a replay of the target patch with
-  `rofl-x inspect --histogram` to see all observed opcodes. The
-  movement packet is usually among the top 20 by count (player path
-  updates are frequent). Cross-reference with neighbouring patches: if
-  15.5 uses 980 and 16.8 has a high-count opcode near it numerically,
-  that is a strong candidate.
-
-### `mov_decrypt.rva_start`, `rva_end` (u64, hex strings)
-
-RVAs of the start and end of the movement-decrypt function.
-
-- **Reference (15.5):** `rva_start = 0xe45710`, `rva_end = 0xe45b35`.
-- **Signature:** one of a small number of functions that takes three
-  arguments (RCX = output packet struct, RDX = payload pointer
-  indirection, R8 = payload end pointer) and writes to struct offsets
-  `0x18` and `0x20` with a decoded pointer and size. In the decompiler
-  it reads as "allocate, loop-copy bytes, return".
-- **`rva_end`** is the address immediately after the final `ret`
-  instruction; the emulator stops execution when the PC reaches here.
-
-### `mov_decrypt.payload_offset`, `payload_size_offset` (u64, hex strings)
-
-Struct offsets into the output packet struct where the function
-deposits the decoded `(pointer, size)` pair.
-
-- **Reference (15.5):** `0x18`, `0x20`.
-- **Cross-patch stability:** frequently stable across several patches
-  at a time; if the decoder body hasn't been rewritten between 15.5
-  and 16.8, these likely still apply. Verify by extracting the decoded
-  payload from a real replay and checking that the bytes parse as a
-  `PathPacket` (see `src/emulator/packet.rs::PathPacket::parse`).
-
-### `ward_spawn_decrypt.netid` (u32)
-
-`packet_id` for the ward spawn-and-destroy packet class.
-
-- **Reference (15.5):** `571`.
-- **Finding it:** place a ward in a test game on the target patch,
-  record the replay, then look for the opcode in the histogram that
-  fires exactly once for that ward and then again some time later
-  (the corpse event). Confirm by cross-referencing with a known-good
-  15.5 replay: the ward netid in 15.5 is 571.
-
-### `ward_spawn_decrypt.rva_start`, `rva_end` (u64)
-
-RVAs of the ward-spawn decrypt function.
-
-- **Reference (15.5):** `0xe3d7b0`, `0xe3fd61`.
-- **Signature:** similar to mov_decrypt, three-argument function but
-  bigger (ward-spawn decodes more fields: id, owner_id, name, x, y).
-- **Finding it:** cross-reference from the netid (571): somewhere in
-  the binary there is a packet-dispatch table mapping netid to
-  decoder; following 571 to its handler lands on this function.
-
-### `ward_spawn_decrypt` struct offsets
-
-Seven values the mem-write hook needs to know about:
-
-- `id_offset` (0x48 in 15.5): where the ward entity id lands.
-- `owner_id_offset` (0x18): where the owner's entity id lands.
-- `name_offset` (0x60): where a pointer to the ward name string lands.
-- `name_len_offset` (0x68): where the length of the name string lands.
-- `x_offset` (0x20), `x_write_count` (4): x-coordinate float, captured
-  after the 4th write to that offset.
-- `y_offset` (0x28), `y_write_count` (4): same for y-coordinate.
-
-- **Finding them:** step through the ward-spawn decrypt function in
-  the disassembler. Each time the function writes to `[rcx + N]`, note
-  the offset N. Count the writes per offset; the "final value" at
-  each offset is typically the last write. `x_write_count = 4` means
-  the final x value lands at the 4th write to `x_offset`.
-- **Cross-patch stability:** typically stable across short stretches
-  (no layout change) until Riot adds a new field to the struct.
-
-## Suggested order of operations
-
-1. Run `rofl-x extract-patch` to produce the skeleton.
-2. Copy the 15.5 result.json from Mowokuma's `5-5.patch` as a working
-   reference inside your disassembler.
-3. Resolve the two netids first: they are the cheapest to find and
-   will anchor everything else.
-4. Find the two decoder functions by following the netid dispatch.
-5. Find their RVAs (`rva_start`, `rva_end`) and the struct offsets by
-   disassembling them.
-6. Find the allocator and skip stubs by looking at the decoder
-   prologues.
-7. Fill in `player_id_start` (usually unchanged from prior patch).
-8. Save as `<major>-<minor>.patch` and test with
-   `rofl-x file -r <replay> -o <out.json> --patch-dir <dir>`.
-9. If ward lifecycle looks wrong, re-check `name_offset`,
-   `name_len_offset`, and the four write counts.
-10. If positions drift, re-check `mov_decrypt.rva_end` and the payload
-    offsets.
-
-## Discoveries so far (patch 15.5 binary)
-
-### The packet dispatch table
-
-`.rdata` at image RVA `0x169b000` holds what appears to be a per-class
-descriptor table. Evidence:
-
-- Both known decoder RVAs (`0xe3d7b0` for ward-spawn, `0xe45710` for
-  mov/position) appear **exactly once** in the entire `.rdata` section,
-  as 8-byte little-endian values.
-- Each occurrence is at the same intra-entry offset of a recurring
-  48-byte-strided structure. The "entry" shape in the uniform part of
-  the table is 5 u64 fields plus an 8-byte sentinel
-  (`0xffff800885b9ffff`, a canonical-kernel-looking magic) at offset
-  `+0x28`:
-  ```
-  [0] primary function RVA (decoder in our cases)
-  [1] secondary function RVA (always in .text range)
-  [2] tertiary function RVA
-  [3] shared helper RVA (0x1c74c0 appears in every entry observed)
-  [4] quaternary function RVA
-  [5] sentinel 0xffff800885b9ffff
-  ```
-- Contiguous 48-byte-stride runs of this shape exist around the two
-  known entries (`0xe1060` MOV, `0xe1ab8` WARD). 457 of 588 sentinel
-  occurrences in the `0xe0000..0xf0000` window are at a 48-byte
-  spacing from the previous; most of the rest are at 40-byte spacing,
-  suggesting a secondary entry shape for some classes.
-
-### What this unlocks, what it doesn't
-
-- Unlocks: we now know the **general shape** of a class descriptor.
-  Every packet class has ~5 related function pointers colocated in
-  `.rdata`.
-- Does **not** unlock: there is no field inside an entry that stores
-  the `netid` of the class. The netid-to-class mapping must live
-  somewhere else (most likely a separate lookup structure the
-  packet-deserialise dispatcher uses). Without that mapping, finding
-  "which entry decodes netid N" still requires disassembly work.
-
-### The `rofl-x trace-decoder` tool
-
-Once you have a hypothesised decoder RVA and end RVA, you can skip
-static disassembly of struct offsets entirely:
+Takes about three minutes on a 16.9 binary. What it prints, with the
+16.9 values:
 
 ```
-rofl-x trace-decoder \
-  --replay <.rofl>  --netid <observed-netid> \
-  --patch-dir <dir-with-.patch-archive> \
-  --rva-start 0xNNNNN --rva-end 0xNNNNN  \
-  --samples 5
+factory           0xe83930 (table 0xe93818, 1198 netids)
+alloc / free      0x1123c60 / ['0x1123c90', '0x11283c0']
+base_deserialize  0x11b8430
+team_registry     0x1e1a9b0 count=4 (21 readers)
+import slots      500
+tls               0x1c1edd0 +325
+cfg dispatch      0x1922480
+packet names      315 netids (RegisterHandler 0x6c5c20)
+wrote patch\16-9.patch (14.0 MB)
+validation: 213 netids, 100.000% of 1223581 blocks decode cleanly
 ```
 
-It hooks **all writes** to the output struct's 144-byte range while
-running the decoder on real payload bytes from the replay, and prints
-a per-offset frequency table. Columns:
+How each line is found, in short (details in [DECODING.md](DECODING.md)):
 
-- `offset` of the field within the output struct
-- `size` of the biggest write landing at that offset
-- `count` total writes across samples
-- `avg` writes per sample
+| entry | found as |
+|-------|----------|
+| factory | the image-base-relative jump table (`lea r, [rip-rva]; mov eax, [r + idx*4 + table]; add rax, r; jmp rax`) whose cases allocate (`mov ecx, SIZE; call new`); bound from the `cmp` before it |
+| alloc | the most common call target in those cases |
+| free | operator delete sits right after operator new and is a `jmp` to free; both are stubbed |
+| base_deserialize | the first call in the deserializers of objects the factory constructs |
+| team_registry | the global behind the enum readers' `cmp byte [rax+0x70], 0; cmp dl, [rax+8]` check; count from the initializer's `mov dword [reg+8], imm` |
+| import slots | `call/jmp [rip+X]` slots whose on-disk value is not an in-image pointer |
+| tls, cfg dispatch | PE TLS directory; load config `GuardCFDispatchFunctionPointer` |
+| packet names | `std::function` handler registrations, see [DECODING.md](DECODING.md) § 6 |
 
-Interpretation rules we've confirmed against Mowokuma's known config:
+The validation line decodes a sample of every netid in the replay and
+must read 100 %. Then run `rofl-x file` on the replay: the self-check
+line should read `n/n` on every field.
 
-- A field whose `count / samples` is ≈ 1 and whose size is 4 or 8 bytes
-  is typically a clean final-value write: a pointer, a u32 id, or a
-  length. Use the raw offset as-is.
-- Offsets that receive *many* small writes (1-byte, repeated) are
-  intermediate bytes being bit-sliced during the decryption. For these,
-  you need the **final** write; `x_write_count: 4` style config tells
-  the emulator to capture only the Nth write.
-- Verified on ward-spawn: the tool surfaces writes at 0x18
-  (owner_id_offset), 0x48 (id_offset), 0x60 (name_offset), 0x68
-  (name_len_offset) exactly as Mowokuma's `result.json` records them,
-  plus the 4-write cadence for the coordinate offsets.
+If a future patch changes one of these shapes, the script stops with the
+step that failed. Every step is a few lines in the script; the
+signatures it relies on (allocator wrappers, CRT thread-safe statics,
+`std::function`, generated deserializers) are compiler and library
+shapes, not per-patch tables, which is why they have held from 15.5 to
+16.9.
 
-### Suggested workflow for a new decoder
+## Format 1 reference (Mowokuma, 15.x)
 
-1. Pick a target packet class from Zhu's public schema, e.g.
-   `CreateHero` or `HeroDie`.
-2. Inspect the replay with `rofl-x inspect --histogram` to narrow down
-   which observed opcodes plausibly correspond (size and frequency
-   signals).
-3. Open the binary in Ghidra / IDA. Find the decoder function; the
-   table described above narrows the search to ~500 candidates.
-4. Feed the RVA range to `rofl-x trace-decoder` on a sample replay.
-5. Read off the field offsets for the data you want. Watch for
-   intermediate vs final writes.
-6. Add a catalog entry to `docs/PACKETS.md`, write a handler, commit.
+Format 1 needs these, all found by hand in a disassembler. Values are
+for 15.5 (Mowokuma's `5-5.patch`).
 
-### `probe-netid`: a research artefact, not a working tool
+| field | 15.5 | what it is |
+|-------|------|------------|
+| `player_id_start` | `0x40000099` | net id of the first champion; the ten are contiguous in statsJson order (16.9: `0x400000AE`) |
+| `alloc1_rva`, `alloc2_rva` | `0xf60420`, `0x1de520` | allocator wrappers, replaced by her 91-byte bump-allocator shellcode |
+| `skip_rva` | `0xfca950` | stubbed to `mov rax, 1; ret`. It is the base-class deserializer that reads the sender net id (format 2's `base_deserialize`); replay payloads do not carry that varint, so skipping it is right for the top-level packet |
+| `mov_decrypt` | netid 980, `0xe45710..0xe45b35`, payload ptr/size at `+0x18`/`+0x20` | WaypointGroup's deserializer; the buffer is the entry list documented in [PACKETS.md](PACKETS.md) |
+| `ward_spawn_decrypt` | netid 571, `0xe3d7b0..0xe3fd61`, id `+0x48`, owner `+0x18`, name `+0x60`/`+0x68`, x/y `+0x20`/`+0x28` at the 4th write | SpawnMinion's deserializer |
 
-`src/bin/probe_netid.rs` attempts to extract the netid of each class
-by calling its descriptor-entry fields as if they were "getter"
-thunks and inspecting RAX. Empirical results on patch 15.5:
+The 15.5 binary already has the netid factory format 2 uses: in
+Mowokuma's section dumps, the `r14`-relative jump table at `0xd256a8`
+(bound `0x3f9`, 1018 netids) sends netid 980 to a constructor whose
+vtable's slot 1 is `0xe45710`, her `mov_decrypt`, and netid 571 to one
+whose slot 1 is `0xe3d7b0`, her `ward_spawn_decrypt`. (The "48-byte
+descriptor table with a sentinel at +0x28" this file used to describe
+is those vtables, read from slot 1.) A format-2 archive for 15.x has
+not been built: her dumps lack the PE headers, TLS directory and load
+config the script reads.
 
-- **Slot 0** is the decoder (known).
-- **Slot 1** for real descriptor entries appears to return the
-  packet's in-memory struct size (144 for ward-spawn, 48 for mov).
-  Useful for sizing the hooked struct range dynamically rather than
-  hardcoding 0x90.
-- **Slot 3** is a shared helper (RVA `0x1c74c0`) common to every
-  entry; returns a small constant.
-- **Slot 4** returns small integers per entry (9 for ward, 3 for mov)
-  but the values do **not** form a dense enum that could encode
-  netids, and the mapping to Zhu's class names is unclear.
-- **Slots 1 and 4 become noisy across a broader scan** (81-entry
-  sample) because the naive sentinel match picks up non-descriptor
-  byte coincidences outside the real table region. Without
-  disassembly to delimit the true table, we can't distinguish real
-  entries from false positives at scale.
+## History
 
-Takeaway: the netid-to-descriptor mapping isn't extractable from the
-descriptor table alone. It lives in a separate structure (most likely
-a netid-keyed lookup consulted by the packet deserialiser at dispatch
-time) that we haven't yet located.
-
-### Current blockers and what would unblock them
-
-| blocker                                   | what unblocks it                                                      |
-|-------------------------------------------|-----------------------------------------------------------------------|
-| New decoder RVAs for patch 15.5           | Ghidra / IDA session on `text.bin`, walk outward from the known entries at rdata offsets 0xe1060 / 0xe1ab8. |
-| 16.8 `.patch` archive                     | Same, on the current League client. Skeleton exists; fill in RVAs.     |
-| netid-to-class mapping table              | Trace the packet deserialise dispatcher in a disassembler; it is the function that consults this table. |
-| Struct offsets for new decoders           | **Solved by `rofl-x trace-decoder`** once the RVA is known.           |
-
-## Cross-patch byte-pattern porting (`scan-decoder` + Ghidra script)
-
-Once a decoder's RVA is known on patch X, porting it to patch Y is mostly
-a hunt for the same byte sequence at a relocated address. ROFL-X ships
-two pieces that automate that hunt.
-
-### Step 1: export decoder anchors from the donor binary
-
-In Ghidra, label the decoder functions you want to port (any name will
-do; the script exports whatever you tell it to match). Then run
-`scripts/ghidra/export_decoders.py` from the Script Manager. It prompts
-for:
-
-- Patch tag (e.g. `15.5`)
-- Function-name regex (or empty for the built-in decoder name list)
-- Output JSON path
-
-The script extracts each function's RVA range and ~20 short distinctive
-byte windows (`anchors`) at strided offsets, skipping windows that look
-like immediates or relocations. Output is a `decoders.json` consumed by
-`scan-decoder`.
-
-### Step 2: extract a skeleton archive for the target patch
-
-Same as before:
-
-```
-rofl-x extract-patch \
-  --binary "C:\Riot Games\League of Legends\Game\League of Legends.exe" \
-  --output ./patch/16-8.patch-skeleton
-```
-
-### Step 3: scan the target's `.text` for matches
-
-```
-rofl-x scan-decoder \
-  --donors decoders.json \
-  --target ./patch/16-8.patch-skeleton \
-  --report-json scan_results.json
-```
-
-For each donor function, the tool reports the top-K target RVA candidates
-ranked by anchor-cluster score. A score of 1.0 means every donor anchor
-landed at the expected relative offset in the target — the function was
-relocated but not modified. Scores below ~0.5 mean the body was rewritten
-and you should fall back to disassembly.
-
-The candidate `rva_start` for a high-score match goes straight into the
-`mov_decrypt.rva_start` / `ward_spawn_decrypt.rva_start` fields in the
-target's `result.json`. Use `trace-decoder` to verify struct offsets
-stayed stable across the move (they usually do).
-
-### What this replaces, what it doesn't
-
-Replaces: the manual "open Ghidra on 16.8, eyeball-compare against 15.5
-disassembly, find the relocated function" loop.
-
-Doesn't replace:
-- Finding the netids on the new patch. Still a histogram + cross-reference job.
-- Decoders that Riot genuinely rewrote. Low scores are honest signals
-  that the body changed; the tool will not invent a match.
-- The first-ever decoder on a patch. You need at least one labeled
-  function to act as donor. Mowokuma's `5-5.patch` is the seed.
-
-## Per-decoder workflow tooling (`extract-fixture` + `new-handler`)
-
-The catalog discipline in `docs/ROADMAP.md` § Phase 4 says: catalog entry,
-handler, fixture, test. ROFL-X ships two subcommands that produce three of
-those four artefacts (the handler stays manual because the StubEmulator
-integration shape varies per decoder).
-
-### Step 1: pull payloads from a real replay
-
-```
-rofl-x extract-fixture \
-  --replay <.rofl> \
-  --netid <N> \
-  --name <lower_snake_case> \
-  --count 5
-```
-
-Writes `tests/fixtures/<name>_0.bin` … `<name>_4.bin` plus a sidecar
-`<name>.json` recording the source replay, patch tag, and per-fixture
-timestamps. The chosen samples are the earliest in the game (lane phase
-tends to exercise simpler code paths in a decoder).
-
-### Step 2: scaffold the catalog entry and test
-
-```
-rofl-x new-handler \
-  --name <name> \
-  --patch <tag> \
-  --netid <N> \
-  --status OBSERVED-ONLY \
-  --rva-start 0x... --rva-end 0x... \
-  --summary "Short description"
-```
-
-Produces `tests/handler_<name>.rs` (a placeholder test that asserts the
-fixtures exist and are non-empty) and appends a row to
-`docs/PACKETS.md`. When you later wire up the real decoder under `src/`,
-replace the test body with field-level assertions on the decoded struct
-and promote the catalog status to `DOCUMENTED`.
-
-## Things this document does not yet describe
-
-- The netid-to-class mapping table. Finding it in the binary would
-  turn netid discovery from "histogram + cross-reference" into "table
-  lookup". `src/bin/probe_netid.rs` documents what didn't work.
-- Handling of patches where Riot restructures the decoder layout
-  significantly. If the struct offsets cease to be stable across
-  patches, we will need to track those separately per-patch.
-
-See `docs/COMPATIBILITY.md` for the per-patch status table.
+The branch that led here tried, in order: matching 15.5 decoder bytes
+in 16.9 (`scan-decoder`), brute-forcing which candidate function writes
+the most struct offsets for each netid's payloads, and walking the
+constructor chain by `lea` scanning. The factory call in
+[DECODING.md](DECODING.md) § 1 replaced all three; the brute-force
+mapping turned out wrong for several high-volume netids. Those tools
+are in the git history (`git log -- scripts/ src/scan_decoder.rs`).

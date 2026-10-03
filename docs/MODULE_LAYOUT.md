@@ -1,14 +1,46 @@
-# Proposed Rust module layout
+# Rust module layout
 
 Maps the domain model in [DOMAIN.md](DOMAIN.md) onto a Rust crate
 structure. One-liner per module plus the rationale for the shape.
 
-Nothing here is written yet. This is a proposal for Phase 3 to build
-against; changes before code lands are free.
+## As built (October 2026)
+
+```
+src/
+├── lib.rs, main.rs, cli.rs, error.rs   crate surface; CLI: file / decode / inspect
+├── rofl/                    TRANSPORT LAYER (no game knowledge), as proposed below
+├── emulator/                runs game code over payloads
+│   ├── config.rs, unicorn.rs, packet.rs   format 1: Mowokuma's port (15.x)
+│   ├── archive.rs           format-2 archive loader
+│   ├── machine.rs           Unicorn VM + the minimal Windows process around the image
+│   └── decoder.rs           PacketDecoder: factory -> Deserialize -> plaintext object
+├── packet/                  SEMANTIC LAYER, keyed by Riot class name
+│   ├── mod.rs               GamePacket enum; interpret(class, obj); recognise(obj) for unnamed shapes
+│   └── handlers/            one file per class (additive, as proposed below)
+├── game.rs                  parallel whole-replay decode, roster, events, positions, self-check
+└── replay_info.rs           format-1 orchestration (Mowokuma's JSON)
+tests/
+├── transport_smoke.rs       every replay in ROFL_X_SAMPLES_DIR parses with zero errors
+└── decode_replays.rs        every block clean, every statsJson self-check passing
+scripts/
+├── build_patch.py           format-2 archive builder
+├── sample_walkthrough.py, zhu_dataset_*.py
+└── ghidra/                  headless helpers (decompile_funcs, dump_callees, xrefs_to)
+```
+
+Differences from the proposal: the emulator is two concrete formats
+rather than a trait; `game/` and `output/` collapsed into `game.rs`,
+whose JSON keeps Mowokuma's top-level keys (`metadata`,
+`players_state`, `wards`) and adds siblings (`players`, `events`,
+`checks`, `decode`); handlers are dispatched by class name, not by a
+netid registry, since netids are a per-patch detail the archive
+resolves; fixtures are whole replays checked against statsJson.
+
+The original proposal follows.
 
 ---
 
-## Tree
+## Tree (proposal, Phase 2)
 
 ```
 ROFL-X/

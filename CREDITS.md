@@ -109,8 +109,13 @@ Rust ecosystem:
 - `serde` / `serde_json` for metadata and output JSON.
 - `zstd` for chunk decompression.
 - `thiserror` for the error enum.
-- (Forthcoming in Phase 3b) `unicorn-engine` for the x86-64 emulator,
-  same crate Mowokuma uses upstream.
+- `unicorn-engine` for the x86-64 emulator, same crate Mowokuma uses
+  upstream.
+- `rayon` for one emulator per worker thread.
+- `zip` for `.patch` archives.
+
+The archive builder (`scripts/build_patch.py`) uses `pefile`,
+`capstone`, `numpy` and the `unicorn` Python binding.
 
 ---
 

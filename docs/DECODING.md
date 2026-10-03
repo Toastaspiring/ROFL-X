@@ -179,7 +179,7 @@ type descriptor  ◀── lea rax,[rip+TD]; ret        std::_Func_impl::_Target
 ```
 
 On 16.9 this names **315 netids** (no netid gets two different names),
-covering 74.6 % of a typical replay's blocks. The unnamed rest are
+covering 75.9 % of the blocks in our five 16.9 replays. The unnamed rest are
 classes dispatched without a `std::function` handler: object creation,
 movement, replication, visibility. Two of them are recognised by shape
 (`packet/handlers/spawn.rs`, `packet/handlers/waypoints.rs`), and only

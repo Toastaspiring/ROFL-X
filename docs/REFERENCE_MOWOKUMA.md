@@ -501,6 +501,30 @@ new League patch is a reverse-engineering task, not a code task.
 10. **Unused `batch` / folder CLI has dead `_ => unimplemented!()`.** Minor
     but worth noting.
 
+### Found later (October 2026, while decoding 16.9)
+
+11. **The block param delta is signed.** See item 0x20 in the marker
+    table above and [ROFL_FORMAT.md](ROFL_FORMAT.md) § Block framing.
+    Her decoders never read `param`, so her output is unaffected.
+12. **`PathPacket::parse` reads one entry of a batch, and adds deltas
+    unsigned.** The movement buffer holds several `(net id, speed,
+    waypoints)` entries; she parses the first. One-byte coordinate
+    deltas are signed (read unsigned, the median path segment doubles).
+    The waypoint count she takes from the low byte of the flags field,
+    which is right: the high byte is a separate flag. Details in
+    [PACKETS.md](PACKETS.md) § WaypointGroup.
+13. **`skip_rva` is not a safety check.** It is the base-class
+    deserializer, which reads the packet's sender net id as a varint.
+    Replay payloads do not carry that varint (the net id is the block
+    `param`), so stubbing it is right for the top-level packet; nested
+    objects that embed a net id are the exception. See
+    [DECODING.md](DECODING.md) § 3.
+14. **Her two decoders are reachable from a table she did not need.**
+    The 15.5 binary's netid factory (jump table at `0xd256a8`) maps 980
+    and 571 to constructors whose vtable slot 1 is exactly her
+    `mov_decrypt` and `ward_spawn_decrypt`. Format 2 decodes every
+    class through that factory ([DECODING.md](DECODING.md)).
+
 ---
 
 ## Open questions for you before Phase 2

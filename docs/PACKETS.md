@@ -1,240 +1,472 @@
 # Packet catalog
 
-One entry per known opcode, plus placeholders for opcodes we have only
-observed frequency-of. Statuses:
+What each packet class is, by Riot's own class name where the binary
+gives one, and how far ROFL-X decodes it. Netids change every patch;
+class names and layouts are the stable referent. Decoding method:
+[DECODING.md](DECODING.md). Per-patch coverage:
+[COMPATIBILITY.md](COMPATIBILITY.md).
 
-- **DOCUMENTED**: we decode it end-to-end on at least one patch, and the
-  field layout in the decoded struct is written down.
-- **PARTIAL**: we decode some fields but the full struct layout is still
-  unknown or unstable.
-- **OBSERVED-ONLY**: we see the opcode in real replays and have a
-  semantic label for it (from prior art), but we cannot decode its
-  payload on any patch yet.
-- **UNKNOWN**: we see the opcode but have no semantic label at all.
+Statuses:
 
-All opcode numbers below are patch-specific. See
-[COMPATIBILITY.md](COMPATIBILITY.md) for per-patch coverage.
+- **TYPED**: decoded clean on every block, fields read by a handler in
+  `src/packet/handlers/`, and the handler's output checked against
+  something independent (statsJson, geometry, another class).
+- **NAMED**: decoded clean on every block, Riot class name known, fields
+  not yet typed.
+- **UNNAMED**: decoded clean on every block, no class name in the
+  binary, not typed.
 
----
+On patch 16.9 every observed netid is decoded clean; the statuses differ
+only in how much of the decoded object we can name.
 
-## DOCUMENTED
-
-### `MOVEMENT_PATH`
-
-**Status:** DOCUMENTED on patches 15.1 through 15.5.
-**Patch-specific opcode numbers:**
-| patch | netid |
-|-------|-------|
-| 15.5  | 980   |
-| 15.4  | (same, per Mowokuma's 5-4.patch) |
-| 15.3  | (same) |
-| 15.2  | (same) |
-| 15.1  | (same) |
-| 16.8  | **unknown** (blocked on patch archive) |
-
-**Decoded via:** Unicorn emulator calling the game's `mov_decrypt`
-function. Pure-Rust decoding is not feasible (obfuscated body).
-
-**Decoded struct:**
-```rust
-PathPacket {
-    timestamp: f32,           // from the enclosing block
-    id: u32,                  // entity id
-    speed: f32,               // current move speed, map units/sec
-    waypoints: Vec<(f32, f32)>, // path points in (x, y) map coords
-}
-```
-
-**Semantics:** emitted whenever an entity's movement order changes
-(new command, spell-locked, stopped). Position at any later time is
-derivable by walking the waypoint chain at `speed`, which
-`PathPacket::get_pos` does.
-
-**Coordinate constants** (see `PathPacket::parse`): final `(x, y)`
-derived as `x = sign_extend(encoded, 16) * 2.0 + 7358.0`,
-`y = sign_extend(encoded, 16) * 2.0 + 7412.0`. The offsets are the
-map-centre coordinates for Summoner's Rift; they have been stable
-across patches in our observation.
-
-**References:** Mowokuma/ROFL `src/emulator/packet.rs::PathPacket::parse`.
-
-### `WARD_SPAWN_OR_DESTROY`
-
-**Status:** DOCUMENTED on patches 15.1 through 15.5.
-**Patch-specific opcode numbers:**
-| patch | netid |
-|-------|-------|
-| 15.5  | 571   |
-| 15.1 - 15.4 | (per Mowokuma's archives) |
-| 16.8  | **unknown** (blocked on patch archive) |
-
-**Decoded via:** Unicorn emulator calling the game's
-`ward_spawn_decrypt` function with a memory-write hook that captures
-the output struct fields at the configured write counts.
-
-**Decoded struct:**
-```rust
-WardSpawnPacket {
-    timestamp: f32,
-    name: String,             // e.g. "YellowTrinket", "SightWard",
-                              // "JammerDevice", or "*Corpse" for death
-    id: u32,                  // ward entity id
-    owner_id: u32,            // player entity id that placed it
-    x: i32,
-    y: i32,
-}
-```
-
-**Semantics:** one opcode carries both the placement and the
-destruction event. A placement has `name` in
-`{YellowTrinket, SightWard, JammerDevice}` (the three common ward
-kinds Mowokuma enumerated); a destruction has `name` containing
-`"Corpse"`. Coordinate-match destructions to placements with the same
-`(x, y)` integer pair.
-
-**Known unknowns:** other ward variants (`BlueTrinket`, `FarsightAlt`,
-`VisionWard`) almost certainly use this same opcode; they do not
-appear in Mowokuma's placement allowlist but probably should. This
-is a concrete completeness gap to resolve when we get fixtures for
-the other variants.
-
-**References:** Mowokuma/ROFL `src/emulator/stub_emulator.rs::call_decrypt_ward_spawn_packet`,
-`src/main.rs` ward-lifecycle reconstruction logic.
+Numbers below come from the five 16.9 replays we hold (7,927,123
+blocks, 273 distinct netids, 151 of them named = 75.9 % of blocks).
 
 ---
 
-## OBSERVED-ONLY
+## TYPED
 
-Named by Henry Zhu in his public dataset (Apache 2.0, `packets.py`
-schema on Hugging Face). 22 classes total, fields cross-referenced in
-[DATASETS.md](DATASETS.md) with measured frequencies from one batch of
-patch 12.22 replays. We have not cross-mapped the class names to our
-numeric opcodes on any current patch.
+Offsets are into the decoded packet object; `+0x0c` is always the
+sender net id (the block's `param`). The handler file carries the full
+layout table.
 
-| class                       | share in S12 batch | summary                                                          |
-|-----------------------------|-------------------:|------------------------------------------------------------------|
-| `LeaveFog`                  | 65.4 %             | entity leaves vision (`net_id`, `time`)                          |
-| `Replication`               | 15.8 %             | per-entity property replication (`net_id_to_replication_datas`)  |
-| `UnitApplyDamage`           |  5.0 %             | damage (`source_net_id`, `target_net_id`, `damage`)              |
-| `WaypointGroup`             |  4.6 %             | movement waypoints keyed by entity id, positions as `{x, z}`      |
-| `EnterFog`                  |  3.8 %             | entity enters vision                                             |
-| `DoSetCooldown`             |  2.8 %             | ability cooldown update (`slot`, `cooldown`, `display_cooldown`) |
-| `CastSpellAns`              |  0.57 %            | spell cast answer: caster/targets/positions/spell/mana/cd        |
-| `BasicAttackPos`            |  0.52 %            | basic attack with source+target+spell metadata                   |
-| `BarrackSpawnUnit`          |  0.39 %            | minion wave spawn event                                          |
-| `NPCDieMapView`             |  0.38 %            | NPC death: killed+killer net ids                                 |
-| `SpawnMinion`               |  0.33 %            | individual minion spawn with position and targetability          |
-| `WaypointGroupWithSpeed`    |  0.11 %            | movement variant that carries speed per waypoint                 |
-| `CreateTurret`              |  0.08 %            | turret / likely ward / stationary owned entity                   |
-| `CreateNeutral`             |  0.06 %            | jungle-camp monster creation with position + camp id             |
-| `UseItem`                   |  0.04 %            | item activation                                                  |
-| `CreateHero`                |  0.04 %            | champion init (`champion`, `name`, `net_id`)                     |
-| `BuyItem`                   |  0.03 %            | item purchase with gold deltas                                   |
-| `RemoveItem`                |  0.01 %            | item sell or drop                                                |
-| `SwapItem`                  | 0.005 %            | inventory slot swap                                              |
-| `NPCDieMapViewBroadcast`    | <0.001 %           | broadcast variant of NPC death                                   |
+| class | 16.9 netid | handler | fields | verified by |
+|-------|-----------:|---------|--------|-------------|
+| `PKT_NPC_Hero_Die_s` | 472 | `hero_die.rs` | victim, killer, position, death timer | deaths per player = statsJson `NUM_DEATHS`; killer field = kill counter |
+| `PKT_HeroReincarnateAlive_s` | 296 | `reincarnate.rs` | hero, position | respawns land on the team's fountain, one per death |
+| `PKT_Update_HeroStats_KDA_s` | 115 | `kda.rs` | hero, deaths, assists, kills (cumulative; that order) | last update = statsJson K/D/A, 50 / 50 players |
+| `PKT_NPC_LevelUp_s` | 64 | `level_up.rs` | unit, level, skill points | highest level = statsJson `LEVEL`, 50 / 50 |
+| `PKT_UnitApplyDamage_s` | 652 | `damage.rs` | source, target, amount, hit type, flags, effect hash | champion → enemy champion sum = `TOTAL_DAMAGE_DEALT_TO_CHAMPIONS` within float rounding, 50 / 50 |
+| `PKT_BuyItemAns_s` | 306 | `items.rs` | hero, item, slot, price, charges, gold left | inventory replay = statsJson `ITEM0`..`ITEM6`, 50 / 50 |
+| `PKT_RemoveItemAns_s` | 1045 | `items.rs` | hero, slot, gold left | same |
+| `PKT_SwapItemAns_s` | 378 | `items.rs` | hero, from, to | same |
+| `PKT_UseItemAns_s` | 1196 | `items.rs` | hero, slot, charges left, used up | same |
+| `PKT_NPC_Die_MapView_s` | 742 | `npc_die.rs` | unit, killer, position | killer is a champion for ~31 % of deaths; not a CS counter (camps outside the map view are missing) |
+| `PKT_Building_Die_s` | 392 | `npc_die.rs` | building, killer, last credited | one per structure destroyed, killer a champion or 0 |
+| *(no name)* WaypointGroup | 916 | `waypoints.rs` | per unit: net id, speed, path | every group fills its buffer exactly, every point on the map |
+| *(no name)* SpawnMinion | 214 | `spawn.rs` | unit, team, owner, names, position, time | ward spawns per player = statsJson `WARD_PLACED`, 50 / 50 |
 
-Cross-references to our decoded opcodes:
+The two unnamed classes are recognised by shape, and only trusted for a
+netid when at least 95 % of its clean blocks match. They are the classes
+Mowokuma decoded on 15.x as `mov_decrypt` and `ward_spawn_decrypt`
+(below), and Henry Zhu's `WaypointGroup` and `SpawnMinion`.
 
-- **`WaypointGroup`** (+ `WaypointGroupWithSpeed`) corresponds
-  semantically to our `MOVEMENT_PATH` entry. Zhu's Position uses
-  `{x, z}`; ours uses `{x, y}`. Our output is per-entity per-new-order;
-  Zhu bundles multiple entities per `time` into one dict.
-- **`WARD_SPAWN_OR_DESTROY`** rides on Zhu's `SpawnMinion`, confirmed
-  by probing names in one S12 batch: 1,654 `SightWard`, 739
-  `VisionWard`, 698 `JammerDevice`, 1,173 `PlantVision`, plus 5,683
-  `WardCorpse` destruction events (destruction name suffix matches
-  Mowokuma's corpse heuristic exactly). **Our decoded struct is
-  strictly richer than Zhu's `SpawnMinion`**: Mowokuma's
-  `ward_spawn_decrypt` captures `owner_id` (the placing player), a
-  field Zhu's `SpawnMinion` does not have. Any Zhu-compat adapter that
-  maps our output to his schema will drop `owner_id`; the reverse
-  direction cannot recover it.
+### `WaypointGroup` buffer
+
+A batch of `(net id, speed, waypoints)` entries; Mowokuma's
+`PathPacket` layout, which on 16.9 carries several entries per packet
+(she read the first). Two corrections to her parser, both measured on
+16.9: the waypoint count is the **low byte** of the 16-bit flags field
+(the high byte is 0 or 2), and one-byte coordinate deltas are
+**signed** (read unsigned, the median segment doubles and spurious
++510-unit jumps appear).
+
+### `SpawnMinion` names seen on Summoner's Rift
+
+`YellowTrinket`, `SightWard`, `JammerDevice` (wards), `S5Test_WardCorpse`
+/ `WardCorpse` (a ward died; same owner and position as the ward),
+`SRU_Plant_Vision` / `SRU_Plant_Satchel` / health plants,
+`SRU_CampRespawnMarker`, `MalzaharVoidling`, `PerksPerxie`,
+`LissandraPassive`, `TurretOvergrowth`, ... Lane minions spawn through
+another class.
 
 ---
 
-## UNKNOWN: top opcodes observed in sample_a (patch 16.8)
+## Format 1 (15.x, Mowokuma's decoders)
 
-From `scripts/sample_walkthrough.py` run on one 34-minute 16.8 replay:
-1,924,363 blocks total, 249 distinct opcodes. Top 15 by frequency:
+### `MOVEMENT_PATH` = WaypointGroup
 
-| opcode (hex) | opcode (dec) | count     | % of blocks | guess                                |
-|--------------|--------------|-----------|-------------|--------------------------------------|
-| 0x0389       | 905          | 721,319   | 37.5 %      | per-entity per-tick heartbeat (`UpdateState`?) |
-| 0x036B       | 875          | 102,200   | 5.3 %       | high-frequency; candidate for movement or visibility |
-| 0x03D6       | 982          |  92,028   | 4.8 %       | near `mov_decrypt.netid` value on 15.5 (980); strong candidate for movement on 16.8 |
-| 0x02DA       | 730          |  70,277   | 3.7 %       | ?                                    |
-| 0x0118       | 280          |  48,429   | 2.5 %       | ?                                    |
-| 0x0357       | 855          |  46,779   | 2.4 %       | ?                                    |
-| 0x0473       | 1139         |  44,000   | 2.3 %       | ?                                    |
-| 0x001E       |  30          |  42,819   | 2.2 %       | ?                                    |
-| 0x015A       | 346          |  38,230   | 2.0 %       | ?                                    |
-| 0x0090       | 144          |  26,950   | 1.4 %       | ?                                    |
-| 0x0076       | 118          |  26,041   | 1.4 %       | ?                                    |
-| 0x027C       | 636          |  24,826   | 1.3 %       | ?                                    |
-| 0x0126       | 294          |  23,962   | 1.2 %       | ?                                    |
-| 0x018B       | 395          |  23,451   | 1.2 %       | ?                                    |
-| 0x03F7       | 1015         |  22,815   | 1.2 %       | ?                                    |
+DOCUMENTED on 15.1 – 15.5 through Mowokuma's `mov_decrypt` (netid 980
+on 15.5). The decoder hands back the entry buffer described above;
+`emulator/packet.rs::PathPacket::parse` reads its first entry.
 
-Observation: `0x03D6 = 982` is numerically very close to patch 15.5's
-`mov_decrypt.netid = 980`. When someone reverse-engineers 16.8, 982 is
-the first candidate to check for movement.
+### `WARD_SPAWN_OR_DESTROY` = SpawnMinion
 
-## Opcodes seen in sample_a but absent from the Henry Zhu / Mowokuma pools
+DOCUMENTED on 15.1 – 15.5 through Mowokuma's `ward_spawn_decrypt`
+(netid 571 on 15.5): name, owner id, ward id, x, y, captured from the
+decoder's struct writes. Placement names `YellowTrinket` / `SightWard` /
+`JammerDevice`; destruction is a `*Corpse` spawn at the same position.
 
-~230 opcodes remaining, each appearing between 1 and ~8,000 times in
-sample_a. Full list reproducible via `scripts/sample_walkthrough.py`.
-Each eventually gets either a named label (via reverse engineering or
-cross-reference) or an explicit "no idea, N occurrences" entry in the
-catalog.
+---
 
-## 16.9 catalog: every netid wired
+## Henry Zhu's classes on 16.9
 
-Per the work documented in this branch (and reproduced by
-[scripts/build_semantic_catalog.py](../scripts/build_semantic_catalog.py)),
-every one of the 217 distinct netids observed in our 16.9 benchmark
-replay is wired to a decoder. The semantic catalog at
-[scripts/semantic_field_names.json](../scripts/semantic_field_names.json)
-groups netids by the decoder they share, with one of three confidence
-tiers per offset:
+His public dataset (patch 12.x, [DATASETS.md](DATASETS.md)) names 22
+classes. Where they land on 16.9:
 
-- **hand-curated** (18 unique decoders, 187 of 216 netids): decoder
-  was read in decompiled C, fields named based on shape + Zhu's S12
-  schema. Includes mov_decrypt (`fb4070`), Replication generic
-  (`f6ab10`, 51 netids), DoSetCooldown (`fdb200`), UpdateState
-  (`f9d4e0`, 12 netids incl. 1068), the Replication-compact
-  (`fcfd30`, 21 netids) and Replication-long (`eba9e0`) variants,
-  AttackOrSpellCast (`1074580`), several event packets, and the
-  ConstructorFallback / TagOnlyStub honest-reporting buckets.
-- **auto-generated** (35 unique decoders, 29 netids): wired with
-  generic `field_at_0xNN` names + observed type. Decoders share the
-  prologue + bit-reader pattern of the hand-curated set; field
-  meanings are inferable from Zhu's class shapes when needed but the
-  per-offset semantics aren't yet hand-checked.
-- **constructor-fallback / tag-only** (2 RVAs, 19 netids): brute-
-  force matched these to `db2910` (a class constructor) or `e9dd20`
-  (a 19-byte stub). The decoded_fields[] for them are init constants
-  or empty — no real packet decoding. Honestly labeled as such so
-  consumers don't mistake init values for decoded data.
+| Zhu class | 16.9 | status |
+|-----------|------|--------|
+| `UnitApplyDamage` | `PKT_UnitApplyDamage_s` (652) | TYPED |
+| `WaypointGroup` | unnamed (916) | TYPED |
+| `SpawnMinion` | unnamed (214) | TYPED |
+| `NPCDieMapView` | `PKT_NPC_Die_MapView_s` (742) | TYPED |
+| `BuyItem` / `RemoveItem` / `SwapItem` / `UseItem` | `PKT_BuyItemAns_s` (306) / `PKT_RemoveItemAns_s` (1045) / `PKT_SwapItemAns_s` (378) / `PKT_UseItemAns_s` (1196) | TYPED |
+| `DoSetCooldown` | `PKT_CHAR_SetCooldown_Broadcast_s` (104) | NAMED |
+| `CastSpellAns` | `PKT_NPC_CastSpellAns_s` (985) | NAMED |
+| `BasicAttackPos` | `PKT_Basic_Attack_Pos_s` (831), `PKT_Basic_Attack_Pos_Minion_s` (876) | NAMED |
+| `EnterFog` / `LeaveFog` | `PKT_S2C_OnEnterTeamVisibility_s` (1068, 39 % of all blocks), `PKT_S2C_OnLeaveTeamVisibility_s` (920), `PKT_OnLeaveVisibilityClient_s` (733) | NAMED; which pair Zhu meant is not settled |
+| `NPCDieMapViewBroadcast` | likely `PKT_NPC_Die_Broadcast_s` (1093) | NAMED |
+| `Replication`, `CreateHero`, `CreateTurret`, `CreateNeutral`, `BarrackSpawnUnit`, `WaypointGroupWithSpeed` | unnamed on 16.9 (object creation and replication do not go through handler registration) | UNNAMED |
 
-Apply the catalog to a rofl-x output JSON with:
-```bash
-python scripts/apply_semantic_names.py <out.json> [--inplace]
-```
-This adds `name` + `type_hint` to every `decoded_fields[]` entry that
-has a catalog mapping. End-to-end on the benchmark replay: 21,179
-fields named across 4,989 samples covering all 216 wired generic
-decoders.
+---
 
-## Adding a new entry
+## UNNAMED on 16.9, by volume
 
-Workflow (per [ROADMAP.md](ROADMAP.md) § Phase 4):
+All decode clean; what is known about each from its decoded object:
 
-1. Add a catalog entry here.
-2. Add a handler in `src/packet/handlers/<name>.rs`.
-3. Add a fixture byte slice in `tests/fixtures/<name>.bin`.
-4. Add a test in `tests/handlers/<name>.rs` asserting the handler
-   decodes the fixture to the expected struct.
+| netid | share of blocks | what the object holds |
+|------:|----------------:|-----------------------|
+| 707 | 5.0 % | one small enum, no net id (2-3 byte payload) |
+| 806 | 3.3 % | a vector of ~15 per-champion entries (champion net id, a float near game time, small counters): a periodic champion-state sync |
+| 684 | 3.1 % | a net id (`+0x14`) and one small field |
+| 916 | 2.6 % | WaypointGroup (TYPED) |
+| 406 | 2.3 % | a champion net id and a float |
+| 347 | 1.0 % | a count, a buffer and a float near game time: same shape as WaypointGroup plus a time; a candidate for Zhu's `WaypointGroupWithSpeed` |
+| 807 | 1.0 % | a counter and a net id |
+| 446 | 0.8 % | a vector of 88-byte entries, each with nested objects, team bitsets and net ids: candidate for `Replication` |
+| 214 | 0.1 % | SpawnMinion (TYPED) |
 
-Never the reverse. The catalog entry is the anchor; handler, fixture,
-and test exist to validate what the entry says.
+---
+
+## Adding a class
+
+1. Find it: `rofl-x decode --find <name>` reports the netids whose
+   decoded plaintext carries a string; `rofl-x decode --netid N --jsonl`
+   dumps every object word of one netid.
+2. Work out the layout from the dump; check every field against
+   something independent (statsJson, positions on the map, a related
+   class).
+3. Add `src/packet/handlers/<name>.rs` with the layout table and the
+   check that verified it, a `pub mod` line in `handlers/mod.rs`, an arm
+   in `packet::interpret` (or a recogniser in `packet::recognise`), and
+   use it in `game.rs`.
+4. Add a row to the TYPED table above. If the class feeds a statsJson
+   figure, add it to the self-check in `game.rs` so
+   `tests/decode_replays.rs` guards it.
+
+---
+
+## Appendix: netid → class, patch 16.9
+
+Every netid the 16.9 binary registers a handler for (315), with the
+number of blocks seen across the five 16.9 replays. Generated from
+`patch/16-9.patch`; a class registered by several client classes lists
+them all.
+
+| netid | class | client(s) | blocks | |
+|------:|-------|-----------|-------:|-|
+|   11 | `PKT_S2C_SetCooldownGemCooldown_s` | AIHeroClient | 0 | |
+|   18 | `PKT_S2C_MissileScriptTrigger_s` | MissileClient | 0 | |
+|   24 | `PKT_S2C_SetFoWStatus_s` | AIHeroClient | 0 | |
+|   27 | `PKT_AI_TargetHeroS2C_s` | AIBaseClient | 28,066 | |
+|   39 | `PKT_S2C_SetLockForSetPieceAnimationForObjectAttacher_s` | ObjectAttacher | 0 | |
+|   40 | `PKT_S2C_EnableCursorTracking_s` | AIHeroClient | 0 | |
+|   51 | `PKT_S2C_SetMinimapIconOverride_s` | AttackableUnit | 4,375 | |
+|   52 | `PKT_SetAlpha_s` | AIBaseClient | 223 | |
+|   58 | `PKT_S2C_SingleUnitClickTrigger_s` | AIHeroClient | 0 | |
+|   60 | `PKT_NPC_MessageToClient_Broadcast_s` | AIBaseClient | 62 | |
+|   64 | `PKT_NPC_LevelUp_s` | AIBaseClient | 12,087 | typed |
+|   65 | `PKT_UpdateGoldRedirectTarget_s` | AIBaseClient | 1,696 | |
+|   73 | `PKT_S2C_SetShopBaseItemAdvice_s` | AIHeroClient | 0 | |
+|   75 | `PKT_S2C_SetZoomOutForAbility_s` | AIHeroClient | 0 | |
+|   78 | `PKT_S2C_AddDamagePredictionByItem_s` | AIHeroClient | 0 | |
+|   81 | `PKT_S2C_SetMinimapIconSizeOverride_Broadcast_s` | AttackableUnit | 0 | |
+|   83 | `PKT_S2C_SetHoverIndicatorTarget_s` | AIBaseClient | 8 | |
+|   87 | `PKT_S2C_UnitSetAbilityResourceType_s` | AIBaseClient | 0 | |
+|   89 | `PKT_NPC_BuffRemove2_s` | BuffManagerClient | 55,218 | |
+|   90 | `PKT_S2C_SetCharacterStateIndicatorIndex_s` | AIBaseClient | 0 | |
+|   94 | `PKT_S2C_SetMinimapIconSizeOverride_s` | AttackableUnit | 2 | |
+|   97 | `PKT_S2C_SetItemParamValue_s` | HeroInventoryClient | 789 | |
+|  100 | `PKT_S2C_SyncMovementCompleteCount_s` | MissileClient | 107,970 | |
+|  104 | `PKT_CHAR_SetCooldown_Broadcast_s` | AIBaseClient | 67,034 | |
+|  105 | `PKT_S2C_MoveMarker_s` | AIMarker | 2,127 | |
+|  107 | `PKT_S2C_ChangeHealthBarStyle_s` | AIBaseClient | 0 | |
+|  115 | `PKT_Update_HeroStats_KDA_s` | AIHeroClient | 1,057 | typed |
+|  121 | `PKT_S2C_ExtraActionsSetVisibilityOfButtonById_s` | AIHeroClient | 0 | |
+|  124 | `PKT_S2C_SetSpellModifiers_s` | AIBaseClient | 0 | |
+|  128 | `PKT_S2C_SyncCircularMovementRestriction_s` | AIBaseClient | 80 | |
+|  129 | `PKT_S2C_ResetUnitInfoBar_s` | AIBaseClient | 84 | |
+|  132 | `PKT_NPC_BuffUpdateNumCounter_s` | BuffManagerClient | 53,205 | |
+|  134 | `PKT_ChangeSlotSpellData_OwnerOnly_s` | AIBaseClient | 0 | |
+|  138 | `PKT_S2C_UnitSetCursorReticle_s` | AIBaseClient | 0 | |
+|  146 | `PKT_S2C_SetZoomOutForAbilityAuto_s` | AIHeroClient | 0 | |
+|  151 | `PKT_S2C_CharacterSelectionUISetTeamToFocus_s` | AIHeroClient | 0 | |
+|  153 | `PKT_S2C_NeutralCampLeashStateChanged_s` | AIMinionClient | 2,993 | |
+|  156 | `PKT_S2C_SetGreyscaleEnabledWhenDead_s` | AIHeroClient | 100 | |
+|  157 | `PKT_SetFadeOut_Push_s` | AIBaseClient | 3,185 | |
+|  161 | `PKT_DirectInputMovementDriverServerTurnData_s` | AIBaseClient | 198 | |
+|  162 | `PKT_S2C_SetAlphaForHudPart_s` | AIHeroClient | 0 | |
+|  165 | `PKT_S2C_StatFormulaOutputs_s` | AIBaseClient | 34,456 | |
+|  167 | `PKT_S2C_CameraLockTarget_s` | AIHeroClient | 0 | |
+|  168 | `PKT_S2C_UnitSetMaxLevelOverride_s` | AIBaseClient | 10 | |
+|  170 | `PKT_S2C_UpdateUnitInfoBar_s` | AIBaseClient | 745 | |
+|  175 | `PKT_S2C_SetMinimapIconBorderOverride_s` | AttackableUnit | 1,047 | |
+|  176 | `PKT_S2C_SetItemGroupData_Broadcast_s` | HeroInventoryClient | 0 | |
+|  179 | `PKT_HealthBar_Icon_Remove_S2C_s` | AIBaseClient | 8 | |
+|  181 | `PKT_S2C_ChangeMissileSpline_s` | MissileClient | 0 | |
+|  184 | `PKT_S2C_ExtraActionsSetUpgradeItemButtonID_s` | AIHeroClient | 0 | |
+|  187 | `PKT_S2C_CompanionSpawned_s` | AIHeroClient | 0 | |
+|  201 | `PKT_S2C_FaceDirection_s` | AIBaseClient | 80,141 | |
+|  203 | `PKT_S2C_ResetCameraZoom_s` | AIHeroClient | 30 | |
+|  216 | `PKT_S2C_ShopItemSubstitutionSet_Broadcast_s` | HeroInventoryClient | 8 | |
+|  223 | `PKT_S2C_CreateBannerAtMapLocator_s` | AIHeroClient | 12 | |
+|  226 | `PKT_SetCACDatas_s` | AIHeroClient | 84 | |
+|  228 | `PKT_S2C_CursorPositionData_s` | CursorPositionUpdateComponentClient | 0 | |
+|  229 | `PKT_S2C_ExtraActionsSetScreenOffset_s` | AIHeroClient | 0 | |
+|  243 | `PKT_S2C_UnitSetDrawPathMode_s` | AIBaseClient | 0 | |
+|  251 | `PKT_S2C_ShowPlayerFramePanel_s` | AIHeroClient | 0 | |
+|  253 | `PKT_S2C_StopProgressBar_s` | AIHeroClient | 0 | |
+|  261 | `PKT_S2C_SetUndoEnabled_s` | HeroInventoryClient | 0 | |
+|  271 | `PKT_ChangeSlotSpellData_Summoner_s` | AIBaseClient | 66 | |
+|  274 | `PKT_S2C_UpdateDebugState_s` | AIBaseClient | 0 | |
+|  276 | `PKT_S2C_PlaySpellCastAnimation_s` | AIBaseClient | 5 | |
+|  277 | `PKT_S2C_HideOwnerEmotes_s` | AIBaseClient | 350 | |
+|  279 | `PKT_S2C_ChangeCharacterVoice_s` | AIBaseClient | 3 | |
+|  280 | `PKT_S2C_ClearCharacterStateIndicatorIndex_s` | AIBaseClient | 0 | |
+|  281 | `PKT_S2C_HandleMissileUnitCollisionUpdateBehaviors_s` | MissileClient | 0 | |
+|  285 | `PKT_S2C_HandleMissileUnitCollisionExitBehaviors_s` | MissileClient | 0 | |
+|  286 | `PKT_S2C_EnableAttackOverlays_s` | PracticeToolViewController | 0 | |
+|  291 | `PKT_S2C_UpdateSpellToggle_s` | AIHeroClient | 0 | |
+|  292 | `PKT_S2C_AddDamagePredictionBySpell_s` | AIHeroClient | 0 | |
+|  293 | `PKT_S2C_SetAlternateCircleIcon_s` | AIHeroClient | 0 | |
+|  296 | `PKT_HeroReincarnateAlive_s` | AIHeroClient | 303 | typed |
+|  298 | `PKT_S2C_CooldownReductionModifierUpdate_s` | AIBaseClient | 411 | |
+|  301 | `PKT_S2C_ClearHealthThreshold_s` | AIBaseClient | 1,118,012 | |
+|  305 | `PKT_S2C_SetItemModifiers_Broadcast_s` | HeroInventoryClient | 0 | |
+|  306 | `PKT_BuyItemAns_s` | HeroInventoryClient | 1,230 | typed |
+|  323 | `PKT_SetAbilityResourceState_s` | AIBaseClient | 0 | |
+|  324 | `PKT_S2C_SetHealthBarColor_s` | AIBaseClient | 0 | |
+|  325 | `PKT_S2C_AddFollowTargetPosition_s` | AIBaseClient | 2,704 | |
+|  328 | `PKT_S2C_MouseTrackMissile_s` | MissileClient | 0 | |
+|  331 | `PKT_S2C_SetMinimapIconBehaviorSetKeyHash_Broadcast_s` | AttackableUnit | 2 | |
+|  338 | `PKT_S2C_SetOffsetForObjectAttacher_s` | ObjectAttacher | 4,735 | |
+|  344 | `PKT_S2C_UpdateJunglePathDisplayed_s` | JunglePathComponentClient | 0 | |
+|  346 | `PKT_ChangeSlotSpellData_s` | AIBaseClient | 37,923 | |
+|  350 | `PKT_S2C_HeroItemAdvice_s` | AIHeroClient | 0 | |
+|  353 | `PKT_S2C_MissileReInitVFX_s` | MissileClient | 0 | |
+|  357 | `PKT_S2C_SetInventory_Broadcast_s` | HeroInventoryClient | 17 | |
+|  362 | `PKT_S2C_PlayAnimation_Mapview_s` | AIBaseClient | 515 | |
+|  367 | `PKT_S2C_CreateTrophyAtMapLocator_s` | AIHeroClient | 0 | |
+|  369 | `PKT_S2C_ShowInventoryPanel_s` | AIHeroClient | 0 | |
+|  370 | `PKT_S2C_HideAllSummonerEmotes_s` | AIBaseClient | 0 | |
+|  373 | `PKT_S2C_SetExclusiveItemGroup_s` | HeroInventoryClient | 0 | |
+|  375 | `PKT_S2C_ExtraActionsSetButtonEnableStateByButtonId_s` | AIHeroClient | 0 | |
+|  378 | `PKT_SwapItemAns_s` | HeroInventoryClient | 59 | typed |
+|  383 | `PKT_S2C_CameraFOV_s` | AIHeroClient | 0 | |
+|  390 | `PKT_S2C_CircularRestrictionOverride_s` | AIBaseClient | 80 | |
+|  392 | `PKT_Building_Die_s` | BuildingClient | 15 | typed |
+|  393 | `PKT_S2C_RemoveSpellModifier_s` | AIBaseClient | 0 | |
+|  410 | `PKT_S2C_UpdateStatStoneGameDelta_s` | AIHeroClient | 15,254 | |
+|  411 | `PKT_S2C_ClearAlternateCircleIcon_s` | AIHeroClient | 0 | |
+|  419 | `PKT_S2C_CameraLock_s` | AIHeroClient | 0 | |
+|  421 | `PKT_S2C_UpdateAutoAttackOverrideRange_s` | AIBaseClient | 12,786 | |
+|  422 | `PKT_S2C_ShowHealthBar_s` | AIBaseClient | 20,719 | |
+|  426 | `PKT_Basic_Attack_Minion_s` | AIBaseClient | 263 | |
+|  427 | `PKT_S2C_ExtraActionsSetChampionButtonSelectionState_s` | AIHeroClient | 0 | |
+|  431 | `PKT_S2C_ExtraActionsSetRoleBoundQuestButtonID_s` | AIHeroClient | 0 | |
+|  435 | `PKT_S2C_SetSuppressCooldownUI_s` | AIBaseClient | 0 | |
+|  437 | `PKT_S2C_ExtraActionsClearCharacterOverride_s` | AIHeroClient | 0 | |
+|  438 | `PKT_S2C_StopAnimation_s` | AIBaseClient | 35,084 | |
+|  441 | `PKT_S2C_SetForceMuted_s` | AIBaseClient | 17 | |
+|  447 | `PKT_S2C_SetInventory_MapView_s` | HeroInventoryClient | 316 | |
+|  448 | `PKT_S2C_NavCellStateOverride_s` | AIBaseClient | 246 | |
+|  449 | `PKT_S2C_SetMinimapIconOverride_Broadcast_s` | AttackableUnit | 3,724 | |
+|  450 | `PKT_S2C_BBExtraActionsSetBlendColor_s` | AIHeroClient | 0 | |
+|  451 | `PKT_S2C_SetCanSurrender_s` | AIHeroClient | 162 | |
+|  452 | `PKT_S2C_AmmoUpdate_s` | AIBaseClient | 57,032 | |
+|  455 | `PKT_S2C_MoveCameraToPoint_s` | AIHeroClient | 50 | |
+|  463 | `PKT_S2C_SetItemIconOverride_s` | HeroInventoryClient | 70 | |
+|  464 | `PKT_S2C_PackManagerInfo_s` | AIBaseClient | 0 | |
+|  469 | `PKT_S2C_SetSecondaryCharacterData_s` | AIBaseClient | 0 | |
+|  470 | `PKT_S2C_HandleUIItemCompleteFX_s` | AIHeroClient | 0 | |
+|  471 | `PKT_S2C_DisplaySummonerEmote_s` | AIBaseClient | 258 | |
+|  472 | `PKT_NPC_Hero_Die_s` | AIBaseClient | 328 | typed |
+|  473 | `PKT_S2C_ReplicateFields_s` | VisibleNetworkedObject | 0 | |
+|  474 | `PKT_S2C_ChangeMissileTarget_s` | MissileClient | 3 | |
+|  475 | `PKT_S2C_StartProgressBar_s` | AIHeroClient | 0 | |
+|  477 | `PKT_StealVOLine_s` | AIBaseClient | 0 | |
+|  481 | `PKT_S2C_SetItemDataValueValue_s` | HeroInventoryClient | 0 | |
+|  482 | `PKT_S2C_SetDirectedTrackingElementState_s` | AIHeroClient | 0 | |
+|  496 | `PKT_AvatarInfo_Server_s` | AvatarClient | 0 | |
+|  498 | `PKT_S2C_SetAudioLinkedAlly_s` | AIHeroClient | 0 | |
+|  500 | `PKT_S2C_SetMovementDriver_s` | AIBaseClient | 9 | |
+|  504 | `PKT_S2C_AddDamagePredictionByValue_s` | AIHeroClient | 0 | |
+|  509 | `PKT_S2C_CharacterSelectionUISetExButtonEnabled_s` | AIHeroClient | 0 | |
+|  515 | `PKT_S2C_RemoveHealthBarColorOverride_s` | AIBaseClient | 0 | |
+|  521 | `PKT_S2C_UpdateSummonerEmoteIdInSlot_s` | AIBaseClient | 0 | |
+|  522 | `PKT_S2C_PopCharacterData_s` | AIBaseClient | 353 | |
+|  526 | `PKT_S2C_SetVisualOffset_s` | AIBaseClient | 0 | |
+|  528 | `PKT_CHAR_CancelTargetingReticle_s` | AIBaseClient | 0 | |
+|  529 | `PKT_HeroReincarnate_s` | AIHeroClient | 0 | |
+|  531 | `PKT_S2C_UpdateSpellNumericalDisplay_s` | AIHeroClient | 9,802 | |
+|  532 | `PKT_S2C_ExtraActionsSetElementalCounterValue_s` | AIHeroClient | 0 | |
+|  533 | `PKT_S2C_PlayAnimation_Spawn_s` | AIBaseClient | 50 | |
+|  534 | `PKT_S2C_WallTrackingComponentCacheData_s` | AIBaseClient | 0 | |
+|  540 | `PKT_S2C_CharacterSelectionUIReset_s` | AIHeroClient | 0 | |
+|  541 | `PKT_S2C_SetSumomonerEmoteOnCooldown_s` | AIBaseClient | 0 | |
+|  547 | `PKT_S2C_MarkAsCloneOfUnit_s` | AIMinionClient | 0 | |
+|  548 | `PKT_S2C_SetCCAnimationsEnabled_s` | AIBaseClient | 0 | |
+|  549 | `PKT_CombatStateChanged_s` | AIBaseClient | 0 | |
+|  559 | `PKT_S2C_SetAnimStates_s` | AnimOverrideHandlerComponent | 32,439 | |
+|  560 | `PKT_NPC_BuffLockFacing_s` | BuffManagerClient | 236 | |
+|  563 | `PKT_S2C_ShowTrophy_s` | AIHeroClient | 1 | |
+|  567 | `PKT_S2C_PlayEmote_s` | AIHeroClient | 268 | |
+|  568 | `PKT_S2C_SpawnDelayedMissile_s` | AIBaseClient | 58 | |
+|  575 | `PKT_StealthFlagsChanged_s` | AIBaseClient | 3,430 | |
+|  577 | `PKT_S2C_WASDCameraConfig_s` | DirectMovementComponentClient | 0 | |
+|  584 | `PKT_S2C_RemoveBuffModifier_s` | AIBaseClient | 0 | |
+|  591 | `PKT_S2C_UnlockAnimation_s` | AIBaseClient | 206 | |
+|  592 | `PKT_S2C_PlaySpellResetFeedbackUI_s` | AIHeroClient | 0 | |
+|  595 | `PKT_S2C_SetMinimapIconBehaviorSetKeyHash_s` | AttackableUnit | 2 | |
+|  598 | `PKT_NPC_BuffUpdateCount_s` | BuffManagerClient | 84,251 | |
+|  603 | `PKT_S2C_SetFloatingTipElementState_s` | AIHeroClient | 0 | |
+|  613 | `PKT_S2C_IncrementMinionKills_s` | AIHeroClient | 118 | |
+|  615 | `PKT_NPC_LevelUp_Global_s` | AIBaseClient | 1,649 | |
+|  624 | `PKT_S2C_PopAllCharacterData_s` | AIBaseClient | 0 | |
+|  636 | `PKT_S2C_AddHealthThreshold_s` | AIBaseClient | 290 | |
+|  637 | `PKT_S2C_RemoveTrophy_s` | AIHeroClient | 0 | |
+|  642 | `PKT_S2C_AddFollowTargetTeleport_s` | AIBaseClient | 54 | |
+|  644 | `PKT_NPC_UpgradeSpellAns_s` | AIBaseClient | 733 | |
+|  647 | `PKT_S2C_ChangeMissilePhysics_s` | MissileClient | 8,371 | |
+|  650 | `PKT_S2C_ExtraActionsSetElementalCurrentElement_s` | AIHeroClient | 0 | |
+|  652 | `PKT_UnitApplyDamage_s` | AttackableUnit | 320,858 | typed |
+|  653 | `PKT_SetFadeOut_Pop_s` | AIBaseClient | 2,172 | |
+|  657 | `PKT_S2C_ClearSpellNumericalDisplay_s` | AIHeroClient | 19,952 | |
+|  660 | `PKT_SetFadeOut_Push_Persistent_s` | AIBaseClient | 565 | |
+|  661 | `PKT_S2C_SpellbookOverrideMoveToCastServerValidation_s` | AIBaseClient | 0 | |
+|  662 | `PKT_S2C_ExtraActionsSetPortrait_s` | AIHeroClient | 0 | |
+|  668 | `PKT_S2C_SetFakeHeightTarget_s` | AIBaseClient | 0 | |
+|  669 | `PKT_HealthBar_Icon_Clear_S2C_s` | AIBaseClient | 0 | |
+|  672 | `PKT_S2C_ExtraActionsSetCharacterOverride_s` | AIHeroClient | 0 | |
+|  676 | `PKT_S2C_StopCursorTracking_s` | AIHeroClient | 0 | |
+|  680 | `PKT_HealthBar_Icon_State_Set_S2C_s` | AIBaseClient | 0 | |
+|  681 | `PKT_S2C_SetHealthBarScale_s` | AIBaseClient | 0 | |
+|  683 | `PKT_S2C_ExtraActionsSetButtonSelectionStateByButtonId_s` | AIHeroClient | 0 | |
+|  686 | `PKT_NPC_AddFakeBuff_s` | BuffManagerClient | 22 | |
+|  688 | `PKT_S2C_ToggleLevelUpTooltip_s` | AIHeroClient | 0 | |
+|  690 | `PKT_HealthBar_Icon_Add_S2C_s` | AIBaseClient | 8 | |
+|  691 | `PKT_S2C_ToggleSubmeshVisibility_s` | AIBaseClient | 812 | |
+|  697 | `PKT_S2C_SendRecolorData_s` | AIMinionClient | 0 | |
+|  710 | `PKT_S2C_SpellbookOverrideResetClientOverrideState_s` | AIBaseClient | 0 | |
+|  713 | `PKT_S2C_ExtraActionsEnableGroup_s` | AIHeroClient | 0 | |
+|  715 | `PKT_S2C_UpdateDeathTimer_s` | AIBaseClient | 328 | |
+|  716 | `PKT_S2C_DamagePredictionState_s` | AIBaseClient | 0 | |
+|  717 | `PKT_SetDimensionMissile_s` | MissileClient | 110,912 | |
+|  720 | `PKT_S2C_EquipGear_s` | AIBaseClient | 6,175 | |
+|  728 | `PKT_NPC_RemoveFakeBuff_s` | BuffManagerClient | 79 | |
+|  733 | `PKT_OnLeaveVisibilityClient_s` | NetVisibilityObjectClient | 1,608 | |
+|  736 | `PKT_S2C_CherryHeroInfo_s` | AIHeroClient | 0 | |
+|  738 | `PKT_S2C_SetSpellLevel_s` | SpellbookClient | 70 | |
+|  739 | `PKT_S2C_ExtraActionsSetChampionButtonEnableState_s` | AIHeroClient | 0 | |
+|  742 | `PKT_NPC_Die_MapView_s` | AIBaseClient | 21,786 | typed |
+|  745 | `PKT_S2C_ClearObjectSelection_s` | AIBaseClient | 0 | |
+|  746 | `PKT_S2C_HandleTipUpdate_s` | AIHeroClient | 0 | |
+|  752 | `PKT_DampenerSwitchStates_s` | BarracksDampenerClient | 15 | |
+|  766 | `PKT_S2C_SpellbookOverrideCastPredictionFailed_s` | AIBaseClient | 0 | |
+|  771 | `PKT_S2C_ExtraActionsSetVisibilityOfGroup_s` | AIHeroClient | 0 | |
+|  772 | `PKT_S2C_StopSpellTargeter_s` | AIHeroClient | 96 | |
+|  774 | `PKT_S2C_RemoveCooldownGem_s` | AIHeroClient | 0 | |
+|  778 | `PKT_S2C_AddHUDCenterFrameGlow_s` | AIHeroClient | 0 | |
+|  779 | `PKT_S2C_RequestMouseOverObjIdUpdate_s` | AIBaseClient | 0 | |
+|  781 | `PKT_NPC_BuffReplace_s` | BuffManagerClient | 12,114 | |
+|  783 | `PKT_S2C_AnimationUpdateTimeStep_s` | AIBaseClient | 110 | |
+|  785 | `PKT_S2C_NotifyContextualSituation_s` | AIHeroClient | 11,005 | |
+|  788 | `PKT_UpdateTurretFlags_s` | AITurretClient | 24 | |
+|  789 | `PKT_S2C_ExtraActionsPlayAnim_s` | AIHeroClient | 0 | |
+|  792 | `PKT_S2C_ChargeSpellCastAck_s` | AIBaseClient | 21 | |
+|  815 | `PKT_S2C_UpdateDebugSpellSlotState_s` | AIBaseClient | 0 | |
+|  820 | `PKT_S2C_ClearSecondaryCharacterData_s` | AIBaseClient | 0 | |
+|  825 | `PKT_S2C_ClearFloatingTextOnUnit_s` | AIHeroClient | 0 | |
+|  828 | `PKT_NPC_BuffAdd2_s` | BuffManagerClient | 56,880 | |
+|  831 | `PKT_Basic_Attack_Pos_s` | AIBaseClient | 16,871 | |
+|  838 | `PKT_S2C_UpdateSpellToggleVisual_s` | AIHeroClient | 1,187 | |
+|  841 | `PKT_S2C_AddBuffModifier_s` | AIBaseClient | 0 | |
+|  842 | `PKT_S2C_RemoveSingleUnitClickTrigger_s` | AIHeroClient | 0 | |
+|  843 | `PKT_S2C_PlayVOCommand_s` | AIBaseVOComponent | 2,250 | |
+|  845 | `PKT_SetDisguiseData_s` | AIBaseClient | 50 | |
+|  846 | `PKT_S2C_SetBuffModifiers_s` | AIBaseClient | 0 | |
+|  848 | `PKT_S2C_RemoveDamagePrediction_s` | AIHeroClient | 0 | |
+|  854 | `PKT_S2C_AddSpellModifier_s` | AIBaseClient | 0 | |
+|  859 | `PKT_S2C_AutoAimTarget_s` | AutoSpellCastComponentClient | 0 | |
+|  871 | `PKT_S2C_SetLaunchAreaIndicatorEnabled_s` | AIBaseClient | 0 | |
+|  872 | `PKT_S2C_SetMissileOrbit_s` | MissileClient | 0 | |
+|  873 | `PKT_SetItem_s` | HeroInventoryClient | 50 | |
+|  876 | `PKT_Basic_Attack_Pos_Minion_s` | AIBaseClient | 62,939 | |
+|  884 | `PKT_S2C_SetShopScriptPurchasingEnabled_s` | AIHeroClient | 0 | |
+|  888 | `PKT_S2C_SetItemGroupData_MapView_s` | HeroInventoryClient | 555 | |
+|  891 | `PKT_S2C_ModifyScriptItemRecommendation_s` | AIHeroClient | 0 | |
+|  895 | `PKT_S2C_EnableDeathEffectForChampionKills_s` | AIHeroClient | 0 | |
+|  898 | `PKT_S2C_PostProcessEffect_s` | AIHeroClient | 0 | |
+|  903 | `PKT_Pause_s` | PathControllerClient | 0 | |
+|  904 | `PKT_S2C_RedirectOutlineUnit_s` | AttackableUnit | 0 | |
+|  907 | `PKT_S2C_ChangeCharacterData_s` | AIBaseClient, AnimatedBuildingClient | 476 | |
+|  915 | `PKT_S2C_SetHealthThresholdValue_s` | AIBaseClient | 1,175 | |
+|  917 | `PKT_S2C_RemoveHUDCenterFrameGlow_s` | AIHeroClient | 0 | |
+|  920 | `PKT_S2C_OnLeaveTeamVisibility_s` | NetVisibilityObjectClient | 42,014 | |
+|  922 | `PKT_NPC_RemoveFakeBuffs_s` | BuffManagerClient | 42 | |
+|  927 | `PKT_S2C_ExtraActionsSetItemButtonID_s` | AIHeroClient | 0 | |
+|  934 | `PKT_S2C_SetIdleParticleVisibility_s` | AIBaseClient | 405 | |
+|  939 | `PKT_S2C_CameraPosition_s` | AIHeroClient | 328 | |
+|  942 | `PKT_S2C_ShopItemSubstitutionClear_Broadcast_s` | HeroInventoryClient | 0 | |
+|  945 | `PKT_S2C_ExtraActionsSetText_s` | AIHeroClient | 0 | |
+|  948 | `PKT_UnitApplyShieldDamage_s` | AIBaseClient | 0 | |
+|  951 | `PKT_S2C_PauseAnimation_s` | AIBaseClient | 655 | |
+|  959 | `PKT_S2C_SetSpellTimerFromBuff_s` | AIBaseClient | 2,805 | |
+|  960 | `PKT_S2C_RemoveBanner_s` | AIHeroClient | 0 | |
+|  962 | `PKT_S2C_DestroyClientMissile_s` | MissileClient | 3,065 | |
+|  965 | `PKT_S2C_CameraZoom_s` | AIHeroClient | 30 | |
+|  967 | `PKT_S2C_FullSyncRecommendedJunglePath_s` | JunglePathComponentClient | 0 | |
+|  975 | `PKT_S2C_PlayAnimation_s` | AIBaseClient, AnimatedBuildingClient | 14,930 | |
+|  977 | `PKT_S2C_SetInventorySpellData_OwnerOnly_s` | HeroInventoryClient | 0 | |
+|  979 | `PKT_S2C_WASDInputConfig_s` | DirectMovementComponentClient | 0 | |
+|  983 | `PKT_S2C_AddItemModifier_s` | HeroInventoryClient | 1 | |
+|  984 | `PKT_S2C_SpellTypesThatCanTargetUs_s` | AttackableUnit | 0 | |
+|  985 | `PKT_NPC_CastSpellAns_s` | AIBaseClient, SpellbookClient | 19,102 | |
+|  987 | `PKT_S2C_AlwaysFaceTarget_s` | AIBaseClient | 0 | |
+| 1000 | `PKT_S2C_SetItemCharges_s` | HeroInventoryClient | 17,169 | |
+| 1001 | `PKT_S2C_SetAllUnitClickTriggers_s` | AIHeroClient | 0 | |
+| 1005 | `PKT_ForwardOrderFromObjectAttacher_s` | AIHeroClient | 0 | |
+| 1006 | `PKT_NPC_ForceDead_s` | AIBaseClient | 81 | |
+| 1007 | `PKT_S2C_StartScreenTextureEffect_s` | AIHeroClient | 0 | |
+| 1008 | `PKT_S2C_SetShopActive_s` | ShopClient | 0 | |
+| 1013 | `PKT_NPC_BuffUpdateStatAdjustments_s` | BuffManagerClient | 74 | |
+| 1017 | `PKT_S2C_CharacterSelectionUIShowPlaceholderIcon_s` | AIHeroClient | 0 | |
+| 1024 | `PKT_S2C_SetLaunchAreaTargetDistance_s` | AIBaseClient | 0 | |
+| 1033 | `PKT_S2C_StartSpellTargeter_s` | AIHeroClient | 234 | |
+| 1034 | `PKT_Basic_Attack_s` | AIBaseClient | 4,796 | |
+| 1035 | `PKT_S2C_SetItemIsSellable_s` | HeroInventoryClient | 0 | |
+| 1038 | `PKT_S2C_SetAreaIndicatorEnabled_s` | AIBaseClient | 113 | |
+| 1040 | `PKT_S2C_RemoveItemPreviewModifiers_s` | HeroInventoryClient | 0 | |
+| 1044 | `PKT_S2C_StartCursorTracking_s` | AIHeroClient | 0 | |
+| 1045 | `PKT_RemoveItemAns_s` | HeroInventoryClient | 734 | typed |
+| 1046 | `PKT_NPC_AddFakeBuffs_s` | BuffManagerClient | 110 | |
+| 1055 | `PKT_S2C_ForceCreateMissile_s` | AIBaseClient | 110,228 | |
+| 1061 | `PKT_S2C_ShowPlayerStatsPanel_s` | AIHeroClient | 0 | |
+| 1068 | `PKT_S2C_OnEnterTeamVisibility_s` | NetVisibilityObjectClient | 3,091,816 | |
+| 1073 | `PKT_S2C_DestroyUnit_s` | AIHeroClient | 0 | |
+| 1083 | `PKT_S2C_SetRTPC_s` | AIBaseClient | 0 | |
+| 1086 | `PKT_S2C_PlaySpellReadyEffectUI_s` | AIHeroClient | 0 | |
+| 1090 | `PKT_S2C_HeroStats_s` | AIHeroClient | 0 | |
+| 1093 | `PKT_NPC_Die_Broadcast_s` | AIBaseClient | 165 | |
+| 1102 | `PKT_SetDimensionUnit_s` | AttackableUnit | 74 | |
+| 1104 | `PKT_AI_TargetS2C_s` | AIBaseClient | 4,120 | |
+| 1105 | `PKT_S2C_StopScreenTextureEffect_s` | AIHeroClient | 0 | |
+| 1110 | `PKT_S2C_RemoveClentSideOnlyItem_s` | AIBaseClient, AITurretClient | 154 | |
+| 1112 | `PKT_NPC_InstantStop_Attack_s` | AIBaseClient | 100,439 | |
+| 1113 | `PKT_S2C_MissileScriptedVisible_s` | MissileClient | 9 | |
+| 1115 | `PKT_NPC_MessageToClient_MapView_s` | AIBaseClient | 2,339 | |
+| 1120 | `PKT_S2C_SetShopEnabled_s` | AIHeroClient | 2 | |
+| 1121 | `PKT_S2C_CopyAnimationState_s` | AIBaseClient | 10 | |
+| 1123 | `PKT_S2C_SetItemModifiers_MapView_s` | HeroInventoryClient | 17 | |
+| 1134 | `PKT_S2C_HandleMissileUnitCollisionEnterBehaviors_s` | MissileClient | 6,303 | |
+| 1136 | `PKT_S2C_ShowMinimapPanel_s` | AIHeroClient | 0 | |
+| 1137 | `PKT_S2C_EmoteInCooldown_s` | AIBaseClient | 0 | |
+| 1138 | `PKT_S2C_OnSetHealthBarVariableTicks_s` | AIBaseClient | 537 | |
+| 1164 | `PKT_S2C_ShakeCamera_s` | AIHeroClient | 0 | |
+| 1173 | `PKT_S2C_CameraRotation_s` | AIHeroClient | 0 | |
+| 1178 | `PKT_MissileReplication_s` | MissileClient | 26,075 | |
+| 1183 | `PKT_S2C_OnDeathHealthBar_s` | AIBaseClient | 0 | |
+| 1190 | `PKT_S2C_SetHoverIndicatorEnabled_s` | AIBaseClient | 218 | |
+| 1193 | `PKT_NPC_SetAutocast_s` | SpellbookClient | 4,445 | |
+| 1196 | `PKT_UseItemAns_s` | HeroInventoryClient | 1,457 | typed |
+| 1199 | `PKT_S2C_ReplicateField_s` | VisibleNetworkedObject | 0 | |

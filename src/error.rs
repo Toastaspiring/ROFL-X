@@ -45,6 +45,9 @@ pub enum RoflError {
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("emulator: {0}")]
+    Emulator(String),
 }
 
 pub type Result<T> = std::result::Result<T, RoflError>;

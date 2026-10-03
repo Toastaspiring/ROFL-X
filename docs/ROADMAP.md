@@ -134,8 +134,8 @@ checks every block. Riot's class names come back from the binary's
 [DECODING.md](DECODING.md).
 
 Delivered on 16.9 (five replays): every one of 7,927,123 blocks decoded
-clean; 315 netids named; 13 classes typed (deaths, respawns, K/D/A,
-levels, damage, the four item answers, NPC and building deaths,
+clean; 315 netids named; 14 classes typed (deaths, respawns, K/D/A,
+levels, damage, spell casts, the four item answers, NPC and building deaths,
 movement paths, unit spawns including wards); `scripts/build_patch.py`
 builds the archive from the binary in minutes. The discipline above
 still holds in spirit, with one change: fixtures are whole replays
@@ -235,8 +235,8 @@ Initial pass delivered (commit `f791fd9`):
 Still outstanding:
 
 - `tests/zhu_schema_compat.rs` to assert our output can round-trip
-  every Zhu-class field. With Phase 4b, 8 of his 22 classes are typed
-  on 16.9 and 6 more are named ([PACKETS.md](PACKETS.md) § Henry Zhu's
+  every Zhu-class field. With Phase 4b, 9 of his 22 classes are typed
+  on 16.9 and 5 more are named ([PACKETS.md](PACKETS.md) § Henry Zhu's
   classes on 16.9).
 - Raw-replay byte-diff: Zhu's dataset ships decoded JSON only, not
   source `.rofl` files. Still an open question whether the raw files

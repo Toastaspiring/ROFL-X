@@ -98,9 +98,10 @@ its own deserializer reads the payload, inside a Unicorn VM
   returned true and consumed exactly the payload).
 - **315 netids carry Riot's own class name**, recovered from the
   binary's handler registrations (75.9 % of all blocks).
-- **13 classes are typed**: champion deaths with killer and assists,
-  respawns, K/D/A, levels, damage, item buys / removals / swaps / uses,
-  NPC and building deaths, movement paths, unit spawns (wards).
+- **14 classes are typed**: champion deaths with killer and assists,
+  respawns, K/D/A, levels, damage, spell casts, item buys / removals /
+  swaps / uses, NPC and building deaths, movement paths, unit spawns
+  (wards).
 - **Every per-player total rebuilt from those packets matches Riot's
   own end-of-game stats in the same file**: K/D/A, level, all seven
   final item slots, damage to champions, wards placed. 300 / 300.
@@ -137,8 +138,8 @@ rofl-x file -r EUW1-1234567890.rofl -o game.json
 ```
 
 Output: `players` (with net ids), `events` (kills with assists,
-respawns, level-ups, purchases, removals, item uses, wards placed,
-buildings destroyed), `players_state` (per-second positions) and
+respawns, level-ups, spell casts, purchases, removals, item uses,
+wards placed, buildings destroyed), `players_state` (per-second positions) and
 `wards` (lifecycles), both in Mowokuma's shape, `checks` (the statsJson
 comparison) and `decode` (block counts). No Riot ID or PUUID is written.
 
@@ -230,8 +231,9 @@ Every class below already decodes clean; typing it means reading its
 dumped object and checking the fields against something independent
 ([docs/PACKETS.md](docs/PACKETS.md) § Adding a class).
 
-- [ ] **`PKT_NPC_CastSpellAns_s`**: spell casts (caster, slot, spell,
-  target position). Spell names are in its plaintext.
+- [ ] **Spell names for spell casts.** `PKT_NPC_CastSpellAns_s` is typed
+  but carries a 32-bit spell id, not a plain FNV-1a hash of the spell
+  name; probably a hash of a game-data path.
 - [ ] **CS and gold over time.** Not in a named class; candidates are the
   unnamed per-champion sync (netid 806) and the replication class
   (netid 446). Check against statsJson `MINIONS_KILLED`,
@@ -246,8 +248,8 @@ dumped object and checking the fields against something independent
 
 - [ ] **Team count from the replay** for modes with more than two teams
   (Arena); the format-2 team registry stand-in assumes Summoner's Rift.
-- [ ] **`tests/zhu_schema_compat.rs`**: 8 of Henry Zhu's 22 classes are
-  typed on 16.9, 6 more named.
+- [ ] **`tests/zhu_schema_compat.rs`**: 9 of Henry Zhu's 22 classes are
+  typed on 16.9, 5 more named.
 - [ ] **Format-2 archive for 15.x** from Mowokuma's section dumps (the
   15.5 factory is confirmed, [docs/RE_PATCH.md](docs/RE_PATCH.md)); the
   dumps lack the PE headers `build_patch.py` reads.

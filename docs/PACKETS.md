@@ -43,6 +43,7 @@ layout table.
 | `PKT_UseItemAns_s` | 1196 | `items.rs` | hero, slot, charges left, used up | same |
 | `PKT_NPC_Die_MapView_s` | 742 | `npc_die.rs` | unit, killer, position | killer is a champion for ~31 % of deaths; not a CS counter (camps outside the map view are missing) |
 | `PKT_Building_Die_s` | 392 | `npc_die.rs` | building, killer, last credited | one per structure destroyed, killer a champion or 0 |
+| `PKT_NPC_CastSpellAns_s` | 985 | `spell_cast.rs` | caster, champion, slot, spell id, target, mana cost, cooldown | slots follow the game's numbering (Q/W/E/R, summoners, items, trinket, recall); trinket casts = trinket wards placed; Flash 300 s and its haste-reduced values, Smite 15 s, ultimates 100 mana |
 | *(no name)* WaypointGroup | 916 | `waypoints.rs` | per unit: net id, speed, path | every group fills its buffer exactly, every point on the map |
 | *(no name)* SpawnMinion | 214 | `spawn.rs` | unit, team, owner, names, position, time | ward spawns per player = statsJson `WARD_PLACED`, 50 / 50 |
 
@@ -102,7 +103,7 @@ classes. Where they land on 16.9:
 | `NPCDieMapView` | `PKT_NPC_Die_MapView_s` (742) | TYPED |
 | `BuyItem` / `RemoveItem` / `SwapItem` / `UseItem` | `PKT_BuyItemAns_s` (306) / `PKT_RemoveItemAns_s` (1045) / `PKT_SwapItemAns_s` (378) / `PKT_UseItemAns_s` (1196) | TYPED |
 | `DoSetCooldown` | `PKT_CHAR_SetCooldown_Broadcast_s` (104) | NAMED |
-| `CastSpellAns` | `PKT_NPC_CastSpellAns_s` (985) | NAMED |
+| `CastSpellAns` | `PKT_NPC_CastSpellAns_s` (985) | TYPED |
 | `BasicAttackPos` | `PKT_Basic_Attack_Pos_s` (831), `PKT_Basic_Attack_Pos_Minion_s` (876) | NAMED |
 | `EnterFog` / `LeaveFog` | `PKT_S2C_OnEnterTeamVisibility_s` (1068, 39 % of all blocks), `PKT_S2C_OnLeaveTeamVisibility_s` (920), `PKT_OnLeaveVisibilityClient_s` (733) | NAMED; which pair Zhu meant is not settled |
 | `NPCDieMapViewBroadcast` | likely `PKT_NPC_Die_Broadcast_s` (1093) | NAMED |
@@ -421,7 +422,7 @@ them all.
 |  979 | `PKT_S2C_WASDInputConfig_s` | DirectMovementComponentClient | 0 | |
 |  983 | `PKT_S2C_AddItemModifier_s` | HeroInventoryClient | 1 | |
 |  984 | `PKT_S2C_SpellTypesThatCanTargetUs_s` | AttackableUnit | 0 | |
-|  985 | `PKT_NPC_CastSpellAns_s` | AIBaseClient, SpellbookClient | 19,102 | |
+|  985 | `PKT_NPC_CastSpellAns_s` | AIBaseClient, SpellbookClient | 19,102 | typed |
 |  987 | `PKT_S2C_AlwaysFaceTarget_s` | AIBaseClient | 0 | |
 | 1000 | `PKT_S2C_SetItemCharges_s` | HeroInventoryClient | 17,169 | |
 | 1001 | `PKT_S2C_SetAllUnitClickTriggers_s` | AIHeroClient | 0 | |

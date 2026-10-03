@@ -392,6 +392,16 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
                     }
                 }
             }
+            GamePacket::SpellCast(c) => {
+                let Some(p) = player_of(c.champion) else { continue };
+                let Some(slot) = packet::handlers::spell_cast::slot_name(c.slot) else { continue };
+                events.push(json!({
+                    "t": b.t, "type": "spell_cast", "player": p, "slot": slot,
+                    "spell_id": format!("0x{:08x}", c.spell_id),
+                    "x": c.target_x, "y": c.target_y,
+                    "mana_cost": c.mana_cost, "cooldown": c.cooldown,
+                }));
+            }
             GamePacket::NpcDie(_) => {}
         }
     }

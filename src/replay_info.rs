@@ -23,15 +23,9 @@ use crate::rofl::metadata::{Metadata, Role, Team};
 use crate::rofl::stream::StreamTag;
 use crate::rofl::Replay;
 
-/// Triple of `(timestamp, payload, param)` pulled from every block with
-/// a given `packet_id` in the game-chunk stream. `param` is the block-
-/// level u32 carried alongside the encrypted payload — empirically it
-/// holds the **target entity id** for entity-bound packets (e.g. for
-/// the heartbeat netid 1068 we see 6,650 distinct param values in the
-/// player_id_start range, one per live entity). For some netids it's
-/// always 0 (e.g. mov_decrypt, which carries no entity binding at the
-/// block level).
-type BlockHits = Vec<(f32, Vec<u8>, u32)>;
+/// Pair of `(timestamp, payload)` pulled from every block with a given
+/// `packet_id` in the game-chunk stream.
+type BlockHits = Vec<(f32, Vec<u8>)>;
 
 /// Walk all game-chunk stream chunks, decompress, split into blocks, and
 /// collect every block whose `packet_id` matches the target netid.
@@ -46,7 +40,7 @@ pub fn blocks_with_netid(replay: &Replay<'_>, netid: u16) -> Result<BlockHits> {
         for block in BlockIterator::new(&body) {
             let block = block?;
             if block.packet_id == netid {
-                hits.push((block.timestamp, block.payload.to_vec(), block.param));
+                hits.push((block.timestamp, block.payload.to_vec()));
             }
         }
     }
@@ -66,11 +60,6 @@ pub fn build_output_json(
         "metadata": metadata_to_json(header, metadata),
         "wards": [],
         "players_state": [],
-        // For inline-floats movement packets (16.9+), entity id is not
-        // written by the decoder we've identified, so `players_state` stays
-        // empty. The raw (timestamp, x, y) tuples land here so downstream
-        // consumers can at least see decoded position data.
-        "raw_positions": [],
     });
 
     // Ward lifecycle reconstruction, same rules as Mowokuma:
@@ -129,17 +118,6 @@ pub fn build_output_json(
     for packet in path_packets {
         if packet.id >= player_id_start && packet.id <= player_id_start + 9 {
             players_path_state.insert(packet.id, packet.clone());
-        } else if packet.id == 0 {
-            // Inline-floats packet (16.9+ partial decoder). Land it in
-            // raw_positions so the data is visible even without entity
-            // attribution.
-            if let Some(&(x, y)) = packet.waypoints.first() {
-                game["raw_positions"].as_array_mut().unwrap().push(json!({
-                    "timestamp": packet.timestamp,
-                    "x": x,
-                    "y": y,
-                }));
-            }
         }
 
         if packet.timestamp - tick >= 1.0 {
@@ -167,43 +145,7 @@ pub fn build_output_json(
     game
 }
 
-/// Format a contiguous byte run captured at the FIRST write per offset
-/// into a JSON object that lets a downstream consumer read the value
-/// as the most likely concrete type.
-///
-/// We don't know which interpretation is right per offset (it depends
-/// on the packet class), so we surface all of them — `u32_le`, `i32_le`,
-/// `f32_le`, `u64_le` — and let the consumer pick.
-fn field_summary(offset: u16, bytes: &[u8]) -> Value {
-    let mut out = serde_json::Map::new();
-    out.insert("offset".to_string(), json!(offset));
-    out.insert(
-        "hex".to_string(),
-        json!(bytes
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>()),
-    );
-    if bytes.len() >= 4 {
-        let mut buf = [0u8; 4];
-        buf.copy_from_slice(&bytes[..4]);
-        let u = u32::from_le_bytes(buf);
-        out.insert("u32_le".to_string(), json!(u));
-        out.insert("i32_le".to_string(), json!(u as i32));
-        out.insert(
-            "f32_le".to_string(),
-            json!(f32::from_le_bytes(buf) as f64),
-        );
-    }
-    if bytes.len() >= 8 {
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(&bytes[..8]);
-        out.insert("u64_le".to_string(), json!(u64::from_le_bytes(buf)));
-    }
-    Value::Object(out)
-}
-
-fn metadata_to_json(header: &FileHeader, m: &Metadata) -> Value {
+pub(crate) fn metadata_to_json(header: &FileHeader, m: &Metadata) -> Value {
     let players: Vec<Value> = m
         .players
         .iter()
@@ -250,14 +192,14 @@ fn mowokuma_version_string(full_version: &str) -> String {
     full_version.to_string()
 }
 
-fn team_label(t: Team) -> &'static str {
+pub(crate) fn team_label(t: Team) -> &'static str {
     match t {
         Team::Blue => "Blue",
         Team::Red => "Red",
     }
 }
 
-fn role_label(r: Role) -> &'static str {
+pub(crate) fn role_label(r: Role) -> &'static str {
     match r {
         Role::Top => "Top",
         Role::Jungle => "Jungle",
@@ -295,15 +237,14 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     for batch in ward_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload, _param) in batch {
+        for (timestamp, payload) in batch {
             emu.setup_args(payload)?;
-            if let Ok(p) = emu.call_decrypt_ward_spawn_packet(
+            let p = emu.call_decrypt_ward_spawn_packet(
                 config.ward_spawn_decrypt.rva,
                 config.ward_spawn_decrypt.end_rva,
                 *timestamp,
-            ) {
-                ward_packets.push(p);
-            }
+            )?;
+            ward_packets.push(p);
             emu.reset()?;
         }
     }
@@ -312,7 +253,7 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
     for batch in path_hits.chunks(BATCH_SIZE) {
         let mut emu = StubEmulator::new(config.clone());
         emu.setup()?;
-        for (timestamp, payload, _param) in batch {
+        for (timestamp, payload) in batch {
             emu.setup_args(payload)?;
             if let Ok(p) = emu.call_decrypt_pos_packet(
                 config.mov_decrypt.rva,
@@ -325,272 +266,11 @@ pub fn parse_and_decode(replay: &Replay<'_>, config: &Config) -> Result<Value> {
         }
     }
 
-    // Run any extra-decoders declared in the patch archive. These are
-    // long-tail packet classes whose struct layout we haven't yet RE'd:
-    // we capture the raw struct writes per packet and surface them under
-    // the `extra_decoders` field of the output JSON for downstream
-    // inspection. This is the long-term path to "every packet decoded":
-    // archive entries here grow as more decoders get RE'd.
-    //
-    // Sampling strategy:
-    //   - Decode every block, but cache by payload bytes: many netids
-    //     (especially heartbeat-class) repeat the same payload thousands
-    //     of times. We emulate each unique payload once and attribute
-    //     the result to all occurrences.
-    //   - Cap samples emitted per class via env `ROFL_X_MAX_SAMPLES`
-    //     (default 0 = unlimited). Set this when building a small
-    //     summary JSON; leave unset for full event timelines.
-    let max_samples_per_class: usize = std::env::var("ROFL_X_MAX_SAMPLES")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let mut extras: BTreeMap<String, Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)>> =
-        BTreeMap::new();
-    // Typed handlers run alongside the raw `extras` capture: every
-    // decoded sample is also offered to `TypedPacket::from_extra`, which
-    // returns Some for the small set of classes with hand-written
-    // schemas (9 classes today; see `packet_handlers.rs` for the list
-    // and dispatch table). The result is a single sorted stream of
-    // typed events that downstream consumers can iterate without
-    // revisiting the raw struct bytes.
-    let mut typed_events: Vec<crate::packet_handlers::TypedPacket> = Vec::new();
-    for ed in &config.extra_decoders {
-        let hits = blocks_with_netid(replay, ed.netid as u16)?;
-        if hits.is_empty() {
-            continue;
-        }
-        let total_hits = hits.len();
-        let limit = if max_samples_per_class == 0 {
-            total_hits
-        } else {
-            max_samples_per_class.min(total_hits)
-        };
-        let mut entries: Vec<(f32, u32, crate::emulator::unicorn::ExtraDecoded)> =
-            Vec::with_capacity(limit);
-        let decoder_rva_str = format!("0x{:x}", ed.rva_start);
-        // Per-class payload cache: identical payload bytes -> previously
-        // decoded result. Avoids re-emulating the same bytes thousands
-        // of times for heartbeat-class packets. The `param` (entity_id)
-        // is per-block so we don't cache it — only the decoded struct
-        // depends on payload bytes.
-        let mut payload_cache: HashMap<Vec<u8>, crate::emulator::unicorn::ExtraDecoded> =
-            HashMap::new();
-        let mut emu = StubEmulator::new(config.clone());
-        emu.setup()?;
-        let mut emu_calls_this_class: usize = 0;
-        for (timestamp, payload, param) in hits.iter() {
-            if entries.len() >= limit {
-                break;
-            }
-            let decoded_clone = if let Some(cached) = payload_cache.get(payload) {
-                cached.clone()
-            } else {
-                emu.setup_args(payload)?;
-                let result = emu.call_decrypt_extra(ed.rva_start, ed.rva_end, ed.struct_size);
-                emu.reset()?;
-                emu_calls_this_class += 1;
-                // Periodically rebuild the emulator: the per-call mem
-                // hook is removed but accumulated state still grows.
-                if emu_calls_this_class % BATCH_SIZE == 0 {
-                    emu = StubEmulator::new(config.clone());
-                    emu.setup()?;
-                }
-                match result {
-                    Ok(d) => {
-                        payload_cache.insert(payload.clone(), d.clone());
-                        d
-                    }
-                    Err(_) => continue,
-                }
-            };
-            // Offer to the typed-handler dispatch. Only matches the
-            // 9 classes with hand-written schemas; others get None
-            // and aren't emitted as typed events (still available raw
-            // via `extra_decoders`).
-            if let Some(typed) = crate::packet_handlers::TypedPacket::from_extra(
-                &decoder_rva_str,
-                *timestamp,
-                *param,
-                &decoded_clone,
-            ) {
-                typed_events.push(typed);
-            }
-            entries.push((*timestamp, *param, decoded_clone));
-        }
-        let label = format!("{}_netid{}", ed.name, ed.netid);
-        extras.insert(label, entries);
-    }
-    // Stable order across runs: by timestamp, then by class label.
-    typed_events.sort_by(|a, b| {
-        a.timestamp()
-            .partial_cmp(&b.timestamp())
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.class_label().cmp(b.class_label()))
-    });
-
-    let mut json = build_output_json(
+    Ok(build_output_json(
         &replay.header,
         &replay.metadata,
         ward_packets,
         path_packets,
         config.player_id_start,
-    );
-
-    // Attach extra-decoder dumps. Layout:
-    //   "extra_decoders": {
-    //     "<name>_netid<N>": [
-    //       { "timestamp": 12.34, "writes": [[off, sz, val], ...], "struct_hex": "..." }
-    //     ]
-    //   }
-    if !extras.is_empty() {
-        let mut by_name = serde_json::Map::new();
-        for (label, entries) in extras {
-            let arr: Vec<Value> = entries
-                .iter()
-                .map(|(ts, param, decoded)| {
-                    let writes: Vec<Value> = decoded
-                        .writes
-                        .iter()
-                        .map(|(off, sz, val)| json!([*off, *sz, *val]))
-                        .collect();
-                    let struct_hex: String = decoded
-                        .struct_bytes
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect();
-
-                    // Pre-obfuscation field extraction.
-                    //
-                    // Riot's decoders typically write a field as a single
-                    // atomic 4-byte (or 8-byte) `mov` first — that's the
-                    // plaintext value — then run a byte-by-byte obfuscation
-                    // loop that overwrites with the encrypted form. Same for
-                    // values stored as inline constants (an `f32 const` like
-                    // -1.0 or 2.0) and for variable-length-decoded values
-                    // (a callee writes the result as one wide store).
-                    //
-                    // We split the writes into:
-                    //   - "atomic" writes (size >= 4): the function's
-                    //     intentional field stores. We keep these.
-                    //   - "byte" writes (size 1, 2): typically the
-                    //     obfuscation transform. We ignore these.
-                    //
-                    // For each offset we keep the FIRST atomic write — that's
-                    // the pre-obfuscation plaintext value of the field.
-                    // Track the LAST atomic write per offset, with size >= 4.
-                    // For a constant-only branch this is identical to the
-                    // first write. For variable-length-decoded fields, the
-                    // initial constant gets overwritten by the variable
-                    // value (often by a callee writing a wide store), so
-                    // last-write captures the actually-decoded payload.
-                    // Byte-level transforms (size 1) are excluded because
-                    // they're the obfuscation pass.
-                    let mut first_writes: BTreeMap<u16, (u8, u64)> = BTreeMap::new();
-                    for (off, sz, val) in &decoded.writes {
-                        if *sz < 4 {
-                            continue;
-                        }
-                        first_writes.insert(*off, (*sz, *val));
-                    }
-                    // Walk first_writes and reconstruct contiguous runs as
-                    // possible field values.
-                    let mut decoded_fields: Vec<Value> = Vec::new();
-                    let mut bytes_at_offset: BTreeMap<u16, u8> = BTreeMap::new();
-                    for (off, (sz, val)) in &first_writes {
-                        let val_le = val.to_le_bytes();
-                        for i in 0..*sz {
-                            let byte_off = off + i as u16;
-                            // Only set if not already (first write wins).
-                            bytes_at_offset.entry(byte_off).or_insert(val_le[i as usize]);
-                        }
-                    }
-                    // Group contiguous bytes into 4-byte aligned spans where
-                    // possible.
-                    let mut group_off: Option<u16> = None;
-                    let mut group_bytes: Vec<u8> = Vec::new();
-                    let offsets: Vec<u16> = bytes_at_offset.keys().copied().collect();
-                    let mut prev: Option<u16> = None;
-                    for o in &offsets {
-                        if let Some(p) = prev {
-                            if *o != p + 1 || group_bytes.len() >= 4 {
-                                if let Some(g) = group_off {
-                                    decoded_fields.push(field_summary(g, &group_bytes));
-                                }
-                                group_off = Some(*o);
-                                group_bytes.clear();
-                            }
-                        } else {
-                            group_off = Some(*o);
-                        }
-                        group_bytes.push(bytes_at_offset[o]);
-                        prev = Some(*o);
-                    }
-                    if let Some(g) = group_off {
-                        decoded_fields.push(field_summary(g, &group_bytes));
-                    }
-
-                    // Heap-side writes (helper accumulators, alloc'd
-                    // buffer contents). Filtered down to the most
-                    // recent write per offset so the per-sample log
-                    // doesn't balloon. These are the "values that the
-                    // helper wrote into a scratch buffer" — useful when
-                    // the helper returns a pointer instead of writing
-                    // into the struct.
-                    let mut last_heap_write: BTreeMap<u32, (u8, u64)> = BTreeMap::new();
-                    for (off, sz, val) in &decoded.heap_writes {
-                        last_heap_write.insert(*off, (*sz, *val));
-                    }
-                    let heap_summary: Vec<Value> = last_heap_write
-                        .iter()
-                        .map(|(off, (sz, val))| json!([*off, *sz, *val]))
-                        .collect();
-
-                    // Register state at decoder return. The helper's
-                    // return value lives in RAX; for some packet
-                    // classes the only place the decoded value lands.
-                    let regs = json!({
-                        "rax": decoded.final_regs.rax,
-                        "rdx": decoded.final_regs.rdx,
-                        "rcx": decoded.final_regs.rcx,
-                    });
-
-                    // Block-level entity id from the framing header. For
-                    // many netids `param` is the receiving entity (verified
-                    // empirically: e.g. netid 0x42c sees 6650 distinct
-                    // values, all in the player_id_start range — heartbeat
-                    // for 6650 game entities). Surface it raw alongside an
-                    // 0x-prefixed hex string for human readers. Consumers
-                    // that need to correlate by entity should prefer this
-                    // over heuristic field-name matching.
-                    json!({
-                        "timestamp": ts,
-                        "entity_id": *param,
-                        "entity_id_hex": format!("0x{:x}", param),
-                        "writes": writes,
-                        "struct_hex": struct_hex,
-                        "decoded_fields": decoded_fields,
-                        "heap_writes": heap_summary,
-                        "final_regs": regs,
-                    })
-                })
-                .collect();
-            by_name.insert(label, Value::Array(arr));
-        }
-        json["extra_decoders"] = Value::Object(by_name);
-    }
-
-    // Serialize the typed-handler stream. Layout:
-    //   "typed_events": [
-    //     { "kind": "BasicAttackPos", "timestamp": 12.34, "entity_id": ...,
-    //       "caster_or_source_id": ..., "target_id": ..., ... },
-    //     ...
-    //   ]
-    // 9 classes currently produce typed events. The rest stay raw
-    // under `extra_decoders`. See `packet_handlers.rs` for the
-    // dispatch table and field-offset documentation.
-    if !typed_events.is_empty() {
-        json["typed_events"] = serde_json::to_value(&typed_events)?;
-    }
-
-    Ok(json)
+    ))
 }

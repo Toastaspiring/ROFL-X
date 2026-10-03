@@ -25,50 +25,6 @@ use crate::emulator::config::{Config, Section};
 use crate::emulator::packet::{PathPacket, WardSpawnPacket};
 use crate::error::{Result, RoflError};
 
-/// Raw output from a generic extra-decoder run. The packet class isn't
-/// known semantically yet, so we capture both the per-write log and a
-/// snapshot of the final struct bytes.
-#[derive(Debug, Clone)]
-pub struct ExtraDecoded {
-    /// `(offset_in_struct, write_size_bytes, value)` for every write the
-    /// decoder made into the output struct. The same offset can appear
-    /// multiple times (intermediate writes during bit-decoding).
-    pub writes: Vec<(u16, u8, u64)>,
-    /// Final struct bytes after the decoder returned, capped at
-    /// `extra_decoder.struct_size`.
-    pub struct_bytes: Vec<u8>,
-    /// `(heap_offset_from_HEAP_BASE, write_size_bytes, value)` for every
-    /// 4-or-8-byte write into the emulator heap that DID NOT land inside
-    /// the packet struct.
-    ///
-    /// This is the helper-side capture path. Variable-length decoder
-    /// helpers (`f41410`, `f35050`, `f3aef0`, ...) sometimes accumulate
-    /// their result in scratch heap memory before doing a final move
-    /// into the packet struct, AND the alloc1 stub (vector resize)
-    /// stores its bump-pointer + size at the packet field that points
-    /// at the actual decoded buffer. Capturing those writes lets the
-    /// post-processor pull the real decoded value out even when the
-    /// packet-struct hook would have missed it.
-    pub heap_writes: Vec<(u32, u8, u64)>,
-    /// CPU register state at the moment the decoder returned (or the
-    /// emulator stopped). Useful for catching values that the helper
-    /// returned via `RAX` instead of writing into the output struct
-    /// (some packet classes route the decoded payload through the
-    /// return value of an inner helper).
-    pub final_regs: ExtraRegs,
-}
-
-/// Snapshot of the CPU registers at decoder exit. Only the registers
-/// that historically carry decoded values (RAX, RDX, RCX) plus the
-/// stack pointer for sanity.
-#[derive(Debug, Clone, Default)]
-pub struct ExtraRegs {
-    pub rax: u64,
-    pub rdx: u64,
-    pub rcx: u64,
-    pub rsp: u64,
-}
-
 /// Wraps a Unicorn VM configured to run the game client's own decrypt
 /// functions on packet payloads.
 ///
@@ -89,13 +45,7 @@ impl<'a> StubEmulator<'a> {
     const STACK_SIZE: usize = 0x2000;
 
     const HEAP_BASE: u64 = 0x7FFF_FFFF_8000;
-    /// 1 MiB heap — Mowokuma's original 8 KiB was enough for the two
-    /// known decoders (mov, ward) but overflows on bigger ones (e.g.
-    /// the 70-write decoder at 16.9 RVA `0xeba9e0` shared by several
-    /// netids) when the bump allocator races a long decoder loop. The
-    /// heap is reset between samples so the higher cap costs nothing
-    /// per packet; it just survives a single big run.
-    const HEAP_SIZE: usize = 0x100000;
+    const HEAP_SIZE: usize = 0x2000;
 
     const HEAP_CURSOR_PTR: u64 = 0x0;
 
@@ -326,67 +276,26 @@ impl<'a> StubEmulator<'a> {
             )
             .map_err(|e| uc_setup_err("trace mem hook", e))?;
 
-        let start_addr = self.rva_to_address(call_rva);
-        let end_addr = self.rva_to_address(end_rva);
-
-        // Trace EVERY instruction PC within the .text section to see execution flow.
-        let pc_log: Arc<Mutex<Vec<(u64, u64, u64)>>> = Arc::new(Mutex::new(Vec::new()));
-        let pc_log_clone = Arc::clone(&pc_log);
-        let text_lo = self.rva_to_address(self.config.text.rva);
-        let text_hi = text_lo + self.config.text.raw.len() as u64;
-        let _ = self
-            .uc
-            .add_code_hook(text_lo, text_hi, move |uc, addr, _size| {
-                let rdi = uc.reg_read(RegisterX86::RDI).unwrap_or(0);
-                let rbx = uc.reg_read(RegisterX86::RBX).unwrap_or(0);
-                let mut log = pc_log_clone.lock().unwrap();
-                if log.len() < 60 {
-                    log.push((addr, rdi, rbx));
-                }
-            });
-
-        if let Err(e) = self.uc.emu_start(start_addr, end_addr, 0, 0) {
-            let pc = self
-                .uc
-                .reg_read(RegisterX86::RIP)
-                .unwrap_or(0);
-            let rcx = self.uc.reg_read(RegisterX86::RCX).unwrap_or(0);
-            let rdx = self.uc.reg_read(RegisterX86::RDX).unwrap_or(0);
-            let r8 = self.uc.reg_read(RegisterX86::R8).unwrap_or(0);
-            let rdi = self.uc.reg_read(RegisterX86::RDI).unwrap_or(0);
-            let rbx = self.uc.reg_read(RegisterX86::RBX).unwrap_or(0);
-            let rsp = self.uc.reg_read(RegisterX86::RSP).unwrap_or(0);
-            eprintln!(
-                "[trace_decoder_writes] emu_start failed: {e:?} \
-                 (start=0x{start_addr:x} end=0x{end_addr:x} \
-                 stopped at PC=0x{pc:x}, RCX=0x{rcx:x} RDX=0x{rdx:x} R8=0x{r8:x} \
-                 RDI=0x{rdi:x} RBX=0x{rbx:x} RSP=0x{rsp:x})"
-            );
-            let log = pc_log.lock().unwrap();
-            eprintln!("[trace_decoder_writes] PC trace ({} entries):", log.len());
-            let base = self.config.base_addr;
-            for (i, (pc, rdi, rbx)) in log.iter().enumerate() {
-                let rva = pc.wrapping_sub(base);
-                eprintln!(
-                    "  #{i:<3} PC=0x{pc:x} (rva=0x{rva:x})  RDI=0x{rdi:x}  RBX=0x{rbx:x}"
-                );
-            }
-        }
+        let _ = self.uc.emu_start(
+            self.rva_to_address(call_rva),
+            self.rva_to_address(end_rva),
+            0,
+            0,
+        );
 
         let out = log.lock().unwrap().clone();
         Ok(out)
     }
 
-    /// Call the movement-packet decrypt function, then parse the output
-    /// struct into a `PathPacket` using whichever layout this patch declares
-    /// (`buffer-stream` for 5-5, `inline-floats` for 16.9+).
+    /// Call the movement-packet decrypt function, read back the pointer
+    /// and size of the decoded payload from the output struct, and parse
+    /// it into a `PathPacket`.
     pub fn call_decrypt_pos_packet(
         &mut self,
         call_rva: u64,
         end_rva: u64,
         timestamp: f32,
     ) -> Result<PathPacket> {
-        use crate::emulator::config::MovOutputFormat;
         self.write_reg(
             RegisterX86::RSP,
             Self::STACK_BASE + (Self::STACK_SIZE - 0x100) as u64,
@@ -399,173 +308,15 @@ impl<'a> StubEmulator<'a> {
             0,
         );
 
-        match self.config.mov_decrypt.format.clone() {
-            MovOutputFormat::BufferStream => {
-                let size = self.read_u32_on(
-                    self.packet_addr + self.config.mov_decrypt.payload_size_offset,
-                )?;
-                let ptr = self.read_ptr_on(
-                    self.packet_addr + self.config.mov_decrypt.payload_offset,
-                )?;
-                let payload = self.read_buffer_on(ptr, size as usize)?;
-                PathPacket::parse(timestamp, payload)
-            }
-            MovOutputFormat::InlineFloats {
-                inline_x_offset,
-                inline_y_offset,
-            } => {
-                let x = self.read_f32_on(self.packet_addr + inline_x_offset)?;
-                let y = self.read_f32_on(self.packet_addr + inline_y_offset)?;
-                // Try to also recover the waypoint vector at struct
-                // offsets 0x10 (buf_ptr) + 0x18 (count). On 16.9 the
-                // decoder allocates a 16-byte-stride vector here and
-                // populates each entry via a per-element vtable thunk.
-                // Our alloc1 stub (Mowokuma's bump shellcode) writes
-                // (ptr, count) but doesn't initialize the entry vtable
-                // pointers, so the per-element thunks crash on a real
-                // multi-waypoint packet. For packets that take the
-                // fast-path (no waypoints) the vector is empty (count =
-                // 0) and we just return the inline final pos. For
-                // packets that take the slow path, what we read here
-                // depends on how far the decoder got before bailing —
-                // surfacing it lets the consumer see partial data.
-                let buf_ptr = self
-                    .read_ptr_on(self.packet_addr + 0x10)
-                    .unwrap_or(0);
-                let count = self
-                    .read_u32_on(self.packet_addr + 0x18)
-                    .unwrap_or(0) as usize;
-                let heap_lo = Self::HEAP_BASE;
-                let heap_hi = Self::HEAP_BASE + Self::HEAP_SIZE as u64;
-                if buf_ptr >= heap_lo
-                    && buf_ptr < heap_hi
-                    && count > 0
-                    && count < 1024
-                {
-                    let bytes_needed = count.saturating_mul(16);
-                    if buf_ptr + bytes_needed as u64 <= heap_hi {
-                        if let Ok(data) = self.read_buffer_on(buf_ptr, bytes_needed) {
-                            let pp = PathPacket::from_inline_with_waypoints(timestamp, &data);
-                            // Only use the buffer-derived packet if it
-                            // actually recovered any waypoints. An empty
-                            // result means the alloc stub never let the
-                            // slow-path complete — fall back to inline.
-                            if !pp.waypoints.is_empty() {
-                                return Ok(pp);
-                            }
-                        }
-                    }
-                }
-                Ok(PathPacket::from_inline_floats(timestamp, x, y))
-            }
-        }
-    }
-
-    fn read_f32_on(&mut self, addr: u64) -> Result<f32> {
-        let mut buf = [0u8; 4];
-        self.uc
-            .mem_read(addr, &mut buf)
-            .map_err(|e| uc_runtime_err("read f32", e))?;
-        Ok(f32::from_le_bytes(buf))
-    }
-
-    /// Run an unknown-class decoder and capture every write to its output
-    /// struct, plus a snapshot of the struct bytes after the call returns.
-    ///
-    /// Used for `extra_decoders[]` in the patch archive — the packet class
-    /// hasn't been semantically decoded yet, but emulating it surfaces the
-    /// raw decoded fields. Downstream consumers can grep through these
-    /// dumps to identify which offsets carry which semantics, then
-    /// promote the decoder to a typed struct in a follow-up.
-    pub fn call_decrypt_extra(
-        &mut self,
-        call_rva: u64,
-        end_rva: u64,
-        struct_size: u64,
-    ) -> Result<ExtraDecoded> {
-        self.write_reg(
-            RegisterX86::RSP,
-            Self::STACK_BASE + (Self::STACK_SIZE - 0x100) as u64,
+        let size = self.read_u32_on(
+            self.packet_addr + self.config.mov_decrypt.payload_size_offset,
+        )?;
+        let ptr = self.read_ptr_on(
+            self.packet_addr + self.config.mov_decrypt.payload_offset,
         )?;
 
-        let writes_log: Arc<Mutex<Vec<(u16, u8, u64)>>> = Arc::new(Mutex::new(Vec::new()));
-        let writes_log_clone = Arc::clone(&writes_log);
-        let heap_log: Arc<Mutex<Vec<(u32, u8, u64)>>> = Arc::new(Mutex::new(Vec::new()));
-        let heap_log_clone = Arc::clone(&heap_log);
-        let packet_addr = self.packet_addr;
-        let cap = struct_size.min(self.packet_size as u64);
-        let struct_lo = packet_addr;
-        let struct_hi = packet_addr + cap;
-        let heap_lo = Self::HEAP_BASE;
-        let heap_hi = Self::HEAP_BASE + Self::HEAP_SIZE as u64;
-
-        let hook_id = self
-            .uc
-            .add_mem_hook(
-                HookType::MEM_WRITE,
-                heap_lo,
-                heap_hi,
-                move |_uc, _type, addr, size, value| {
-                    if struct_lo <= addr && addr < struct_hi {
-                        // Inside the output struct — record under writes[].
-                        let offset = (addr - struct_lo) as u16;
-                        writes_log_clone
-                            .lock()
-                            .unwrap()
-                            .push((offset, size as u8, value as u64));
-                    } else if size >= 4 {
-                        // Heap-side helper write (variable-length decoder
-                        // accumulators, alloc1 stubs writing buffer ptrs,
-                        // etc.). Only keep wide stores — byte-level
-                        // obfuscation passes are noise here and would
-                        // explode the log.
-                        let offset = (addr - heap_lo) as u32;
-                        heap_log_clone
-                            .lock()
-                            .unwrap()
-                            .push((offset, size as u8, value as u64));
-                    }
-                    true
-                },
-            )
-            .map_err(|e| uc_setup_err("extra mem hook", e))?;
-
-        let _ = self.uc.emu_start(
-            self.rva_to_address(call_rva),
-            self.rva_to_address(end_rva),
-            0,
-            0,
-        );
-
-        // Snapshot the register state BEFORE removing the hook, while the
-        // emulator is still in its post-call state. Used to catch values
-        // returned via RAX that never landed in the output struct.
-        let final_regs = ExtraRegs {
-            rax: self.uc.reg_read(RegisterX86::RAX).unwrap_or(0),
-            rdx: self.uc.reg_read(RegisterX86::RDX).unwrap_or(0),
-            rcx: self.uc.reg_read(RegisterX86::RCX).unwrap_or(0),
-            rsp: self.uc.reg_read(RegisterX86::RSP).unwrap_or(0),
-        };
-
-        // Remove the hook so successive calls on the same emulator don't
-        // accumulate dead hooks. Each batch processes ~100 samples; without
-        // this the hook list grows unboundedly and per-call overhead degrades
-        // until the heap-write hook misfires (UC_ERR_WRITE_UNMAPPED).
-        let _ = self.uc.remove_hook(hook_id);
-
-        let mut struct_bytes = vec![0u8; cap as usize];
-        self.uc
-            .mem_read(packet_addr, &mut struct_bytes)
-            .map_err(|e| uc_runtime_err("extra struct snapshot", e))?;
-
-        let writes = writes_log.lock().unwrap().clone();
-        let heap_writes = heap_log.lock().unwrap().clone();
-        Ok(ExtraDecoded {
-            writes,
-            struct_bytes,
-            heap_writes,
-            final_regs,
-        })
+        let payload = self.read_buffer_on(ptr, size as usize)?;
+        PathPacket::parse(timestamp, payload)
     }
 
     fn map_stack(&mut self) -> Result<()> {

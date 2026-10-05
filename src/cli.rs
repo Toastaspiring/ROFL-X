@@ -104,6 +104,40 @@ pub enum Command {
         #[arg(long)]
         include_identities: bool,
     },
+
+    /// Measure the field layout of every packet class: decode a sample of
+    /// each netid's blocks and report, per 4-byte word of the packet
+    /// object, what the value was across the sample (sender net id, net
+    /// id, game time, float, enum, counter, pointer to a vector or
+    /// string). This is how an untyped class gets read without guessing;
+    /// `docs/FIELDS.md` is its output for 16.9.
+    Fields {
+        /// Path to a `.rofl` file. Repeat to pool several replays of the
+        /// same patch.
+        #[arg(short, long = "replay", num_args = 1.., required = true)]
+        replays: Vec<PathBuf>,
+
+        /// Directory holding `<major>-<minor>.patch` archives.
+        #[arg(short, long, default_value = "patch")]
+        patch_dir: PathBuf,
+
+        /// Blocks to decode per netid per replay (0 = all). The sample is
+        /// spread over the game chunks, not taken from the first minute.
+        #[arg(long, default_value_t = 2000)]
+        samples: usize,
+
+        /// Worker threads (one emulator each). Defaults to all cores.
+        #[arg(long, default_value_t = 0)]
+        threads: usize,
+
+        /// Write the full profile as JSON here.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Write the catalog as markdown here.
+        #[arg(long)]
+        markdown: Option<PathBuf>,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -128,6 +162,21 @@ pub fn run(cli: Cli) -> Result<()> {
             output,
             include_identities,
         } => summary(&replay, output.as_deref(), include_identities),
+        Command::Fields {
+            replays,
+            patch_dir,
+            samples,
+            threads,
+            output,
+            markdown,
+        } => fields(
+            &replays,
+            &patch_dir,
+            samples,
+            threads,
+            output.as_deref(),
+            markdown.as_deref(),
+        ),
     }
 }
 
@@ -338,6 +387,92 @@ fn decode(
         clean as f64 * 100.0 / total.max(1) as f64
     );
     Ok(())
+}
+
+#[cfg(feature = "emulator")]
+fn fields(
+    replays: &[PathBuf],
+    patch_dir: &Path,
+    samples: usize,
+    threads: usize,
+    output: Option<&Path>,
+    markdown: Option<&Path>,
+) -> Result<()> {
+    use crate::emulator::PatchArchive;
+    use crate::fields::Profile;
+
+    let threads = if threads == 0 {
+        std::thread::available_parallelism().map_or(4, |n| n.get())
+    } else {
+        threads
+    };
+    let mut pooled = Profile::default();
+    for path in replays {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        let archive_path = find_archive(patch_dir, &replay)?;
+        if !PatchArchive::is_format2(&archive_path)? {
+            return Err(RoflError::Emulator(format!(
+                "{}: field profiling needs a format-2 archive (docs/DECODING.md)",
+                archive_path.display()
+            )));
+        }
+        let archive = PatchArchive::load(&archive_path)?;
+        if !pooled.patch.is_empty() && pooled.patch != replay.header.patch() {
+            return Err(RoflError::Emulator(format!(
+                "{}: patch {} does not match the pooled {}",
+                path.display(),
+                replay.header.patch(),
+                pooled.patch
+            )));
+        }
+        let started = std::time::Instant::now();
+        let mut one = crate::fields::profile(&replay, &archive, samples, threads)?;
+        one.replays.push(path.display().to_string());
+        eprintln!(
+            "{}: {} blocks, {} profiled, {} classes in {:.1}s",
+            path.display(),
+            one.blocks(),
+            one.sampled(),
+            one.classes.values().filter(|c| c.blocks > 0).count(),
+            started.elapsed().as_secs_f64(),
+        );
+        pooled.merge(&one);
+    }
+
+    let named = pooled.classes.values().filter(|c| c.class.is_some()).count();
+    eprintln!(
+        "pooled: {} blocks over {} replays, {} classes, {named} named",
+        pooled.blocks(),
+        pooled.replays.len(),
+        pooled.classes.values().filter(|c| c.blocks > 0).count(),
+    );
+    if let Some(path) = output {
+        std::fs::write(path, pooled.to_json().to_string().as_bytes())?;
+        eprintln!("wrote {}", path.display());
+    }
+    if let Some(path) = markdown {
+        std::fs::write(path, pooled.markdown().as_bytes())?;
+        eprintln!("wrote {}", path.display());
+    }
+    if output.is_none() && markdown.is_none() {
+        println!("{}", pooled.markdown());
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "emulator"))]
+fn fields(
+    _replays: &[PathBuf],
+    _patch_dir: &Path,
+    _samples: usize,
+    _threads: usize,
+    _output: Option<&Path>,
+    _markdown: Option<&Path>,
+) -> Result<()> {
+    Err(RoflError::Io(std::io::Error::other(
+        "fields requires the `emulator` feature",
+    )))
 }
 
 #[cfg(not(feature = "emulator"))]

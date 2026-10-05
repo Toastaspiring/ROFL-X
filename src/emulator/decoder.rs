@@ -119,6 +119,10 @@ pub struct DecodedPacket {
     pub status: DecodeStatus,
     /// Address of the packet object inside `memory`.
     pub object: u64,
+    /// First heap address past the object: the decode allocates the
+    /// payload buffer right after it, so anything at or above this is the
+    /// stream, not a field.
+    pub object_end: u64,
     pub memory: PlainMemory,
 }
 
@@ -140,8 +144,10 @@ impl DecodedPacket {
     }
 
     /// Offsets (within the object) of 4-byte-aligned words holding at
-    /// least one plaintext byte, up to `limit`. Used for raw dumps.
+    /// least one plaintext byte, up to `limit` and never past the object.
+    /// Used for raw dumps and by `fields`.
     pub fn written_words(&self, limit: u64) -> Vec<(u64, u32)> {
+        let limit = limit.min(self.object_end.saturating_sub(self.object));
         (0..limit)
             .step_by(4)
             .filter(|off| (0..4).any(|k| self.memory.written(self.object + off + k)))
@@ -307,6 +313,7 @@ impl PacketDecoder {
                 netid,
                 status: DecodeStatus::NoClass,
                 object: 0,
+                object_end: 0,
                 memory: PlainMemory {
                     base: HEAP_BASE,
                     bytes: Vec::new(),
@@ -344,6 +351,7 @@ impl PacketDecoder {
             netid,
             status,
             object: obj,
+            object_end: buf,
             memory: PlainMemory {
                 base: HEAP_BASE,
                 bytes,

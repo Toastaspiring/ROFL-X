@@ -154,6 +154,17 @@ wards placed, buildings destroyed), `players_state` (per-second positions) and
 `wards` (lifecycles), both in Mowokuma's shape, `checks` (the statsJson
 comparison) and `decode` (block counts). No Riot ID or PUUID is written.
 
+What every class carries, measured rather than guessed: decode a
+sample of each netid's blocks and report, per word of the packet
+object, what the value was across the sample (sender net id, net id,
+game time, float, enum, counter, pointer to a vector or a string).
+[docs/FIELDS.md](docs/FIELDS.md) is this run over the five 16.9
+replays, one table for each of the 273 classes they use:
+
+```bash
+rofl-x fields -r EUW1-1234567890.rofl --samples 2000 --markdown FIELDS.md
+```
+
 Research view, every block of one netid as plaintext object words:
 
 ```bash
@@ -186,6 +197,7 @@ Read in this order:
 | [docs/ROFL_FORMAT.md](docs/ROFL_FORMAT.md) | Byte-level format spec, every claim cited to evidence |
 | [docs/DECODING.md](docs/DECODING.md) | How every packet is decoded through the game's own code, and how we know it is right |
 | [docs/PACKETS.md](docs/PACKETS.md) | Packet catalog by Riot class name, typed layouts, netid table for 16.9 |
+| [docs/FIELDS.md](docs/FIELDS.md) | Measured field layout of every class on 16.9, generated |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-patch coverage, and why current patches are blocked |
 | [docs/RE_PATCH.md](docs/RE_PATCH.md) | Building a `.patch` archive for a League patch |
 | [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) | Rust crate layout, as built and as first proposed |

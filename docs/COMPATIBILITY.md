@@ -12,17 +12,20 @@ Columns:
   its format (1 = Mowokuma's two hand-RE'd decoders, 2 = every class
   through the game's own factory and deserializers, see
   [DECODING.md](DECODING.md)).
-- **Decode**: what `rofl-x file` produces on that patch.
+- **Decode**: packet-payload decoding (`rofl-x file`) on that patch.
+  Every patch additionally supports file-only analysis (`rofl-x
+  summary`): full statsJson scoreboard plus transport activity profile,
+  no archive, no game contact.
 
 | Patch  | Transport | Archive | Decode |
 |--------|-----------|---------|--------|
 | 15.1 – 15.4 | green | format 1: Mowokuma `5-1` .. `5-4.patch` | positions + wards (her JSON). Parity untested |
 | 15.5   | green | format 1: Mowokuma `5-5.patch` | positions + wards. Parity with her binary: metadata and wards byte-identical; 99.07 % of player entries in `players_state` match (her own output drifts run to run, so full byte identity is not reachable) |
-| 16.7   | green (1 replay) | none: no binary of this patch kept | scoreboard only |
-| 16.8   | green (sample_a) | none: no binary of this patch kept | scoreboard only |
+| 16.7   | green (1 replay) | none: no binary of this patch kept | summary only |
+| 16.8   | green (sample_a) | none: no binary of this patch kept | summary only |
 | 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named; events, positions, wards, items; self-check against statsJson 300 / 300 |
 | 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
-| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | scoreboard only |
+| 16.19  | green (26 replays) | **none possible**: the shipped binary is packed | summary only |
 
 ## The 16.19 binary is packed
 
@@ -42,8 +45,15 @@ do (README § Non-goals). `scripts/build_patch.py` detects a packed
 binary and refuses it.
 
 What still works on such patches: everything that does not need the
-game's code. Transport parsing, the scoreboard (`rofl-x inspect`),
-opcode histograms. Packet payloads stay opaque.
+game's code, which is more than it sounds. `rofl-x summary` reads the
+file alone and writes the full end-of-game scoreboard (statsJson: a few
+hundred fields per player — KDA, gold, CS, damage breakdowns, vision,
+objectives, pings, runes, items, mission trackers) plus a transport
+activity profile (per-netid, per-entity and per-minute block counts,
+all from plaintext block framing). `rofl-x inspect` prints the same
+scoreboard and an opcode histogram. Only the obfuscated packet payloads
+stay opaque; the netid, entity id (`param`), timestamp and length of
+every block do not.
 
 What would change this: Riot shipping an unpacked binary again, or an
 unpacked binary of a given patch becoming available by legitimate

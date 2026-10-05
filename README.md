@@ -109,10 +109,14 @@ its own deserializer reads the payload, inside a Unicorn VM
 On **15.1 – 15.5**, Mowokuma's format-1 archives give positions and
 wards, at parity with her binary on 15.5.
 
-On **current patches (16.19)** semantic decoding is blocked: the
-shipped binary keeps its code encrypted on disk and ROFL-X will not
-circumvent that (§ Non-goals). Transport parsing and the end-of-game
-scoreboard work on every patch.
+On **current patches (16.19)** packet-payload decoding is blocked: the
+shipped binary keeps its code encrypted on disk, and ROFL-X reads
+replays rather than touching the game (§ Non-goals). What the file
+gives directly still works on every patch, from the file alone, with no
+archive: `rofl-x summary` writes the full end-of-game scoreboard
+(statsJson, a few hundred fields per player) plus a transport activity
+profile (per-netid, per-entity and per-minute block counts). Only the
+obfuscated packet *payloads* stay closed.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -125,11 +129,18 @@ Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 cargo build --release          # needs cmake + a C toolchain for unicorn
 ```
 
-Summary and scoreboard of any replay, no archive needed:
+Scoreboard and transport summary of any replay, from the file alone,
+no archive needed (works on every patch, packed-client ones included):
 
 ```bash
-rofl-x inspect -r EUW1-1234567890.rofl --histogram
+rofl-x inspect -r EUW1-1234567890.rofl --histogram   # printed overview
+rofl-x summary -r EUW1-1234567890.rofl -o summary.json
 ```
+
+`summary` writes the full statsJson scoreboard per player (Riot IDs and
+PUUIDs reduced to their length unless `--include-identities`) and a
+transport activity profile. No game binary is read and no payloads are
+decoded.
 
 Decode a replay (patch archive in `./patch`, named `<major>-<minor>.patch`):
 
@@ -256,10 +267,15 @@ dumped object and checking the fields against something independent
 
 ### Current patches
 
-- [ ] Blocked: from some patch after 16.9 the binary is packed
-  ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Unblocked only by an
-  unpacked binary obtained legitimately; a format-2 archive then builds
-  in minutes.
+- [x] File-only analysis (`rofl-x summary`): scoreboard + transport
+  profile, no game contact. Works on 16.19.
+- [ ] Payload decoding is blocked: from some patch after 16.9 the binary
+  is packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Unblocked
+  only by an unpacked binary obtained legitimately; a format-2 archive
+  then builds in minutes.
+- [ ] Richer file-only output: derive a per-minute, per-entity activity
+  timeline (which entities are busy when) from block framing alone, and
+  a scoreboard CSV across a folder of replays.
 
 ### Parity
 

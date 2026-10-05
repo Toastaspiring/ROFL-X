@@ -85,6 +85,25 @@ pub enum Command {
         #[arg(long)]
         histogram: bool,
     },
+    /// Analyse a replay from the file alone: the full end-of-game
+    /// scoreboard (statsJson, hundreds of fields per player) plus the
+    /// transport activity profile (per-netid, per-entity, per-minute block
+    /// counts). Touches no game binary and decodes no payloads, so it
+    /// works on every patch, including those whose client ships packed.
+    Summary {
+        /// Path to a `.rofl` file.
+        #[arg(short, long)]
+        replay: PathBuf,
+
+        /// Output JSON path. Without it, the JSON is printed to stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Keep Riot IDs, PUUIDs and summoner names in the output instead
+        /// of reducing them to their length.
+        #[arg(long)]
+        include_identities: bool,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -104,7 +123,32 @@ pub fn run(cli: Cli) -> Result<()> {
             find,
         } => decode(&replay, &patch_dir, netid, limit, jsonl, find),
         Command::Inspect { replay, histogram } => inspect(&replay, histogram),
+        Command::Summary {
+            replay,
+            output,
+            include_identities,
+        } => summary(&replay, output.as_deref(), include_identities),
     }
+}
+
+fn summary(replay_path: &Path, output: Option<&Path>, include_identities: bool) -> Result<()> {
+    let bytes = std::fs::read(replay_path)?;
+    let replay = Replay::parse(&bytes)?;
+    let json = crate::summary::summary(&replay, include_identities)?;
+    match output {
+        Some(path) => {
+            std::fs::write(path, serde_json::to_vec_pretty(&json)?)?;
+            let players = json["players"].as_array().map_or(0, Vec::len);
+            let blocks = json["transport"]["total_blocks"].as_u64().unwrap_or(0);
+            eprintln!(
+                "wrote {} ({} patch, {players} players, {blocks} blocks profiled)",
+                path.display(),
+                replay.header.patch(),
+            );
+        }
+        None => println!("{}", serde_json::to_string_pretty(&json)?),
+    }
+    Ok(())
 }
 
 fn find_archive(patch_dir: &Path, replay: &Replay<'_>) -> Result<PathBuf> {

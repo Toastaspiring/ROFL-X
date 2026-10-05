@@ -16,6 +16,7 @@ pub mod emulator;
 pub mod error;
 pub mod replay_info;
 pub mod rofl;
+pub mod summary;
 
 #[cfg(feature = "emulator")]
 pub mod game;

@@ -25,6 +25,7 @@ pub use handlers::npc_die::{BuildingDie, NpcDie};
 pub use handlers::reincarnate::HeroReincarnate;
 pub use handlers::spawn::Spawn;
 pub use handlers::spell_cast::SpellCast;
+pub use handlers::visibility::Visibility;
 pub use handlers::waypoints::{Path, WaypointGroup};
 
 /// One typed packet.
@@ -44,6 +45,7 @@ pub enum GamePacket {
     BuildingDie(BuildingDie),
     Spawn(Spawn),
     SpellCast(SpellCast),
+    Visibility(Visibility),
     Waypoints(WaypointGroup),
 }
 
@@ -63,6 +65,8 @@ pub fn interpret(class: &str, p: &DecodedPacket) -> Option<GamePacket> {
         npc_die::NPC_CLASS => npc_die::read_npc(p).map(GamePacket::NpcDie),
         npc_die::BUILDING_CLASS => npc_die::read_building(p).map(GamePacket::BuildingDie),
         spell_cast::CLASS => spell_cast::read(p).map(GamePacket::SpellCast),
+        visibility::ENTER_CLASS => visibility::read_enter(p).map(GamePacket::Visibility),
+        visibility::LEAVE_CLASS => visibility::read_leave(p).map(GamePacket::Visibility),
         _ => None,
     }
 }

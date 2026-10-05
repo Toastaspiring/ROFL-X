@@ -24,8 +24,9 @@ Statuses:
 On patch 16.9 every observed netid is decoded clean; the statuses differ
 only in how much of the decoded object we can name.
 
-Numbers below come from the five 16.9 replays we hold (7,927,123
-blocks, 273 distinct netids, 151 of them named = 75.9 % of blocks).
+Numbers below come from the five 16.9 replays we hold: 7,927,123
+blocks, 273 distinct netids, 151 of them named = 75.9 % of blocks, and
+16 classes typed = 47.0 % of blocks.
 
 ---
 
@@ -48,6 +49,8 @@ layout table.
 | `PKT_UseItemAns_s` | 1196 | `items.rs` | hero, slot, charges left, used up | same |
 | `PKT_NPC_Die_MapView_s` | 742 | `npc_die.rs` | unit, killer, position | killer is a champion for ~31 % of deaths; not a CS counter (camps outside the map view are missing) |
 | `PKT_Building_Die_s` | 392 | `npc_die.rs` | building, killer, last credited | one per structure destroyed, killer a champion or 0 |
+| `PKT_S2C_OnEnterTeamVisibility_s` | 1068 | `visibility.rs` | unit, team that gained sight | over 1,713 champion blocks, every one named the *other* team; a unit is always visible to its own, so this cannot happen by chance. Re-checked per replay as `visibility n/n` |
+| `PKT_S2C_OnLeaveTeamVisibility_s` | 920 | `visibility.rs` | unit, team that lost sight | same |
 | `PKT_NPC_CastSpellAns_s` | 985 | `spell_cast.rs` | caster, champion, slot, spell id, target, mana cost, cooldown | slots follow the game's numbering (Q/W/E/R, summoners, items, trinket, recall); trinket casts = trinket wards placed; Flash 300 s and its haste-reduced values, Smite 15 s, ultimates 100 mana |
 | *(no name)* WaypointGroup | 916 | `waypoints.rs` | per unit: net id, speed, path | every group fills its buffer exactly, every point on the map |
 | *(no name)* SpawnMinion | 214 | `spawn.rs` | unit, team, owner, names, position, time | ward spawns per player = statsJson `WARD_PLACED`, 50 / 50 |
@@ -113,7 +116,7 @@ classes. Where they land on 16.9:
 | `DoSetCooldown` | `PKT_CHAR_SetCooldown_Broadcast_s` (104) | NAMED |
 | `CastSpellAns` | `PKT_NPC_CastSpellAns_s` (985) | TYPED |
 | `BasicAttackPos` | `PKT_Basic_Attack_Pos_s` (831), `PKT_Basic_Attack_Pos_Minion_s` (876) | NAMED |
-| `EnterFog` / `LeaveFog` | `PKT_S2C_OnEnterTeamVisibility_s` (1068, 39 % of all blocks), `PKT_S2C_OnLeaveTeamVisibility_s` (920), `PKT_OnLeaveVisibilityClient_s` (733) | NAMED; which pair Zhu meant is not settled |
+| `EnterFog` / `LeaveFog` | `PKT_S2C_OnEnterTeamVisibility_s` (1068, 39 % of all blocks), `PKT_S2C_OnLeaveTeamVisibility_s` (920) | TYPED. A third class, `PKT_OnLeaveVisibilityClient_s` (733), carries the net id alone with no team; which pair Zhu meant is not settled |
 | `NPCDieMapViewBroadcast` | likely `PKT_NPC_Die_Broadcast_s` (1093) | NAMED |
 | `Replication`, `CreateHero`, `CreateTurret`, `CreateNeutral`, `BarrackSpawnUnit`, `WaypointGroupWithSpeed` | unnamed on 16.9 (object creation and replication do not go through handler registration) | UNNAMED |
 

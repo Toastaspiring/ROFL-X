@@ -20,11 +20,13 @@ use serde_json::{json, Value};
 
 use crate::emulator::{DecodeStatus, PacketDecoder, PatchArchive};
 use crate::error::{Result, RoflError};
+use crate::packet::handlers::visibility::{TEAM_CHAOS, TEAM_ORDER};
 use crate::packet::{self, GamePacket, Path, Shape};
 use crate::replay_info::{metadata_to_json, role_label, team_label};
 use crate::rofl::block::BlockIterator;
 use crate::rofl::decompress::decompress_chunk;
 use crate::rofl::stream::StreamTag;
+use crate::rofl::metadata::Team;
 use crate::rofl::Replay;
 
 /// A shape-recognised class is trusted for a netid only when at least
@@ -274,6 +276,7 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
     let mut level: Vec<u8> = vec![1; n];
     let mut damage_to_champions = vec![0f64; n];
     let mut wards_placed = vec![0u32; n];
+    let mut vision: Vec<Vision> = vec![Vision::default(); n];
     let mut motion: Vec<Option<Motion>> = vec![None; n];
     let mut players_state: Vec<Value> = Vec::new();
     let mut ward_list: Vec<WardRecord> = Vec::new();
@@ -431,10 +434,34 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
                     "mana_cost": c.mana_cost, "cooldown": c.cooldown,
                 }));
             }
+            GamePacket::Visibility(v) => {
+                let Some(p) = player_of(v.unit) else { continue };
+                let own = match meta.players[p].team {
+                    Team::Blue => TEAM_ORDER,
+                    Team::Red => TEAM_CHAOS,
+                };
+                let vis = &mut vision[p];
+                vis.events += 1;
+                if v.team == own {
+                    vis.own_team += 1;
+                    continue;
+                }
+                match (v.visible, vis.since.take()) {
+                    (true, None) => vis.since = Some(b.t),
+                    (true, Some(open)) => vis.since = Some(open),
+                    (false, Some(open)) => vis.windows.push((open, b.t)),
+                    (false, None) => {}
+                }
+            }
             GamePacket::NpcDie(_) => {}
         }
     }
     let game_len = meta.game_length_ms as f32 / 1000.0;
+    for vis in &mut vision {
+        if let Some(open) = vis.since.take() {
+            vis.windows.push((open, game_len));
+        }
+    }
     while next_tick <= game_len {
         players_state.push(state_at(next_tick, &motion, meta));
         next_tick += 1.0;
@@ -481,8 +508,25 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
             inventory: &inventory,
             damage: &damage_to_champions,
             wards: &wards_placed,
+            vision: &vision,
         },
     );
+    let vision: Vec<Value> = vision
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let seen: f32 = v.windows.iter().map(|(a, b)| b - a).sum();
+            json!({
+                "player": i,
+                "seen_by_enemy_s": tenths(seen),
+                "share_of_game": (f64::from(seen / game_len.max(1.0)) * 1000.0).round() / 1000.0,
+                "windows": v.windows.len(),
+                "intervals": v.windows.iter()
+                    .map(|(a, b)| json!([tenths(*a), tenths(*b)]))
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect();
     let mut metadata = metadata_to_json(&replay.header, meta);
     metadata["patch"] = json!(replay.header.patch());
     metadata["build"] = json!(replay.header.version);
@@ -493,6 +537,7 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
         "events": events,
         "players_state": players_state,
         "wards": wards,
+        "vision": vision,
         "checks": checks,
         "decode": {
             "blocks": summary.blocks,
@@ -597,6 +642,27 @@ struct Decoded<'a> {
     inventory: &'a [[u32; 9]],
     damage: &'a [f64],
     wards: &'a [u32],
+    vision: &'a [Vision],
+}
+
+/// Seconds to one decimal. An `f32` second rounded in `f32` still
+/// serialises as 45.400001525878906.
+fn tenths(t: f32) -> f64 {
+    (f64::from(t) * 10.0).round() / 10.0
+}
+
+/// How long one champion spent inside the enemy team's vision, built
+/// from `PKT_S2C_On{Enter,Leave}TeamVisibility_s`.
+#[derive(Debug, Default, Clone)]
+struct Vision {
+    /// Closed intervals of being visible to the other team.
+    windows: Vec<(f32, f32)>,
+    /// Start of the interval still open, if any.
+    since: Option<f32>,
+    events: u32,
+    /// Visibility changes that named the champion's own team. A unit is
+    /// always visible to its own team, so this must stay 0.
+    own_team: u32,
 }
 
 /// Compare decoded per-player totals with statsJson, Riot's own record.
@@ -639,6 +705,11 @@ fn self_check(replay: &Replay<'_>, d: &Decoded<'_>) -> Value {
                 "ok": mark("damage_to_champions", dmg_ok),
             },
             "wards_placed": {"decoded": d.wards[i], "stats": wards_truth, "ok": mark("wards_placed", wards_ok)},
+            "visibility": {
+                "events": d.vision[i].events,
+                "named_own_team": d.vision[i].own_team,
+                "ok": mark("visibility", d.vision[i].events > 0 && d.vision[i].own_team == 0),
+            },
         }));
     }
     let summary: serde_json::Map<String, Value> = tally

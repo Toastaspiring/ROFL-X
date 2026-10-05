@@ -23,7 +23,7 @@ Columns:
 | 15.5   | green | format 1: Mowokuma `5-5.patch` | positions + wards. Parity with her binary: metadata and wards byte-identical; 99.07 % of player entries in `players_state` match (her own output drifts run to run, so full byte identity is not reachable) |
 | 16.7   | green (1 replay) | none: no binary of this patch kept | summary only |
 | 16.8   | green (sample_a) | none: no binary of this patch kept | summary only |
-| 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named; events, positions, wards, items; self-check against statsJson 300 / 300 |
+| 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named, 16 typed (47.0 % of blocks), every class's fields measured ([FIELDS.md](FIELDS.md)); events, positions, wards, items, vision; self-check 350 / 350 |
 | 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
 | 16.19  | green (26 replays) | **none possible**: the shipped binary is packed | summary only |
 

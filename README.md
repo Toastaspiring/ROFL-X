@@ -151,8 +151,10 @@ rofl-x file -r EUW1-1234567890.rofl -o game.json
 Output: `players` (with net ids), `events` (kills with assists,
 respawns, level-ups, spell casts, purchases, removals, item uses,
 wards placed, buildings destroyed), `players_state` (per-second positions) and
-`wards` (lifecycles), both in Mowokuma's shape, `checks` (the statsJson
-comparison) and `decode` (block counts). No Riot ID or PUUID is written.
+`wards` (lifecycles), both in Mowokuma's shape, `vision` (when each
+champion was inside the enemy team's vision, and for how long),
+`checks` (the self-check) and `decode` (block counts). No Riot ID or
+PUUID is written.
 
 What every class carries, measured rather than guessed: decode a
 sample of each netid's blocks and report, per word of the packet
@@ -261,8 +263,14 @@ dumped object and checking the fields against something independent
   unnamed per-champion sync (netid 806) and the replication class
   (netid 446). Check against statsJson `MINIONS_KILLED`,
   `NEUTRAL_MINIONS_KILLED`, `GOLD_EARNED`.
-- [ ] **`PKT_CHAR_SetCooldown_Broadcast_s`**, **`PKT_Basic_Attack_Pos_s`**,
-  **`PKT_S2C_OnEnterTeamVisibility_s`** (39 % of all blocks).
+- [x] **`PKT_S2C_On{Enter,Leave}TeamVisibility_s`** (39.5 % of all
+  blocks): typed, and the `vision` section says when each champion was
+  inside the enemy team's vision.
+- [ ] **`PKT_CHAR_SetCooldown_Broadcast_s`** (104),
+  **`PKT_Basic_Attack_Pos_s`** (831) and its minion twin (876), and the
+  busiest unnamed classes: 707 (5.0 %), 806 (3.3 %), 684 (3.1 %), 406
+  (2.3 %). [docs/FIELDS.md](docs/FIELDS.md) has a measured table for
+  each of them.
 - [ ] **Champion roster from the keyframe hero records** instead of
   "net ids are contiguous in statsJson order" (verified on 16.9, but an
   assumption).

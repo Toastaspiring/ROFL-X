@@ -14,6 +14,7 @@ pub mod npc_die;
 pub mod reincarnate;
 pub mod spawn;
 pub mod spell_cast;
+pub mod visibility;
 pub mod waypoints;
 
 /// Base-class field: the net id of the object the packet is about.

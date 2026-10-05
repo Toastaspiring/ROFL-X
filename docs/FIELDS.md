@@ -12,6 +12,7 @@ Reading a table:
 - **present** is the share of the class's clean blocks that wrote the word. Below 100 % the field is optional, and what gates it is not yet known.
 - **kind** is the narrowest statement that held for at least 95 % of the sample. `net id` means the top byte was `0x40`; `game time` means the float was within a second of the block's own timestamp; `pointer` means the 64-bit value landed in the heap the decode allocated.
 - **distinct** counts the values the word ever took. A `+` means the counter stopped at the cap.
+- An **array** pointer gets a second table for one entry. The entry size is measured, not assumed: the deserializer writes the same fields of every entry, so the map of which bytes it wrote repeats with the entry size.
 
 A field here is a measurement, not a name. Classes with a handler in `src/packet/handlers/` have named, independently checked fields; see [PACKETS.md](PACKETS.md).
 
@@ -41,7 +42,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 6 values | 100% | 6 | 0, 1, 2, 3, 4, 5 |
 | `+0x014` | 1 | u8 enum, 2 values | 100% | 2 | 1, 2 |
 | `+0x018` | 4 | u32 enum, 3 values | 100% | 3 | 0, 1, 2 |
@@ -70,9 +71,22 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 11 | 0x00000000, 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2 |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 185 entries) | 100% | "48+" |  |
+| `+0x010` | 8 | pointer to array, 32-byte entries, up to 185 | 100% | "48+" |  |
 | `+0x018` | 4 | u32 counter, max 169 | 100% | "48+" |  |
 | `+0x01c` | 4 | u32 counter, max 169 | 100% | "48+" |  |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a53a38) | 100% | 1 | 0x41a53a38 |
+| `+0x008` | 4 | u32 counter, max 9111 | 100% | "48+" |  |
+| `+0x00c` | 4 | u32 enum, 5 values | 100% | 5 | 1, 2, 3, 4, 5 |
+| `+0x010` | 8 | pointer to heap (array, count at +8, up to 16 entries) | 100% | "48+" |  |
+| `+0x018` | 4 | constant 0x00000010 | 100% | 1 | 0x00000010 |
+| `+0x01c` | 4 | constant 0x00000010 | 100% | 1 | 0x00000010 |
+| `+0x020` | 2 | u16 enum, 6 values | 100% | 6 | 0, 1, 32, 48, 49, 97 |
+| `+0x024` | 4 | net id | 100% | "48+" |  |
 
 ## *(no class name)* — netid 684
 
@@ -90,7 +104,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 counter, max 24 | 100% | 22 | 1, 2, 3, 4, 5, 6 |
 | `+0x014` | 4 | u32 counter, max 30412 | 100% | "48+" |  |
 | `+0x018` | 8 | pointer to heap (array, count at +8, up to 360 entries) | 100% | 22 |  |
@@ -103,7 +117,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 4 | float, map coordinate range [-20.0, 420.0] | 100% | "48+" |  |
 
@@ -166,7 +180,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 counter, max 91 | 100% | "48+" |  |
 | `+0x018` | 8 | pointer to heap (array, count at +8, up to 10128 entries) | 100% | "48+" |  |
 | `+0x020` | 4 | u32 counter, max 7508 | 100% | "48+" |  |
@@ -193,7 +207,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 2 values | 100% | 2 | 1, 2 |
 | `+0x014` | 4 | net id | 100% | "48+" |  |
 
@@ -216,10 +230,31 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 19 entries) | 100% | "48+" |  |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 8 | pointer to array, 64-byte entries, up to 19 | 100% | "48+" |  |
 | `+0x018` | 4 | u32 counter, max 19 | 100% | 17 | 1, 2, 3, 4, 5, 6 |
 | `+0x01c` | 4 | u32 counter, max 19 | 100% | 17 | 1, 2, 3, 4, 5, 6 |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x19f70c8) | 100% | 1 | 0x419f70c8 |
+| `+0x008` | 4 | u32, wide range (hash or id) | 100% | 21 | 0x00000000, 0x00007b60, 0x00079664, 0x0069eca4, 0x0102a113, 0x023d2bc3 |
+| `+0x010` | 4 | u32 counter, max 4192 | 100% | "48+" |  |
+| `+0x014` | 4 | u32 enum, 2 values | 100% | 2 | 0, 32766 |
+| `+0x018` | 4 | u32 enum, 6 values | 100% | 6 | 0, 1, 2, 6, 10, 12 |
+| `+0x01c` | 4 | u32 enum, 6 values | 100% | 6 | 0, 1, 2, 6, 10, 12 |
+| `+0x020` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
+| `+0x028` | 8 | pointer to heap (array, count at +8, up to 16 entries) | 100% | "48+" |  |
+| `+0x030` | 4 | u32 counter, max 16 | 100% | 14 | 1, 2, 3, 4, 5, 6 |
+| `+0x034` | 4 | u32 counter, max 16 | 100% | 14 | 1, 2, 3, 4, 5, 6 |
+| `+0x038` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
+| `+0x03c` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
+| `+0x040` | 2 | u16 counter, max 1056 | 100% | 15 | 0, 16, 32, 33, 48, 96 |
+| `+0x048` | 8 | pointer to heap (array, count at +8, up to 3 entries) | 100% | "48+" |  |
+| `+0x050` | 4 | u32 enum, 2 values | 100% | 2 | 1, 3 |
+| `+0x054` | 4 | u32 enum, 2 values | 100% | 2 | 1, 3 |
 
 ## PKT_Basic_Attack_Pos_Minion_s — netid 876
 
@@ -307,12 +342,12 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x018` | 2 | u16 enum, 4 values | 100% | 4 | 0, 1, 256, 257 |
 | `+0x01c` | 4 | float [0.0, 35000.0] | 100% | "48+" |  |
 | `+0x020` | 4 | net id | 100% | "48+" |  |
-| `+0x024` | 1 | net id, equals the block's `param` | 100% | 5 | 0x00000000, 0x00000001, 0x00000003, 0x00000005, 0x00000009 |
-| `+0x028` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x024` | 1 | u8 enum, 5 values | 100% | 5 | 0, 1, 3, 5, 9 |
+| `+0x028` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x02c` | 4 | net id, 0 when unset | 100% | "48+" |  |
 | `+0x030` | 2 | u16 enum, 3 values | 100% | 3 | 1, 257, 1537 |
 | `+0x034` | 4 | net id, 0 when unset | 100% | "48+" |  |
@@ -320,8 +355,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x03c` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
 | `+0x040` | 4 | float, map coordinate range [0.0, 125.0], 0 when unset | 100% | 24 | 0.00, 1.00, 5.00, 20.00, 22.50, 25.77 |
 | `+0x044` | 4 | float, map coordinate range [-1.0, 200.0], 0 when unset | 100% | 21 | 0.00, 1.00, 50.00, 60.00, 70.00, 80.00 |
-| `+0x048` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x04c` | 1 | net id, equals the block's `param` | 100% | 2 | 0x00000000, 0x00000001 |
+| `+0x048` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x04c` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x050` | 4 | float, map coordinate range [0.0, 14232.0] | 100% | "48+" |  |
 | `+0x054` | 4 | float, map coordinate range [0.0, 14300.0] | 100% | "48+" |  |
 | `+0x058` | 4 | float, map coordinate range [0.0, 3000.0] | 100% | "48+" |  |
@@ -404,9 +439,22 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | "48+" |  |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 34 entries) | 93.8% | 38 |  |
+| `+0x010` | 8 | pointer to array, 32-byte entries, up to 34 | 93.8% | 38 |  |
 | `+0x018` | 4 | u32 counter, max 34 | 100% | 18 | 0, 2, 4, 6, 8, 10 |
 | `+0x01c` | 4 | u32 counter, max 34 | 93.8% | 17 | 2, 4, 6, 8, 10, 12 |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1964e60) | 100% | 1 | 0x41964e60 |
+| `+0x008` | 8 | pointer to heap | 100% | "48+" |  |
+| `+0x010` | 4 | u32 counter, max 25 | 100% | 21 | 3, 4, 5, 6, 7, 8 |
+| `+0x014` | 4 | u32 counter, max 27 | 100% | 12 | 5, 7, 9, 11, 13, 15 |
+| `+0x018` | 8 | pointer to heap | 100% | "48+" |  |
+| `+0x020` | 4 | u32 counter, max 16 | 100% | 13 | 3, 4, 5, 6, 7, 8 |
+| `+0x024` | 4 | u32 enum, 7 values | 100% | 7 | 5, 7, 9, 11, 13, 15 |
+| `+0x028` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 
 ## PKT_AI_TargetHeroS2C_s — netid 27
 
@@ -497,7 +545,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x154` | 4 | net id | 100% | "48+" |  |
 | `+0x158` | 4 | net id | 100% | "48+" |  |
 | `+0x15c` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
-| `+0x160` | 8 | pointer to heap (array, count at +8, up to 10 entries) | 58.0% | 6 |  |
+| `+0x160` | 8 | pointer to array, 12-byte entries, up to 10 | 58.0% | 6 |  |
 | `+0x168` | 4 | u32 enum, 5 values | 100% | 5 | 0, 1, 2, 3, 10 |
 | `+0x16c` | 4 | u32 enum, 4 values | 58.0% | 4 | 1, 2, 3, 10 |
 | `+0x170` | 4 | u32 enum, 8 values | 100% | 8 | 0, 1, 0x00010000, 0x00020000, 0x00030000, 0x00040000 |
@@ -531,6 +579,14 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x1f0` | 4 | u32 enum, 2 values | 100% | 2 | 0, 0x2777b32e |
 | `+0x1f8` | 8 | pointer to heap | 0.7% | 3 |  |
 
+One entry of the array at `+0x160`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x19e8eb0) | 100% | 1 | 0x419e8eb0 |
+| `+0x008` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x00c` | 4 | net id | 100% | 11 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x40005459 |
+
 ## *(no class name)* — netid 429
 
 25,625 blocks (0.32 % of all), 9,973 profiled. Payload 1–119 bytes, object 48 bytes.
@@ -561,8 +617,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 1 | net id, equals the block's `param` | 100% | 2 | 0x00000000, 0x00000001 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x014` | 4 | float [0.0, 1.0] | 100% | "48+" |  |
 | `+0x018` | 1 | u8 counter, max 10 | 100% | 10 | 1, 2, 3, 4, 5, 6 |
 | `+0x01c` | 4 | u32 enum, 5 values | 100% | 5 | 0, 1, 2, 3, 4 |
@@ -574,7 +630,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 4 | float, map coordinate range [0.0, 1573.5], 0 when unset | 100% | "48+" |  |
 
@@ -662,7 +718,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x08c` | 4 | net id | 100% | 38 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x090` | 4 | net id | 100% | "48+" |  |
 | `+0x094` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
-| `+0x098` | 8 | pointer to heap (array, count at +8, up to 10 entries) | 59.2% | 4 |  |
+| `+0x098` | 8 | pointer to array, 12-byte entries, up to 10 | 59.2% | 4 |  |
 | `+0x0a0` | 4 | u32 counter, max 10 | 100% | 11 | 0, 1, 2, 3, 4, 5 |
 | `+0x0a4` | 4 | u32 counter, max 10 | 59.2% | 10 | 1, 2, 3, 4, 5, 6 |
 | `+0x0a8` | 4 | u32 enum, 7 values | 100% | 7 | 0, 0x00010000, 0x00020000, 0x00030000, 0x00040000, 0x00050000 |
@@ -701,6 +757,14 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x144` | 4 | float [-122.9, 183.6] | 100% | "48+" |  |
 | `+0x148` | 4 | float, map coordinate range [0.0, 14391.0] | 100% | "48+" |  |
 | `+0x150` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
+
+One entry of the array at `+0x098`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x19e8eb0) | 100% | 1 | 0x419e8eb0 |
+| `+0x008` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x00c` | 4 | net id | 100% | "48+" |  |
 
 ## PKT_S2C_SetItemCharges_s — netid 1000
 
@@ -741,7 +805,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x010` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
 | `+0x018` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
-| `+0x01c` | 4 | net id | 100% | "48+" |  |
+| `+0x01c` | 4 | pointer into the game image (vtable or static) | 100% | "48+" |  |
 | `+0x020` | 1 | constant 0x00000001 | 100% | 1 | 0x00000001 |
 
 ## *(no class name)* — netid 569
@@ -750,7 +814,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32, wide range (hash or id) | 100% | 9 | 0x00640000, 0x00640001, 0x00640002, 0x00640003, 0x00640004, 0x00c80000 |
 | `+0x014` | 4 | float, map coordinate range [0.0, 1000.0], 0 when unset | 100% | "48+" |  |
 | `+0x018` | 1 | u8 enum, 8 values | 100% | 8 | 0, 1, 2, 3, 4, 5 |
@@ -778,7 +842,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 counter, max 9 | 100% | 9 | 1, 2, 3, 4, 5, 6 |
 | `+0x014` | 4 | u32 counter, max 202430 | 100% | "48+" |  |
 | `+0x018` | 8 | pointer to heap (array, count at +8, up to 667 entries) | 100% | 15 |  |
@@ -791,7 +855,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 4 | float, map coordinate range [0.0, 1101.3] | 100% | "48+" |  |
 
@@ -823,7 +887,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id, 0 when unset | 100% | "48+" |  |
 | `+0x014` | 4 | u32 counter, max 57 | 100% | 23 | 0, 1, 3, 4, 7, 9 |
 | `+0x018` | 8 | pointer to heap | 6.0% | 12 |  |
@@ -845,7 +909,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x080` | 8 | pointer to heap | 9.9% | 19 |  |
 | `+0x088` | 4 | u32 counter, max 71 | 9.9% | 17 | 4, 25, 30, 31, 36, 39 |
 | `+0x08c` | 4 | u32 counter, max 73 | 9.9% | 15 | 5, 27, 31, 33, 37, 41 |
-| `+0x090` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x090` | 4 | always 0 | 100% | 1 | 0 |
 
 ## PKT_NPC_BuffReplace_s — netid 781
 
@@ -900,7 +964,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x018` | 4 | net id | 100% | "48+" |  |
 | `+0x01c` | 4 | float, map coordinate range [0.0, 315.0], 0 when unset | 100% | "48+" |  |
 | `+0x020` | 4 | u32 enum, 3 values | 100% | 3 | 0, 1, 2 |
@@ -998,9 +1062,19 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | "48+" |  |
-| `+0x018` | 8 | pointer to heap (array, count at +8, up to 6 entries) | 100% | 6 |  |
+| `+0x018` | 8 | pointer to array, 20-byte entries, up to 6 | 100% | 6 |  |
 | `+0x020` | 4 | u32 enum, 6 values | 100% | 6 | 1, 2, 3, 4, 5, 6 |
 | `+0x024` | 4 | u32 enum, 6 values | 100% | 6 | 1, 2, 3, 4, 5, 6 |
+
+One entry of the array at `+0x018`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a52468) | 100% | 1 | 0x41a52468 |
+| `+0x008` | 4 | float, map coordinate range [0.0, 13755.6] | 100% | "48+" |  |
+| `+0x00c` | 4 | float, map coordinate range [-82.3, 128.0] | 100% | "48+" |  |
+| `+0x010` | 4 | float, map coordinate range [0.0, 13859.4] | 100% | "48+" |  |
+| `+0x014` | 4 | net id | 100% | "48+" |  |
 
 ## PKT_S2C_EquipGear_s — netid 720
 
@@ -1017,7 +1091,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | float, map coordinate range [0.0, 2096.0], 0 when unset | 100% | "48+" |  |
 | `+0x014` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 6588.0], 0 when unset | 100% | "48+" |  |
@@ -1078,7 +1152,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | "48+" |  |
 
 ## PKT_AI_TargetS2C_s — netid 1104
@@ -1145,17 +1219,17 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 4 | "Play_sfx_TEMP_Pantheon_PantheonQ_hit", "Play_sfx_Nilah_NilahQ_hit", "Play_sfx_Zed_ZedShurikenMisOne_OnMissileLaunch", "Play_sfx_ZedStormNinja_ZedPBAOEDummy_OnCast", "Play_sfx_Perks_Sorcery_Meteor_OnHit", "Play_sfx_StatikkShiv_single_impact" |
 | `+0x018` | 4 | u32 counter, max 65 | 100% | 25 | 22, 25, 26, 27, 29, 30 |
 | `+0x01c` | 4 | u32 counter, max 67 | 100% | 15 | 23, 27, 29, 31, 33, 35 |
 | `+0x020` | 4 | net id | 100% | "48+" |  |
 | `+0x024` | 4 | u32 counter, max 57 | 100% | 15 | 0, 1, 3, 10, 18, 19 |
-| `+0x028` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x028` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x030` | 8 | pointer to string | 100% | 6 | "Nilah", "Neeko", "Teemo", "AurelionSol", "Varus", "Mordekaiser" |
 | `+0x038` | 4 | u32 counter, max 21 | 100% | 11 | 3, 4, 5, 6, 7, 8 |
 | `+0x03c` | 4 | u32 enum, 8 values | 100% | 8 | 5, 7, 9, 11, 13, 17 |
-| `+0x040` | 1 | net id, equals the block's `param` | 100% | 2 | 0x00000000, 0x00000001 |
+| `+0x040` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x058` | 4 | float, map coordinate range [0.0, 14340.0] | 100% | "48+" |  |
 | `+0x05c` | 4 | float, map coordinate range [0.0, 14503.3] | 100% | "48+" |  |
 
@@ -1191,7 +1265,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | float, map coordinate range [0.0, 310.0] | 100% | "48+" |  |
 | `+0x014` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 1085.0] | 100% | "48+" |  |
@@ -1202,7 +1276,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 2 | u16 enum, 8 values | 100% | 8 | 3, 12, 16, 257, 259, 260 |
 
@@ -1326,7 +1400,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 enum, 2 values | 100% | 2 | 100, 200 |
 | `+0x014` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
 | `+0x018` | 4 | float [0.0, 1.0], 0 when unset | 100% | "48+" |  |
@@ -1337,7 +1411,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 6 values | 100% | 6 | 1, 2, 3, 4, 0x400000af, 0x400000b4 |
 | `+0x014` | 4 | u32 enum, 2 values | 100% | 2 | 1, 0xffffffff |
 | `+0x018` | 4 | u32 enum, 4 values | 100% | 4 | 1, 5, 6, 8 |
@@ -1349,7 +1423,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | "48+" |  |
 | `+0x014` | 4 | net id | 100% | 6 | 0x400000b0, 0x400000b2, 0x400000b3, 0x400000b5, 0x400000b6, 0x4000adbb |
 
@@ -1400,7 +1474,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id, 0 when unset | 100% | 13 | 0x00000000, 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2 |
 | `+0x014` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
 | `+0x018` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
@@ -1563,7 +1637,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x058` | 4 | constant 0x00000002 | 100% | 1 | 0x00000002 |
 | `+0x060` | 4 | net id, 0 when unset | 100% | 5 | 0x00000000, 0x400000b4, 0x400000b5, 0x400000b6, 0x400000b7 |
 | `+0x064` | 4 | always 0 | 100% | 1 | 0 |
-| `+0x070` | 4 | constant 0x41a53be0 | 100% | 1 | 0x41a53be0 |
+| `+0x070` | 4 | vtable, one class for every entry (image +0x1a53be0) | 100% | 1 | 0x41a53be0 |
 | `+0x074` | 4 | constant 0x00000001 | 100% | 1 | 0x00000001 |
 | `+0x078` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x07c` | 4 | float, map coordinate range [0.0, 1162.8], 0 when unset | 100% | "48+" |  |
@@ -1573,7 +1647,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x08c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x090` | 4 | float, map coordinate range [0.0, 1466.6], 0 when unset | 100% | 6 | 0.00, 297.00, 531.00, 1398.28, 1443.05, 1466.59 |
 | `+0x094` | 4 | always 0 | 100% | 1 | 0 |
-| `+0x098` | 4 | constant 0x41a53be0 | 100% | 1 | 0x41a53be0 |
+| `+0x098` | 4 | vtable, one class for every entry (image +0x1a53be0) | 100% | 1 | 0x41a53be0 |
 | `+0x09c` | 4 | constant 0x00000001 | 100% | 1 | 0x00000001 |
 | `+0x0a0` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x0a4` | 4 | float [0.0, 100.0], 0 when unset | 100% | 2 | 0.00, 100.00 |
@@ -1609,7 +1683,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 counter, max 18 | 100% | 17 | 1, 2, 3, 4, 5, 6 |
 | `+0x014` | 4 | float [0.0, 20.0] | 100% | 9 | 0.66, 0.86, 1.00, 1.10, 1.66, 2.20 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 3014.6] | 100% | "48+" |  |
@@ -1629,7 +1703,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 4 values | 100% | 4 | 0, 1, 2, 3 |
 | `+0x014` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 
@@ -1663,9 +1737,15 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 23 | 0x40000088, 0x4000008b, 0x4000008c, 0x4000008d, 0x4000008e, 0x40000092 |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 4 entries) | 92.5% | 1 |  |
+| `+0x010` | 8 | pointer to array, 4-byte entries, up to 4 | 92.5% | 1 |  |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 0, 4 |
 | `+0x01c` | 4 | constant 0x00000004 | 92.5% | 1 | 0x00000004 |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 4 | float, map coordinate range [0.0, 8064.0] | 100% | 12 | 1406.00, 1480.00, 2593.50, 2664.00, 2730.00, 3543.50 |
 
 ## *(no class name)* — netid 400
 
@@ -1673,7 +1753,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
 | `+0x014` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
 | `+0x018` | 4 | u32 enum, 3 values | 100% | 3 | 100, 200, 300 |
@@ -1734,7 +1814,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | "48+" |  |
 | `+0x014` | 1 | u8 counter, max 18 | 100% | 18 | 1, 2, 3, 4, 5, 6 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 12625.6] | 100% | 17 | 2177.79, 3813.45, 3893.85, 4400.00, 4909.56, 5007.00 |
@@ -1823,15 +1903,15 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | float [0.0, 7.2], 0 when unset | 100% | "48+" |  |
-| `+0x018` | 8 | pointer to heap (array, count at +8, up to 8 entries) | 100% | 37 |  |
+| `+0x018` | 8 | pointer to array, 32-byte entries, up to 8 | 100% | 37 |  |
 | `+0x020` | 4 | u32 enum, 8 values | 100% | 8 | 1, 2, 3, 4, 5, 6 |
 | `+0x024` | 4 | u32 enum, 8 values | 100% | 8 | 1, 2, 3, 4, 5, 6 |
 | `+0x028` | 4 | net id | 100% | 11 | 0x400000a3, 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2 |
 | `+0x02c` | 4 | float [0.0, 45.0] | 100% | "48+" |  |
 | `+0x038` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
-| `+0x040` | 8 | pointer to heap (array, count at +8, up to 18 entries) | 95.4% | "48+" |  |
+| `+0x040` | 8 | pointer to array, 32-byte entries, up to 18 | 95.4% | "48+" |  |
 | `+0x048` | 4 | u32 counter, max 18 | 100% | 17 | 0, 1, 2, 3, 4, 5 |
 | `+0x04c` | 4 | u32 counter, max 18 | 95.4% | 16 | 1, 2, 3, 4, 5, 6 |
 | `+0x050` | 8 | pointer to string | 100% | "48+" | "MissFortune", "Teemo", "Gnar", "Vayne", "Nilah", "Soraka" |
@@ -1839,6 +1919,32 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x05c` | 4 | u32 enum, 5 values | 100% | 5 | 5, 7, 9, 11, 13 |
 | `+0x060` | 4 | float, map coordinate range [0.0, 2014.8], 0 when unset | 100% | "48+" |  |
 | `+0x064` | 4 | float [0.0, 8.8], 0 when unset | 100% | "48+" |  |
+
+One entry of the array at `+0x018`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4c650) | 100% | 1 | 0x41a4c650 |
+| `+0x008` | 4 | net id | 100% | "48+" |  |
+| `+0x010` | 8 | pointer to heap (array, count at +8, up to 14 entries) | 100% | "48+" |  |
+| `+0x018` | 4 | u32 counter, max 14 | 100% | 14 | 1, 2, 3, 4, 5, 6 |
+| `+0x01c` | 4 | u32 counter, max 14 | 100% | 14 | 1, 2, 3, 4, 5, 6 |
+| `+0x020` | 8 | pointer to heap | 100% | "48+" |  |
+| `+0x028` | 4 | u32 counter, max 21 | 100% | 19 | 0, 3, 4, 5, 6, 7 |
+| `+0x02c` | 4 | u32 counter, max 23 | 100% | 11 | 0, 5, 7, 9, 11, 13 |
+
+One entry of the array at `+0x040`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4c628) | 100% | 1 | 0x41a4c628 |
+| `+0x008` | 4 | float, map coordinate range [0.0, 1265.6], 0 when unset | 100% | "48+" |  |
+| `+0x00c` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
+| `+0x010` | 4 | float, map coordinate range [0.0, 2901.2], 0 when unset | 100% | "48+" |  |
+| `+0x014` | 4 | float, map coordinate range [0.0, 3288.1], 0 when unset | 100% | "48+" |  |
+| `+0x018` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
+| `+0x01c` | 4 | u32 counter, max 3144, 0xffffffff as none | 100% | 27 | 0, 1, 2, 3, 4, 5 |
+| `+0x020` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
 
 ## PKT_S2C_CameraPosition_s — netid 939
 
@@ -1861,7 +1967,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 4 | float, map coordinate range [0.0, 700.0], 0 when unset | 100% | 48 | 0.00, 0.04, 0.06, 9.48, 12.90, 14.42 |
 
@@ -1873,9 +1979,47 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x018` | 4 | float [-332630.8, 0.0], 0 when unset | 100% | 2 | 0.00, -332630.81 |
-| `+0x020` | 8 | pointer to heap (array, count at +8, up to 9 entries) | 100% | 11 |  |
+| `+0x020` | 8 | pointer to array, 132-byte entries, up to 9 | 100% | 11 |  |
 | `+0x028` | 4 | u32 enum, 8 values | 100% | 8 | 2, 3, 4, 5, 6, 7 |
 | `+0x02c` | 4 | u32 enum, 8 values | 100% | 8 | 2, 3, 4, 5, 6, 7 |
+
+One entry of the array at `+0x020`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4edb8) | 100% | 1 | 0x41a4edb8 |
+| `+0x008` | 8 | vtable, one class for every entry (image +0x1a4ed68) | 100% | 1 | 0x41a4ed68 |
+| `+0x010` | 4 | u32 counter, max 3871 | 100% | "48+" |  |
+| `+0x014` | 1 | u8 counter, max 8 | 100% | 9 | 0, 1, 2, 3, 4, 5 |
+| `+0x018` | 4 | float, map coordinate range [0.0, 3500.0], 0 when unset | 100% | 47 | 0.00, 50.00, 75.00, 150.00, 200.00, 250.00 |
+| `+0x01c` | 2 | u16 counter, max 906 | 100% | 42 | 0, 1, 2, 3, 4, 6 |
+| `+0x020` | 4 | u32 counter, max 1728 | 100% | 13 | 0, 944, 1088, 1104, 1264, 1280 |
+| `+0x024` | 4 | u32 enum, 2 values | 100% | 2 | 0, 32766 |
+| `+0x028` | 4 | u32 enum, 3 values | 100% | 3 | 0, 1, 3 |
+| `+0x02c` | 4 | u32 enum, 3 values | 100% | 3 | 0, 1, 3 |
+| `+0x030` | 8 | vtable, one class for every entry (image +0x1961958) | 100% | 6 | 0x00000600, 0x00000610, 0x000006b0, 0x000006c0, 0x000006d0, 0x41961958 |
+| `+0x038` | 4 | u32 enum, 2 values | 100% | 2 | 0, 71 |
+| `+0x03c` | 4 | u32 enum, 2 values | 100% | 2 | 0, 73 |
+| `+0x040` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x044` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x048` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x04c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x050` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x054` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x058` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x05c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x060` | 2 | u16 enum, 4 values | 100% | 4 | 1, 257, 258, 259 |
+| `+0x068` | 8 | vtable, one class for every entry (image +0x1961958) | 100% | 6 | 0x00000650, 0x00000660, 0x00000700, 0x00000710, 0x00000720, 0x41961958 |
+| `+0x070` | 4 | u32 enum, 2 values | 100% | 2 | 0, 50 |
+| `+0x074` | 4 | u32 enum, 2 values | 100% | 2 | 0, 51 |
+| `+0x078` | 4 | float, map coordinate range [0.0, 420.0], 0 when unset | 100% | "48+" |  |
+| `+0x07c` | 2 | u16 enum, 3 values | 100% | 3 | 0, 2, 65535 |
+| `+0x080` | 4 | float, map coordinate range [0.0, 172.2], 0 when unset | 100% | "48+" |  |
+| `+0x084` | 4 | float [-1.0, 356.2] | 100% | "48+" |  |
+| `+0x088` | 4 | float, map coordinate range [0.0, 108.0], 0 when unset | 100% | 17 | 0.00, 6.00, 12.00, 18.00, 24.00, 30.00 |
+| `+0x08c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x090` | 4 | float, map coordinate range [0.0, 210.0], 0 when unset | 100% | "48+" |  |
+| `+0x094` | 2 | u16 enum, 3 values | 100% | 3 | 0, 1, 2 |
 
 ## PKT_HeroReincarnateAlive_s — netid 296
 
@@ -1894,7 +2038,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 counter, max 51 | 100% | "48+" |  |
 
 ## PKT_S2C_AddHealthThreshold_s — netid 636
@@ -1924,10 +2068,10 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 6 values | 100% | 6 | 0x0bec86ed, 0x39065f59, 0x615036b7, 0x8b013682, 0xb33d0038, 0xbac2f4b5 |
 | `+0x014` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
-| `+0x018` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x018` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x01c` | 4 | u32 enum, 8 values | 100% | 8 | 0, 0x2ca33bdb, 0x435623db, 0x7755e3c8, 0x7755e3c9, 0x7755e3cf |
 
 ## PKT_S2C_PlayEmote_s — netid 567
@@ -1964,36 +2108,36 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | "48+" |  |
-| `+0x014` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x014` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x028` | 4 | net id | 100% | "48+" |  |
 | `+0x02c` | 2 | u16 enum, 3 values | 100% | 3 | 0, 256, 257 |
 | `+0x030` | 4 | net id, 0 when unset | 100% | 2 | 0x00000000, 0x40c00000 |
 | `+0x034` | 4 | u32 enum, 3 values | 100% | 3 | 0, 0x00010000, 0x00010001 |
 | `+0x038` | 4 | float [-100.0, 0.0], 0 when unset | 100% | 2 | 0.00, -100.00 |
-| `+0x03c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x03c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x040` | 4 | float [-100.0, 0.0], 0 when unset | 100% | 2 | 0.00, -100.00 |
-| `+0x044` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x044` | 2 | always 0 | 100% | 1 | 0 |
 | `+0x048` | 4 | float, map coordinate range [0.0, 14340.0] | 100% | "48+" |  |
 | `+0x04c` | 4 | float [-71.2, 191.4], 0 when unset | 100% | "48+" |  |
 | `+0x050` | 4 | float, map coordinate range [0.0, 14493.5] | 100% | "48+" |  |
 | `+0x054` | 4 | net id | 100% | "48+" |  |
-| `+0x058` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x058` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x060` | 8 | pointer to string | 100% | 3 | "PerksPerxie", "VFXAnchorTarget", "MissileAttachment", "Kayn", "SRU_RiftHerald_ControlBattleSled" |
 | `+0x068` | 4 | u32 enum, 5 values | 100% | 5 | 4, 11, 15, 17, 32 |
 | `+0x06c` | 4 | u32 enum, 5 values | 100% | 5 | 5, 13, 17, 19, 33 |
-| `+0x080` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x084` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x088` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x08c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x080` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x084` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x088` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x08c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x090` | 4 | u32 enum, 4 values | 100% | 4 | 0x01000000, 0x01000100, 0x01010001, 0x01010100 |
-| `+0x094` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x098` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x09c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x0a0` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x094` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x098` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x09c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x0a0` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x0a4` | 4 | constant 0x00000140 | 100% | 1 | 0x00000140 |
-| `+0x0a8` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x0a8` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x0ac` | 4 | float, game time (s) | 100% | "48+" |  |
 
 ## PKT_S2C_DisplaySummonerEmote_s — netid 471
@@ -2013,7 +2157,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | "48+" |  |
 
 ## *(no class name)* — netid 259
@@ -2022,12 +2166,12 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 enum, 3 values | 100% | 3 | 0, 1, 2 |
 | `+0x01c` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x020` | 4 | u32 enum, 5 values | 100% | 5 | 0, 1, 3, 4, 5 |
 | `+0x024` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
-| `+0x028` | 2 | net id, equals the block's `param` | 100% | 3 | 0x00000000, 0x00000001, 0x00000003 |
+| `+0x028` | 2 | u16 enum, 3 values | 100% | 3 | 0, 1, 3 |
 | `+0x02c` | 4 | u32 counter, max 524840 | 100% | 10 | 0, 32, 48, 56, 96, 544 |
 | `+0x030` | 4 | float, map coordinate range [0.0, 298.3], 0 when unset | 100% | "48+" |  |
 | `+0x034` | 2 | u16 enum, 5 values | 100% | 5 | 2, 3, 4, 5, 65535 |
@@ -2049,11 +2193,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 2 | 0x400000ae, 0x400000af |
 | `+0x014` | 4 | u32 counter, max 11 | 100% | 12 | 0, 1, 2, 3, 4, 5 |
-| `+0x018` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x01c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x018` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x01c` | 4 | always 0 | 100% | 1 | 0 |
 
 ## PKT_NPC_BuffLockFacing_s — netid 560
 
@@ -2100,7 +2244,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | constant 0x41c80000 | 100% | 1 | 0x41c80000 |
 | `+0x014` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x018` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
@@ -2163,7 +2307,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 4 values | 100% | 4 | 3, 4, 6, 12 |
 | `+0x014` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 
@@ -2184,7 +2328,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 2 values | 100% | 2 | 1, 2 |
 | `+0x014` | 4 | net id | 100% | "48+" |  |
 
@@ -2194,26 +2338,33 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 62 entries) | 100% | 10 |  |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 8 | pointer to array, 8-byte entries, up to 62 | 100% | 10 |  |
 | `+0x018` | 4 | u32 counter, max 62 | 100% | 11 | 8, 9, 10, 36, 41, 45 |
 | `+0x01c` | 4 | u32 counter, max 62 | 100% | 11 | 8, 9, 10, 36, 41, 45 |
-| `+0x028` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x028` | 2 | always 0 | 100% | 1 | 0 |
 | `+0x02c` | 4 | float [0.0, 45.0] | 100% | 16 | 11.01, 27.91, 30.34, 35.31, 39.16, 39.46 |
 | `+0x030` | 4 | net id | 100% | "48+" |  |
-| `+0x034` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x038` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x03c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x034` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x038` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x03c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x040` | 2 | constant 0x00000001 | 100% | 1 | 0x00000001 |
-| `+0x044` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x044` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x048` | 4 | u32 enum, 2 values | 100% | 2 | 0x00010100, 0x00020100 |
 | `+0x04c` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
-| `+0x050` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x054` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x058` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x05c` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x050` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x054` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x058` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x05c` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x060` | 4 | float, map coordinate range [0.0, 12310.7] | 100% | 12 | 2733.21, 3422.56, 3663.83, 5709.84, 6352.69, 6601.57 |
 | `+0x064` | 4 | float, map coordinate range [0.0, 12179.6] | 100% | 12 | 2691.39, 3176.01, 4608.74, 5978.33, 6331.02, 6527.75 |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 4 | float, map coordinate range [0.0, 12966.8] | 100% | "48+" |  |
+| `+0x004` | 4 | float, map coordinate range [0.0, 13032.0] | 100% | "48+" |  |
 
 ## *(no class name)* — netid 708
 
@@ -2280,11 +2431,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 8 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
 | `+0x014` | 1 | u8 enum, 3 values | 100% | 3 | 0, 1, 2 |
 | `+0x018` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3 |
-| `+0x01c` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x01c` | 2 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 327
 
@@ -2314,7 +2465,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 8 values | 100% | 8 | 0x1bc8a274, 0x69797dfd, 0x6b77effd, 0x8df65353, 0x99a6502c, 0xa1910a25 |
 | `+0x014` | 4 | float [0.0, 50000.0] | 100% | "48+" |  |
 
@@ -2356,9 +2507,25 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | "48+" |  |
-| `+0x010` | 8 | pointer to heap (array, count at +8, up to 23 entries) | 100% | 19 |  |
+| `+0x010` | 8 | pointer to array, 44-byte entries, up to 23 | 100% | 19 |  |
 | `+0x018` | 4 | u32 counter, max 23 | 100% | 14 | 1, 2, 3, 8, 11, 12 |
 | `+0x01c` | 4 | u32 counter, max 23 | 100% | 14 | 1, 2, 3, 8, 11, 12 |
+
+One entry of the array at `+0x010`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x19f5218) | 100% | 1 | 0x419f5218 |
+| `+0x008` | 4 | net id | 100% | 10 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b4 |
+| `+0x00c` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
+| `+0x010` | 4 | float [0.0, 250000.0] | 100% | 45 | 1.00, 1.14, 2.00, 2.64, 2.71, 3.00 |
+| `+0x014` | 4 | u32 enum, 5 values | 100% | 5 | 0x00010000, 0x00010001, 0x00010002, 0x00010003, 0x00020003 |
+| `+0x018` | 4 | float, map coordinate range [0.0, 1457.9] | 100% | "48+" |  |
+| `+0x01c` | 4 | u32, wide range (hash or id) | 100% | "48+" |  |
+| `+0x020` | 8 | pointer to heap (array, count at +8, up to 16 entries) | 100% | "48+" |  |
+| `+0x028` | 4 | constant 0x00000010 | 100% | 1 | 0x00000010 |
+| `+0x02c` | 4 | constant 0x00000010 | 100% | 1 | 0x00000010 |
+| `+0x030` | 4 | u32, wide range (hash or id) | 100% | 14 | 0x00000000, 0x04ff9b81, 0x05b38866, 0x12247b5b, 0x1b4306cc, 0x4212b3ad |
 
 ## *(no class name)* — netid 465
 
@@ -2380,7 +2547,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x018` | 8 | pointer to string | 100% | 2 | "SOG_NEXUS", "SOG_CHAOS_MID", "SOG_ORDER_TOP", "RUNETIMER_CHAOS_MID", "SOG_LASER", "SOG_ORDER_BOT" |
 | `+0x020` | 4 | u32 enum, 5 values | 100% | 5 | 3, 9, 10, 13, 19 |
@@ -2393,7 +2560,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | float, map coordinate range [0.0, 1264.8] | 100% | "48+" |  |
 
 ## PKT_S2C_SetGreyscaleEnabledWhenDead_s — netid 156
@@ -2411,7 +2578,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 counter, max 232 | 100% | 16 | 155, 157, 164, 172, 174, 175 |
 | `+0x014` | 4 | u32 enum, 3 values | 100% | 3 | 0x1f671180, 0x60fd8a21, 0xc03c9e4e |
 | `+0x018` | 4 | net id, 0 when unset | 100% | 24 | 0x00000000, 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b4 |
@@ -2508,10 +2675,10 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | u16 enum, 3 values | 100% | 3 | 0, 1, 2 |
-| `+0x01c` | 4 | net id, equals the block's `param` | 100% | 2 | 0x00000000, 0x00640000 |
-| `+0x020` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x01c` | 4 | u32 enum, 2 values | 100% | 2 | 0, 0x00640000 |
+| `+0x020` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x024` | 4 | net id | 100% | 8 | 0x400000ae, 0x400000af, 0x400000b1, 0x400000b2, 0x400000b3, 0x400000b4 |
 | `+0x028` | 1 | u8 enum, 7 values | 100% | 7 | 0, 1, 2, 3, 4, 6 |
 | `+0x02c` | 4 | net id | 100% | 9 | 0x400000ae, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b3, 0x400000b4 |
@@ -2546,23 +2713,23 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x014` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x014` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x020` | 2 | constant 0x00000100 | 100% | 1 | 0x00000100 |
 | `+0x024` | 4 | constant 0x41a00000 | 100% | 1 | 0x41a00000 |
 | `+0x028` | 4 | net id | 100% | "48+" |  |
-| `+0x02c` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x030` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x034` | 4 | net id | 100% | 2 | 0x400000b5, 0x400000b6 |
+| `+0x02c` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x030` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x034` | 4 | pointer into the game image (vtable or static) | 100% | 2 | 0x400000b5, 0x400000b6 |
 | `+0x038` | 2 | constant 0x00000001 | 100% | 1 | 0x00000001 |
-| `+0x03c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x03c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x040` | 4 | constant 0x00020000 | 100% | 1 | 0x00020000 |
 | `+0x044` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
 | `+0x048` | 4 | float [0.0, 35.0] | 100% | 2 | 30.00, 35.00 |
 | `+0x04c` | 4 | float, map coordinate range [0.0, 150.0] | 100% | 2 | 130.00, 150.00 |
-| `+0x050` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x054` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x050` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x054` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x058` | 4 | float, map coordinate range [0.0, 14232.0] | 100% | "48+" |  |
 | `+0x05c` | 4 | float, map coordinate range [0.0, 13776.0] | 100% | "48+" |  |
 | `+0x060` | 4 | constant 0x447a0000 | 100% | 1 | 0x447a0000 |
@@ -2677,7 +2844,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id, 0 when unset | 100% | 11 | 0x00000000, 0x400000ae, 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2 |
 | `+0x014` | 4 | net id | 100% | 21 | 0x40000088, 0x4000008b, 0x4000008c, 0x4000008d, 0x4000008e, 0x40000092 |
 
@@ -2687,7 +2854,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 3 values | 100% | 3 | 0, 1, 6 |
 | `+0x014` | 4 | net id | 100% | "48+" |  |
 
@@ -2821,7 +2988,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x028` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x02c` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
 | `+0x030` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
-| `+0x038` | 8 | pointer to heap (array, count at +8, up to 41 entries) | 100% | 7 |  |
+| `+0x038` | 8 | pointer to array, 28-byte entries, up to 41 | 100% | 7 |  |
 | `+0x040` | 4 | constant 0x00000029 | 100% | 1 | 0x00000029 |
 | `+0x044` | 4 | constant 0x00000029 | 100% | 1 | 0x00000029 |
 | `+0x048` | 8 | pointer to string | 100% | 7 | "SRU_ChaosMinionRanged", "SRU_ChaosMinionMelee", "Xerath" |
@@ -2840,6 +3007,18 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x088` | 4 | constant 0x00000005 | 100% | 1 | 0x00000005 |
 | `+0x08c` | 4 | constant 0x00000007 | 100% | 1 | 0x00000007 |
 | `+0x090` | 2 | constant 0x00000100 | 100% | 1 | 0x00000100 |
+
+One entry of the array at `+0x038`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4c1f0) | 100% | 1 | 0x41a4c1f0 |
+| `+0x008` | 4 | float [0.0, 0.3], 0 when unset | 100% | 5 | 0.00, 0.09, 0.12, 0.13, 0.27 |
+| `+0x00c` | 4 | float, map coordinate range [-100.0, 223.7], 0 when unset | 100% | 37 | 0.00, 0.03, 0.03, 0.09, 0.09, 0.12 |
+| `+0x010` | 4 | float, map coordinate range [0.0, 1849.6], 0 when unset | 100% | "48+" |  |
+| `+0x014` | 1 | u8 counter, max 40 | 100% | 41 | 0, 1, 2, 3, 4, 5 |
+| `+0x018` | 4 | float, map coordinate range [0.0, 1849.6], 0 when unset | 100% | "48+" |  |
+| `+0x01c` | 4 | float [0.0, 1.2], 0 when unset | 100% | 6 | 0.00, 0.62, 0.66, 0.67, 0.69, 1.25 |
 
 ## PKT_SetItem_s — netid 873
 
@@ -2871,10 +3050,10 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 counter, max 10 | 100% | 9 | 1, 2, 3, 4, 6, 7 |
-| `+0x014` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x018` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x014` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x018` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x020` | 8 | pointer to string | 100% | 4 | "ggwp" |
 | `+0x028` | 4 | u32 counter, max 54 | 100% | 17 | 2, 4, 5, 8, 9, 10 |
 | `+0x02c` | 4 | u32 counter, max 55 | 100% | 14 | 3, 5, 7, 9, 11, 15 |
@@ -2902,9 +3081,9 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
-| `+0x014` | 4 | net id, equals the block's `param` | 100% | 2 | 0x00000000, 0x40400000 |
+| `+0x014` | 4 | net id, 0 when unset | 100% | 2 | 0x00000000, 0x40400000 |
 | `+0x018` | 4 | u32, wide range (hash or id) | 100% | 16 | 0x0125cad8, 0x2936ed63, 0x2978241b, 0x309b774b, 0x3e5a58ce, 0x5086eb70 |
 
 ## *(no class name)* — netid 835
@@ -2913,7 +3092,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 4 values | 100% | 4 | 3, 4, 6, 12 |
 
 ## *(no class name)* — netid 19
@@ -2922,7 +3101,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 8 | 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b4, 0x400000b5 |
 | `+0x014` | 1 | constant 0x0000003e | 100% | 1 | 0x0000003e |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 0x0a7304e4, 0x0f4a5fe4 |
@@ -2933,7 +3112,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | constant 0x3f800000 | 100% | 1 | 0x3f800000 |
 | `+0x014` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x018` | 4 | float [0.0, 0.3], 0 when unset | 100% | 2 | 0.00, 0.30 |
@@ -2946,11 +3125,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 4 | 0x400000b0, 0x400000b1, 0x400000b6, 0x400000b7 |
 | `+0x014` | 1 | constant 0x00000002 | 100% | 1 | 0x00000002 |
 | `+0x018` | 4 | net id | 100% | 6 | 0x400000ae, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b6, 0x400000b7 |
-| `+0x01c` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x01c` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x020` | 4 | u32 enum, 3 values | 100% | 3 | 1, 2, 3 |
 
 ## PKT_S2C_ResetCameraZoom_s — netid 203
@@ -2980,7 +3159,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x018` | 2 | u16 counter, max 2561 | 100% | 10 | 257, 513, 769, 1025, 1281, 1537 |
 | `+0x01c` | 4 | constant 0x42c80000 | 100% | 1 | 0x42c80000 |
 | `+0x020` | 2 | u16 counter, max 60 | 100% | 21 | 9, 14, 16, 17, 18, 22 |
@@ -2991,7 +3170,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 2 | constant 0x00000006 | 100% | 1 | 0x00000006 |
 | `+0x014` | 4 | constant 0xf810361e | 100% | 1 | 0xf810361e |
 | `+0x018` | 4 | net id | 100% | 5 | 0x400000af, 0x400000b0, 0x400000b3, 0x400000b4, 0x400000b7 |
@@ -3068,7 +3247,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 8 values | 100% | 8 | 0x00640006, 0x00640106, 0x00640206, 0x00640306, 0x00640406, 0x00c80006 |
 | `+0x018` | 8 | pointer to heap (array, count at +8, up to 1 entries) | 100% | 1 |  |
 | `+0x020` | 4 | constant 0x00000001 | 100% | 1 | 0x00000001 |
@@ -3080,12 +3259,12 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 counter, max 6676 | 100% | 13 | 2065, 3033, 3036, 3089, 3107, 3153 |
 | `+0x014` | 2 | constant 0x00000200 | 100% | 1 | 0x00000200 |
 | `+0x018` | 4 | net id | 100% | 6 | 0x400000ae, 0x400000b0, 0x400000b1, 0x400000b4, 0x400000b6, 0x400000b7 |
 | `+0x01c` | 4 | float [-936.9, 2554.7] | 100% | 19 | 286.30, 326.98, 388.96, 505.30, 548.40, 1068.89 |
-| `+0x020` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x020` | 1 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 1107
 
@@ -3093,7 +3272,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | float, game time (s), 0 when unset | 100% | 17 | 0.00, 845.43, 860.40, 915.37, 930.36, 945.38 |
 | `+0x014` | 2 | u16 enum, 3 values | 100% | 3 | 0, 100, 200 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 1905.5], 0 when unset | 100% | 17 | 0.00, 860.40, 860.43, 930.36, 930.37, 960.36 |
@@ -3107,9 +3286,47 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 6 | 0x400000ae, 0x400000af, 0x400000b0, 0x400000b3, 0x400000b5, 0x400000b6 |
 | `+0x018` | 4 | always 0 | 100% | 1 | 0 |
-| `+0x020` | 8 | pointer to heap (array, count at +8, up to 9 entries) | 100% | 6 |  |
+| `+0x020` | 8 | pointer to array, 132-byte entries, up to 9 | 100% | 6 |  |
 | `+0x028` | 4 | u32 enum, 6 values | 100% | 6 | 4, 5, 6, 7, 8, 9 |
 | `+0x02c` | 4 | u32 enum, 6 values | 100% | 6 | 4, 5, 6, 7, 8, 9 |
+
+One entry of the array at `+0x020`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4edb8) | 100% | 1 | 0x41a4edb8 |
+| `+0x008` | 8 | vtable, one class for every entry (image +0x1a4ed68) | 100% | 1 | 0x41a4ed68 |
+| `+0x010` | 4 | u32 counter, max 6699 | 100% | 46 | 1001, 1036, 1037, 1043, 1052, 1055 |
+| `+0x014` | 1 | u8 counter, max 8 | 100% | 9 | 0, 1, 2, 3, 4, 5 |
+| `+0x018` | 4 | float, map coordinate range [0.0, 3333.0], 0 when unset | 100% | 25 | 0.00, 300.00, 350.00, 400.00, 450.00, 700.00 |
+| `+0x01c` | 2 | u16 enum, 2 values | 100% | 2 | 0, 6 |
+| `+0x020` | 4 | u32 enum, 3 values | 100% | 3 | 0, 1264, 1440 |
+| `+0x024` | 4 | u32 enum, 2 values | 100% | 2 | 0, 32766 |
+| `+0x028` | 4 | u32 enum, 2 values | 100% | 2 | 0, 1 |
+| `+0x02c` | 4 | u32 enum, 2 values | 100% | 2 | 0, 1 |
+| `+0x030` | 8 | vtable, one class for every entry (image +0x1961958) | 100% | 1 | 0x41961958 |
+| `+0x038` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x03c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x040` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x044` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x048` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x04c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x050` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x054` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x058` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x05c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x060` | 2 | u16 enum, 2 values | 100% | 2 | 1, 257 |
+| `+0x068` | 8 | vtable, one class for every entry (image +0x1961958) | 100% | 1 | 0x41961958 |
+| `+0x070` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x074` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x078` | 4 | float, map coordinate range [0.0, 420.0], 0 when unset | 100% | 6 | 0.00, 79.53, 90.00, 140.12, 183.88, 420.00 |
+| `+0x07c` | 2 | u16 enum, 2 values | 100% | 2 | 2, 65535 |
+| `+0x080` | 4 | float, map coordinate range [0.0, 141.4], 0 when unset | 100% | 15 | 0.00, 17.35, 26.43, 44.21, 50.99, 51.46 |
+| `+0x084` | 4 | float [-1.0, 347.2] | 100% | 10 | 17.35, 50.99, 51.46, 53.53, 59.46, 73.57 |
+| `+0x088` | 4 | float [0.0, 90.0], 0 when unset | 100% | 4 | 0.00, 12.00, 54.00, 90.00 |
+| `+0x08c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x090` | 4 | float, map coordinate range [0.0, 193.1], 0 when unset | 100% | 10 | 0.00, 79.98, 114.00, 115.88, 132.04, 143.65 |
+| `+0x094` | 2 | u16 enum, 3 values | 100% | 3 | 0, 1, 2 |
 
 ## PKT_S2C_SetForceMuted_s — netid 441
 
@@ -3127,7 +3344,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 3 | "Minimap_Hextech" |
 | `+0x018` | 4 | u32 enum, 5 values | 100% | 5 | 13, 15, 16, 29, 32 |
 | `+0x01c` | 4 | u32 enum, 4 values | 100% | 4 | 15, 17, 31, 33 |
@@ -3139,9 +3356,17 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 8 | 0x400000af, 0x400000b0, 0x400000b1, 0x400000b2, 0x400000b4, 0x400000b5 |
-| `+0x018` | 8 | pointer to heap (array, count at +8, up to 2 entries) | 100% | 2 |  |
+| `+0x018` | 8 | pointer to array, 12-byte entries, up to 2 | 100% | 2 |  |
 | `+0x020` | 4 | u32 enum, 2 values | 100% | 2 | 1, 2 |
 | `+0x024` | 4 | u32 enum, 2 values | 100% | 2 | 1, 2 |
+
+One entry of the array at `+0x018`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | vtable, one class for every entry (image +0x1a4ed90) | 100% | 1 | 0x41a4ed90 |
+| `+0x008` | 4 | u32 enum, 2 values | 100% | 2 | 0x85c3d037, 0xa0be64e2 |
+| `+0x00c` | 4 | constant 0x00000001 | 100% | 1 | 0x00000001 |
 
 ## *(no class name)* — netid 239
 
@@ -3183,7 +3408,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x018` | 8 | pointer to heap (array, count at +8, up to 1 entries) | 93.8% | 1 |  |
 | `+0x020` | 4 | u32 enum, 2 values | 100% | 2 | 0, 1 |
@@ -3214,7 +3439,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 1 | "DragonElderMinimap", "DragonEarthMinimap", "DragonFireMinimap", "DragonWaterMinimap" |
 | `+0x018` | 4 | u32 enum, 4 values | 100% | 4 | 17, 18, 20, 21 |
 | `+0x01c` | 4 | u32 enum, 3 values | 100% | 3 | 19, 21, 23 |
@@ -3226,7 +3451,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | constant 0x00000006 | 100% | 1 | 0x00000006 |
 | `+0x014` | 4 | u32 enum, 6 values | 100% | 6 | 0x18046857, 0x4e210a5f, 0x548da40a, 0x7e6172e9, 0xace01ae2, 0xbc0a85e2 |
 
@@ -3236,8 +3461,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x014` | 1 | u8 enum, 3 values | 100% | 3 | 0, 1, 2 |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 100, 200 |
 | `+0x01c` | 1 | u8 enum, 5 values | 100% | 5 | 0, 1, 2, 3, 4 |
@@ -3276,7 +3501,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 641
 
@@ -3284,7 +3509,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 887
 
@@ -3292,7 +3517,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 4 | 0x400000ae, 0x400000af, 0x400000b1, 0x400000b6 |
 | `+0x014` | 2 | constant 0x00000200 | 100% | 1 | 0x00000200 |
 | `+0x018` | 4 | net id | 100% | 3 | 0x400000b1, 0x400000b3, 0x400000b6 |
@@ -3323,17 +3548,17 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 1 | "NorthVista", "SouthBaseVista" |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 10, 14 |
 | `+0x01c` | 4 | u32 enum, 2 values | 100% | 2 | 11, 15 |
 | `+0x020` | 2 | constant 0x00000100 | 100% | 1 | 0x00000100 |
 | `+0x024` | 4 | constant 0x00000002 | 100% | 1 | 0x00000002 |
-| `+0x028` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x028` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x02c` | 4 | net id | 100% | 4 | 0x4000015d, 0x4000015f, 0x40000175, 0x40000177 |
-| `+0x030` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x030` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x034` | 4 | constant 0x00000001 | 100% | 1 | 0x00000001 |
-| `+0x038` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x038` | 1 | always 0 | 100% | 1 | 0 |
 
 ## PKT_S2C_SetMovementDriver_s — netid 500
 
@@ -3343,16 +3568,28 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 |--------|--:|------|--------:|---------:|-------------|
 | `+0x00c` | 4 | sender net id (block `param`) | 100% | 3 | 0x400000af, 0x400000b3, 0x400000b4 |
 | `+0x010` | 2 | u16 enum, 2 values | 100% | 2 | 0, 257 |
-| `+0x018` | 8 | pointer to heap (array, count at +8, up to 3 entries) | 55.6% | 1 |  |
+| `+0x018` | 8 | pointer to array, 4-byte entries, up to 3 | 55.6% | 1 |  |
 | `+0x020` | 4 | u32 enum, 2 values | 100% | 2 | 0, 3 |
 | `+0x024` | 4 | constant 0x00000003 | 55.6% | 1 | 0x00000003 |
 | `+0x028` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
-| `+0x030` | 8 | pointer to heap (array, count at +8, up to 3 entries) | 55.6% | 1 |  |
+| `+0x030` | 8 | pointer to array, 4-byte entries, up to 3 | 55.6% | 1 |  |
 | `+0x038` | 4 | u32 enum, 2 values | 100% | 2 | 0, 3 |
 | `+0x03c` | 4 | constant 0x00000003 | 55.6% | 1 | 0x00000003 |
 | `+0x040` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x044` | 4 | float [0.0, 1.0], 0 when unset | 100% | 2 | 0.00, 1.00 |
 | `+0x048` | 1 | u8 enum, 2 values | 100% | 2 | 1, 2 |
+
+One entry of the array at `+0x018`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 4 | float [0.0, 10.0] | 100% | 7 | 2.50, 2.75, 3.00, 3.50, 4.00, 5.00 |
+
+One entry of the array at `+0x030`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 4 | float [0.0, 2.0], 0 when unset | 100% | 3 | 0.00, 1.00, 2.00 |
 
 ## *(no class name)* — netid 834
 
@@ -3427,11 +3664,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 4 values | 100% | 4 | 0xa50bf801, 0xa50bf804, 0xa50bf809, 0xa50bf80a |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 0x01000000, 0x01010000 |
 | `+0x01c` | 4 | constant 0x00010001 | 100% | 1 | 0x00010001 |
-| `+0x020` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x020` | 2 | always 0 | 100% | 1 | 0 |
 
 ## PKT_HealthBar_Icon_Add_S2C_s — netid 690
 
@@ -3454,7 +3691,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | constant 0x00000006 | 100% | 1 | 0x00000006 |
 | `+0x014` | 4 | u32 enum, 4 values | 100% | 4 | 0x029a55be, 0x94188994, 0xd1728d46, 0xd4705991 |
 | `+0x018` | 2 | u16 enum, 2 values | 100% | 2 | 0, 100 |
@@ -3465,7 +3702,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | constant 0x00000002 | 100% | 1 | 0x00000002 |
 | `+0x014` | 4 | constant 0x400000b4 | 100% | 1 | 0x400000b4 |
 | `+0x018` | 4 | u32 enum, 7 values | 100% | 7 | 738, 1110, 1617, 1778, 2533, 2667 |
@@ -3476,7 +3713,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 2 | "game_ping_spell_SmiteDamageOnCooldown", "game_ping_globalspell_Cooldown" |
 | `+0x018` | 4 | u32 enum, 2 values | 100% | 2 | 30, 37 |
 | `+0x01c` | 4 | u32 enum, 2 values | 100% | 2 | 31, 39 |
@@ -3490,7 +3727,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x050` | 1 | u8 enum, 2 values | 100% | 2 | 0, 1 |
 | `+0x054` | 4 | u32 enum, 2 values | 100% | 2 | 3, 4 |
 | `+0x058` | 4 | net id | 100% | 2 | 0x400000af, 0x400000b4 |
-| `+0x05c` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x05c` | 2 | always 0 | 100% | 1 | 0 |
 | `+0x060` | 4 | u32 enum, 2 values | 100% | 2 | 32, 552 |
 | `+0x064` | 4 | float [0.0, 36.0] | 100% | 7 | 13.94, 14.51, 15.14, 21.47, 29.24, 30.77 |
 | `+0x068` | 2 | u16 enum, 2 values | 100% | 2 | 2, 65535 |
@@ -3502,7 +3739,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | u8 enum, 4 values | 100% | 4 | 1, 4, 9, 10 |
 
 ## *(no class name)* — netid 86
@@ -3511,7 +3748,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 3 values | 100% | 3 | 1, 2, 257 |
 | `+0x014` | 4 | constant 0x00000002 | 100% | 1 | 0x00000002 |
 
@@ -3521,11 +3758,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x014` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x018` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x01c` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x014` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x018` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x01c` | 4 | always 0 | 100% | 1 | 0 |
 
 ## PKT_S2C_PlaySpellCastAnimation_s — netid 276
 
@@ -3559,7 +3796,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | constant 0x400000ae | 100% | 1 | 0x400000ae |
 | `+0x014` | 4 | constant 0x00020029 | 100% | 1 | 0x00020029 |
 | `+0x018` | 4 | constant 0x00002320 | 100% | 1 | 0x00002320 |
@@ -3571,7 +3808,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 3 values | 100% | 3 | 0x00070001, 0x00080000, 0x00090000 |
 | `+0x014` | 4 | constant 0x000000c8 | 100% | 1 | 0x000000c8 |
 
@@ -3581,11 +3818,11 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | constant 0x00000002 | 100% | 1 | 0x00000002 |
 | `+0x014` | 4 | net id | 100% | 4 | 0x400000af, 0x400000b0, 0x400000b1, 0x400000b4 |
 | `+0x018` | 4 | float, map coordinate range [0.0, 3852.6] | 100% | 5 | 1553.68, 1727.80, 1865.30, 1866.32, 3852.57 |
-| `+0x01c` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x01c` | 1 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 999
 
@@ -3593,7 +3830,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | net id | 100% | 2 | 0x400000a8, 0x400000ac |
 | `+0x014` | 4 | net id, 0 when unset | 100% | 4 | 0x00000000, 0x400000b1, 0x400000b5, 0x400000b6 |
 
@@ -3603,8 +3840,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x014` | 1 | u8 enum, 2 values | 100% | 2 | 100, 200 |
 | `+0x018` | 4 | constant 0x40000000 | 100% | 1 | 0x40000000 |
 
@@ -3614,26 +3851,26 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x018` | 8 | pointer to heap | 100% | 1 |  |
 | `+0x020` | 4 | constant 0x00000024 | 100% | 1 | 0x00000024 |
 | `+0x024` | 4 | constant 0x00000025 | 100% | 1 | 0x00000025 |
 | `+0x028` | 4 | constant 0x6154a560 | 100% | 1 | 0x6154a560 |
 | `+0x02c` | 4 | constant 0x000ba966 | 100% | 1 | 0x000ba966 |
-| `+0x030` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x038` | 8 | pointer to heap (array, count at +8, up to 4 entries) | 100% | 1 |  |
+| `+0x030` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x038` | 8 | pointer to array, 12-byte entries, up to 4 | 100% | 1 |  |
 | `+0x040` | 4 | constant 0x00000004 | 100% | 1 | 0x00000004 |
 | `+0x044` | 4 | constant 0x00000004 | 100% | 1 | 0x00000004 |
-| `+0x048` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x048` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x060` | 4 | float, game time (s) | 100% | 2 | 778.01, 1684.00 |
-| `+0x070` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x078` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x080` | 8 | pointer to heap (array, count at +8, up to 4 entries) | 100% | 1 |  |
+| `+0x070` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x078` | 1 | always 0 | 100% | 1 | 0 |
+| `+0x080` | 8 | pointer to array, 12-byte entries, up to 4 | 100% | 1 |  |
 | `+0x088` | 4 | constant 0x00000004 | 100% | 1 | 0x00000004 |
 | `+0x08c` | 4 | constant 0x00000004 | 100% | 1 | 0x00000004 |
 | `+0x098` | 4 | constant 0x01010100 | 100% | 1 | 0x01010100 |
 | `+0x09c` | 4 | u32 enum, 2 values | 100% | 2 | 0x01000100, 0x01000101 |
-| `+0x0a0` | 2 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x0a0` | 2 | always 0 | 100% | 1 | 0 |
 | `+0x0a4` | 4 | constant 0x00000feb | 100% | 1 | 0x00000feb |
 | `+0x0a8` | 1 | constant 0x00000009 | 100% | 1 | 0x00000009 |
 | `+0x0b0` | 8 | pointer to string | 100% | 1 | "Rank1" |
@@ -3643,6 +3880,22 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x0c8` | 8 | pointer to string | 100% | 1 | "Rank1Irelia" |
 | `+0x0d0` | 4 | constant 0x0000000b | 100% | 1 | 0x0000000b |
 | `+0x0d4` | 4 | constant 0x0000000d | 100% | 1 | 0x0000000d |
+
+One entry of the array at `+0x038`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | pointer to heap | 100% | 4 |  |
+| `+0x008` | 4 | u32 enum, 3 values | 100% | 3 | 7, 10, 14 |
+| `+0x00c` | 4 | u32 enum, 3 values | 100% | 3 | 9, 11, 15 |
+
+One entry of the array at `+0x080`:
+
+| offset | w | kind | present | distinct | values seen |
+|--------|--:|------|--------:|---------:|-------------|
+| `+0x000` | 8 | pointer to heap | 100% | 4 |  |
+| `+0x008` | 4 | u32 enum, 4 values | 100% | 4 | 2, 17, 100, 571 |
+| `+0x00c` | 4 | u32 enum, 4 values | 100% | 4 | 3, 19, 101, 573 |
 
 ## PKT_S2C_ChangeCharacterVoice_s — netid 279
 
@@ -3662,7 +3915,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | u32 enum, 3 values | 100% | 3 | 0x53c208b2, 0x9f207752, 0xe092b0cd |
 
 ## PKT_S2C_ChangeMissileTarget_s — netid 474
@@ -3683,12 +3936,12 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x010` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x010` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x028` | 8 | pointer to heap | 100% | 1 |  |
 | `+0x030` | 4 | u32 enum, 3 values | 100% | 3 | 39, 41, 42 |
 | `+0x034` | 4 | u32 enum, 2 values | 100% | 2 | 41, 43 |
-| `+0x038` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x038` | 4 | always 0 | 100% | 1 | 0 |
 
 ## PKT_S2C_SetMinimapIconSizeOverride_s — netid 94
 
@@ -3705,8 +3958,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x018` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x018` | 4 | always 0 | 100% | 1 | 0 |
 
 ## PKT_S2C_SetMinimapIconBehaviorSetKeyHash_Broadcast_s — netid 331
 
@@ -3724,7 +3977,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 1 | constant 0x00000009 | 100% | 1 | 0x00000009 |
 
 ## PKT_S2C_SetMinimapIconBehaviorSetKeyHash_s — netid 595
@@ -3743,8 +3996,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x018` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x018` | 4 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 861
 
@@ -3752,8 +4005,8 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
-| `+0x018` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x018` | 4 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 1048
 
@@ -3761,12 +4014,12 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | constant 0x40400000 | 100% | 1 | 0x40400000 |
 | `+0x014` | 4 | float, map coordinate range [0.0, 13052.0] | 100% | 2 | 1748.00, 13052.00 |
 | `+0x018` | 4 | constant 0x42b00000 | 100% | 1 | 0x42b00000 |
 | `+0x01c` | 4 | float, map coordinate range [0.0, 12612.0] | 100% | 2 | 2270.00, 12612.00 |
-| `+0x020` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x020` | 4 | always 0 | 100% | 1 | 0 |
 
 ## *(no class name)* — netid 1049
 
@@ -3774,7 +4027,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 8 | pointer to string | 100% | 1 | "game_ping_item_goldtoquestcomplete" |
 | `+0x018` | 4 | constant 0x00000022 | 100% | 1 | 0x00000022 |
 | `+0x01c` | 4 | constant 0x00000023 | 100% | 1 | 0x00000023 |
@@ -3782,13 +4035,13 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 | `+0x038` | 8 | pointer to heap | 100% | 1 |  |
 | `+0x040` | 4 | constant 0x00000003 | 100% | 1 | 0x00000003 |
 | `+0x044` | 4 | constant 0x00000005 | 100% | 1 | 0x00000005 |
-| `+0x050` | 4 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
-| `+0x054` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x050` | 4 | always 0 | 100% | 1 | 0 |
+| `+0x054` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x058` | 4 | constant 0x400000b2 | 100% | 1 | 0x400000b2 |
-| `+0x05c` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x05c` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x060` | 4 | constant 0x400000b2 | 100% | 1 | 0x400000b2 |
 | `+0x064` | 4 | constant 0xbf800000 | 100% | 1 | 0xbf800000 |
-| `+0x068` | 1 | net id, equals the block's `param` | 100% | 1 | 0x00000000 |
+| `+0x068` | 1 | always 0 | 100% | 1 | 0 |
 | `+0x06c` | 4 | constant 0x00000f19 | 100% | 1 | 0x00000f19 |
 
 ## PKT_S2C_SetShopEnabled_s — netid 1120
@@ -3806,7 +4059,7 @@ A field here is a measurement, not a name. Classes with a handler in `src/packet
 
 | offset | w | kind | present | distinct | values seen |
 |--------|--:|------|--------:|---------:|-------------|
-| `+0x00c` | 4 | sender net id (block `param`) | 100% | 1 | 0x00000000 |
+| `+0x00c` | 4 | always 0 | 100% | 1 | 0 |
 | `+0x010` | 4 | constant 0x00640003 | 100% | 1 | 0x00640003 |
 
 ## PKT_S2C_ShowTrophy_s — netid 563

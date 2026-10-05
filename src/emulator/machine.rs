@@ -64,6 +64,10 @@ pub struct MachineState {
     plain: Vec<u8>,
     /// Per heap byte: FLAG_READ | FLAG_PLAIN.
     flags: Vec<u8>,
+    /// Every block handed out since the last reset, as (address, size).
+    /// The deserializer's own allocation sizes are exact, which is how
+    /// `fields` knows an array's entry size instead of guessing it.
+    allocs: Vec<(u64, u64)>,
 }
 
 impl MachineState {
@@ -75,6 +79,7 @@ impl MachineState {
         }
         self.heap_cursor = end;
         self.heap_high = self.heap_high.max(end);
+        self.allocs.push((ptr, size));
         Some(ptr)
     }
 
@@ -136,6 +141,7 @@ impl Machine {
         let state = MachineState {
             heap_cursor: HEAP_BASE,
             heap_high: HEAP_BASE,
+            allocs: Vec::new(),
             capturing: false,
             plain: Vec::new(),
             flags: Vec::new(),
@@ -280,6 +286,7 @@ impl Machine {
         let used = (st.heap_high - HEAP_BASE) as usize;
         st.heap_cursor = HEAP_BASE;
         st.heap_high = HEAP_BASE;
+        st.allocs.clear();
         let n = used.min(st.flags.len());
         st.flags[..n].fill(0);
         st.plain[..n].fill(0);
@@ -293,6 +300,11 @@ impl Machine {
 
     pub fn heap_cursor(&self) -> u64 {
         self.uc.get_data().heap_cursor
+    }
+
+    /// Every heap block handed out since the last reset, (address, size).
+    pub fn allocations(&self) -> &[(u64, u64)] {
+        &self.uc.get_data().allocs
     }
 
     pub fn set_capture(&mut self, on: bool) {
@@ -399,6 +411,7 @@ mod tests {
         MachineState {
             heap_cursor: HEAP_BASE,
             heap_high: HEAP_BASE,
+            allocs: Vec::new(),
             capturing: true,
             plain: Vec::new(),
             flags: Vec::new(),

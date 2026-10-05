@@ -126,16 +126,19 @@ classes. Where they land on 16.9:
 
 All decode clean; what is known about each from its decoded object:
 
+Measured layouts for all of them are in [FIELDS.md](FIELDS.md); the
+summaries below are read off those tables.
+
 | netid | share of blocks | what the object holds |
 |------:|----------------:|-----------------------|
-| 707 | 5.0 % | one small enum, no net id (2-3 byte payload) |
-| 806 | 3.3 % | a vector of ~15 per-champion entries (champion net id, a float near game time, small counters): a periodic champion-state sync |
-| 684 | 3.1 % | a net id (`+0x14`) and one small field |
+| 707 | 5.0 % | three small enums (6, 2 and 3 values) and no net id at all: the sender field is 0 on every block, so it is about the game, not a unit |
+| 806 | 3.3 % | an array of up to 109 polymorphic 40-byte entries, all one class (vtable at image `+0x1a53a38`), each with a unit net id, a counter, a 4-value enum and a 16-byte buffer |
+| 684 | 3.1 % | a net id (`+0x14`) and one always-zero field |
 | 916 | 2.6 % | WaypointGroup (TYPED) |
 | 406 | 2.3 % | a champion net id and a float |
 | 347 | 1.0 % | a count, a buffer and a float near game time: same shape as WaypointGroup plus a time; a candidate for Zhu's `WaypointGroupWithSpeed` |
 | 807 | 1.0 % | a counter and a net id |
-| 446 | 0.8 % | a vector of 88-byte entries, each with nested objects, team bitsets and net ids: candidate for `Replication` |
+| 446 | 0.8 % | an array of up to 19 polymorphic 64-byte entries (vtable at image `+0x19f70c8`), each with two more nested arrays, several 32-bit hashes and paired 6-value enums: candidate for `Replication` |
 | 214 | 0.1 % | SpawnMinion (TYPED) |
 
 ---

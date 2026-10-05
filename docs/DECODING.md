@@ -157,9 +157,17 @@ and counters all come out exact.
 
 ## 6. Riot's class names
 
-Release builds strip RTTI, but `std::function` keeps a `type_info` for
-the lambdas `Riot::MakeFunction<Client, ..., const PKT_X_s&>` wraps. Their
-type descriptors are still in `.data`, e.g.
+Release builds strip RTTI for the packet classes. Measured on 16.9:
+`.data` holds 174 distinct MSVC type descriptors, every one of them a
+`std::` type or a `std::function` binder, and not one a `PKT_*`. So the
+shortcut of constructing a packet through the factory and reading the
+class name out of the vtable's `CompleteObjectLocator` does not work;
+it was tried and returns nothing for every netid.
+
+What survives is indirect. `std::function` keeps a `type_info` for the
+lambdas `Riot::MakeFunction<Client, ..., const PKT_X_s&>` wraps, and the
+class name is spelled inside the lambda's own descriptor. Those are
+still in `.data`, e.g.
 
 ```
 .?AV<lambda_1>@?1???$MakeFunction@VJunglePathComponentClient@@V1@_NAEBVPKT_S2C_UpdateJunglePathDisplayed_s@@@Riot@@...
@@ -208,6 +216,7 @@ Three independent levels:
    | final items, 7 slots | replay of buy / remove / swap / use answers | 50 / 50 |
    | damage dealt to champions | sum of `PKT_UnitApplyDamage_s` amounts, champion → enemy champion | 50 / 50 (within 2 points of float rounding) |
    | wards placed | ward spawns owned by the player | 50 / 50 |
+   | visibility | every `PKT_S2C_On{Enter,Leave}TeamVisibility_s` for a champion names the *other* team | 50 / 50 |
 
 ## Limits
 
@@ -218,7 +227,8 @@ Three independent levels:
   protection, which ROFL-X will not do (README § Non-goals). See
   [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Unnamed classes stay unnamed** unless a shape recogniser covers them:
-  they are decoded (clean) but not typed.
+  they are decoded (clean) but not typed. Their fields are still
+  measured, class by class, in [FIELDS.md](FIELDS.md).
 - **Absent fields read as their defaults.** A field the stream did not
   carry holds the constant the deserializer stored for it, which is the
   value the game itself uses.

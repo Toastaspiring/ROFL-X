@@ -56,6 +56,8 @@ pub struct PlainMemory {
     base: u64,
     bytes: Vec<u8>,
     written: Vec<bool>,
+    /// Heap blocks the decode allocated, (address, size), in order.
+    allocs: Vec<(u64, u64)>,
 }
 
 impl PlainMemory {
@@ -82,6 +84,18 @@ impl PlainMemory {
 
     pub fn f32(&self, addr: u64) -> Option<f32> {
         self.u32(addr).map(f32::from_bits)
+    }
+
+    /// First address past the captured heap.
+    pub fn end(&self) -> u64 {
+        self.base + self.bytes.len() as u64
+    }
+
+    /// Size of the heap block that starts exactly at `addr`, as the
+    /// deserializer asked for it. This is what makes an array's entry
+    /// size a measurement and not a guess.
+    pub fn block_size(&self, addr: u64) -> Option<u64> {
+        self.allocs.iter().find(|(a, _)| *a == addr).map(|(_, n)| *n)
     }
 
     /// Whether the deserializer stored a plaintext value at `addr`.
@@ -318,6 +332,7 @@ impl PacketDecoder {
                     base: HEAP_BASE,
                     bytes: Vec::new(),
                     written: Vec::new(),
+                    allocs: Vec::new(),
                 },
             });
         }
@@ -356,6 +371,7 @@ impl PacketDecoder {
                 base: HEAP_BASE,
                 bytes,
                 written,
+                allocs: m.allocations().to_vec(),
             },
         })
     }
@@ -380,6 +396,7 @@ mod tests {
             base: 0x1000,
             bytes: vec![0xAE, 0, 0, 0x40, 0, 0, 0x80, 0x3F, b'h', b'i', 0],
             written: vec![true; 11],
+            allocs: vec![(0x1000, 11)],
         };
         assert_eq!(m.u32(0x1000), Some(0x4000_00AE));
         assert_eq!(m.f32(0x1004), Some(1.0));

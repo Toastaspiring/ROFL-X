@@ -27,12 +27,13 @@
 //! renders it as `docs/FIELDS.md`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ops::Range;
 
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::emulator::machine::{HEAP_BASE, HEAP_SIZE};
-use crate::emulator::{DecodeStatus, DecodedPacket, PacketDecoder, PatchArchive};
+use crate::emulator::{DecodeStatus, DecodedPacket, PacketDecoder, PatchArchive, PlainMemory};
 use crate::error::{Result, RoflError};
 use crate::rofl::block::BlockIterator;
 use crate::rofl::decompress::decompress_chunk;
@@ -67,6 +68,13 @@ const SENDER: u64 = 0x0c;
 const HASH_FLOOR: u32 = 0x0010_0000;
 /// Largest value accepted as an array's element count.
 const COUNT_MAX: u32 = 1 << 20;
+/// Largest array entry we look for, in bytes.
+const STRIDE_MAX: u64 = 512;
+/// Entries profiled per block, so a 10 000-entry array stays cheap.
+const ENTRIES_PER_BLOCK: u64 = 64;
+/// An entry layout is reported once this share of the class's arrays
+/// agreed on the entry size.
+const STRIDE_VOTE: f64 = 0.5;
 
 /// One 4-byte word of a packet object, across a sample of blocks.
 #[derive(Debug, Default, Clone)]
@@ -84,6 +92,10 @@ struct Word {
     time: u64,
     coord: u64,
     pointer: u64,
+    /// Blocks where the 64-bit value pointed into the game image: a
+    /// vtable, so the field is a polymorphic sub-object, or a static.
+    image_ptr: u64,
+    image_rvas: BTreeSet<u64>,
     /// `std::vector`-style span in bytes, when the next word pair is a
     /// pointer at or after this one.
     spans: BTreeSet<u64>,
@@ -118,6 +130,12 @@ impl Word {
         self.time += o.time;
         self.coord += o.coord;
         self.pointer += o.pointer;
+        self.image_ptr += o.image_ptr;
+        for rva in &o.image_rvas {
+            if self.image_rvas.len() < EXAMPLES {
+                self.image_rvas.insert(*rva);
+            }
+        }
         self.counted += o.counted;
         self.count_max = self.count_max.max(o.count_max);
         for s in &o.spans {
@@ -154,7 +172,7 @@ impl Word {
         if v == 0 {
             self.zero += 1;
         }
-        if v == param {
+        if v == param && v != 0 {
             self.eq_param += 1;
         }
         if is_entity(v) {
@@ -181,6 +199,12 @@ impl Word {
         if o.pointer.is_some() {
             self.pointer += 1;
         }
+        if let Some(rva) = o.image_rva {
+            self.image_ptr += 1;
+            if self.image_rvas.len() < EXAMPLES {
+                self.image_rvas.insert(rva);
+            }
+        }
         if let Some(span) = o.span {
             if self.spans.len() < DISTINCT_CAP {
                 self.spans.insert(span);
@@ -197,6 +221,9 @@ struct Obs {
     /// The block's own timestamp, for the game-time test.
     now: f32,
     pointer: Option<u64>,
+    /// Image RVA, when the 64-bit value at this word points into the
+    /// game's own image.
+    image_rva: Option<u64>,
     span: Option<u64>,
     count: Option<u32>,
 }
@@ -217,6 +244,9 @@ pub struct ClassProfile {
     /// carried them. A coordinate float spelling four printable bytes is
     /// debris and never repeats; an asset name repeats every block.
     inline_strings: BTreeMap<u64, BTreeMap<String, u64>>,
+    /// The entries behind each array pointer, keyed by the pointer's
+    /// offset and then by the entry size measured for that block.
+    arrays: BTreeMap<u64, BTreeMap<u64, ArrayProfile>>,
     payload_min: usize,
     payload_max: usize,
 }
@@ -241,6 +271,12 @@ impl ClassProfile {
         }
         for (off, w) in &o.words {
             self.words.entry(*off).or_default().merge(w);
+        }
+        for (off, strides) in &o.arrays {
+            let into = self.arrays.entry(*off).or_default();
+            for (stride, a) in strides {
+                into.entry(*stride).or_default().merge(a);
+            }
         }
         for (off, seen) in &o.inline_strings {
             let into = self.inline_strings.entry(*off).or_default();
@@ -279,7 +315,18 @@ impl ClassProfile {
                 skip = off + 4;
             }
             let strings = strings_at(self.inline_strings.get(off), self.clean());
-            let (kind, fmt) = classify(*off, w, &strings);
+            let (mut kind, fmt) = classify(*off, w, &strings);
+            let entries = match pointer.then(|| self.entry_layout(*off)).flatten() {
+                Some((a, fields)) => {
+                    kind = format!(
+                        "pointer to array, {}-byte entries, up to {}",
+                        fields.len() * 4,
+                        a.max_entries
+                    );
+                    fields
+                }
+                None => Vec::new(),
+            };
             out.push(Field {
                 offset: format!("+0x{off:03x}"),
                 width: if pointer { 8 } else { width(w) },
@@ -291,9 +338,22 @@ impl ClassProfile {
                     json!(w.values.len())
                 },
                 examples: examples(w, fmt, &strings),
+                entries,
             });
         }
         out
+    }
+
+    /// The entry layout behind the array pointer at `off`, when enough
+    /// of its blocks agreed on one entry size.
+    fn entry_layout(&self, off: u64) -> Option<(&ArrayProfile, Vec<Field>)> {
+        let strides = self.arrays.get(&off)?;
+        let total: u64 = strides.values().map(|a| a.blocks).sum();
+        let (_, best) = strides.iter().max_by_key(|(_, a)| a.blocks)?;
+        if (best.blocks as f64) < STRIDE_VOTE * total as f64 || best.entries == 0 {
+            return None;
+        }
+        Some((best, best.fields()))
     }
 
     pub fn to_json(&self) -> Value {
@@ -314,6 +374,59 @@ impl ClassProfile {
     }
 }
 
+/// The entries behind one array pointer, at one measured entry size.
+#[derive(Debug, Default, Clone)]
+struct ArrayProfile {
+    /// Blocks whose array had this entry size.
+    blocks: u64,
+    /// Entries profiled (capped per block).
+    entries: u64,
+    /// Largest entry count seen, including the ones not profiled.
+    max_entries: u32,
+    words: BTreeMap<u64, Word>,
+}
+
+impl ArrayProfile {
+    fn merge(&mut self, o: &ArrayProfile) {
+        self.blocks += o.blocks;
+        self.entries += o.entries;
+        self.max_entries = self.max_entries.max(o.max_entries);
+        for (off, w) in &o.words {
+            self.words.entry(*off).or_default().merge(w);
+        }
+    }
+
+    fn fields(&self) -> Vec<Field> {
+        let n = self.entries.max(1) as f64;
+        let mut out = Vec::new();
+        let mut skip = u64::MAX;
+        for (off, w) in &self.words {
+            if *off == skip {
+                continue;
+            }
+            let wide = w.pointer.max(w.image_ptr) as f64 / w.seen.max(1) as f64 >= MOSTLY;
+            if wide {
+                skip = off + 4;
+            }
+            let (kind, fmt) = classify(u64::MAX, w, &[]);
+            out.push(Field {
+                offset: format!("+0x{off:03x}"),
+                width: if wide { 8 } else { width(w) },
+                kind,
+                present: pct(w.seen as f64 / n),
+                distinct: if w.overflow {
+                    json!(format!("{}+", w.values.len()))
+                } else {
+                    json!(w.values.len())
+                },
+                examples: examples(w, fmt, &[]),
+                entries: Vec::new(),
+            });
+        }
+        out
+    }
+}
+
 /// One word of a packet object, as measured.
 #[derive(Debug, Clone, Serialize)]
 pub struct Field {
@@ -324,6 +437,9 @@ pub struct Field {
     pub present: String,
     pub distinct: Value,
     pub examples: Vec<String>,
+    /// For an array pointer: the layout of one entry.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<Field>,
 }
 
 /// Every class seen in one or more replays.
@@ -400,7 +516,11 @@ impl Profile {
              own timestamp; `pointer` means the 64-bit value landed in the \
              heap the decode allocated.\n\
              - **distinct** counts the values the word ever took. A `+` \
-             means the counter stopped at the cap.\n\n\
+             means the counter stopped at the cap.\n\
+             - An **array** pointer gets a second table for one entry. \
+             The entry size is measured, not assumed: the deserializer \
+             writes the same fields of every entry, so the map of which \
+             bytes it wrote repeats with the entry size.\n\n\
              A field here is a measurement, not a name. Classes with a \
              handler in `src/packet/handlers/` have named, independently \
              checked fields; see [PACKETS.md](PACKETS.md).\n\n---\n\n",
@@ -442,21 +562,25 @@ impl Profile {
                 let _ = writeln!(s, "No plaintext written: the class carries no payload.\n");
                 continue;
             }
+            let mut nested: Vec<&Field> = Vec::new();
             let _ = writeln!(s, "| offset | w | kind | present | distinct | values seen |");
             let _ = writeln!(s, "|--------|--:|------|--------:|---------:|-------------|");
-            for f in fields {
-                let _ = writeln!(
-                    s,
-                    "| `{}` | {} | {} | {} | {} | {} |",
-                    f.offset,
-                    f.width,
-                    f.kind,
-                    f.present,
-                    f.distinct,
-                    f.examples.join(", ")
-                );
+            for f in &fields {
+                row(&mut s, f);
+                if !f.entries.is_empty() {
+                    nested.push(f);
+                }
             }
             s.push('\n');
+            for f in nested {
+                let _ = writeln!(s, "One entry of the array at `{}`:\n", f.offset);
+                let _ = writeln!(s, "| offset | w | kind | present | distinct | values seen |");
+                let _ = writeln!(s, "|--------|--:|------|--------:|---------:|-------------|");
+                for e in &f.entries {
+                    row(&mut s, e);
+                }
+                s.push('\n');
+            }
         }
         let _ = writeln!(
             s,
@@ -465,6 +589,20 @@ impl Profile {
         );
         s
     }
+}
+
+fn row(s: &mut String, f: &Field) {
+    use std::fmt::Write;
+    let _ = writeln!(
+        s,
+        "| `{}` | {} | {} | {} | {} | {} |",
+        f.offset,
+        f.width,
+        f.kind,
+        f.present,
+        f.distinct,
+        f.examples.join(", ")
+    );
 }
 
 fn thousands(n: u64) -> String {
@@ -539,6 +677,7 @@ fn profile_chunk(
     body: &[u8],
     per_chunk: u64,
 ) -> Result<BTreeMap<u16, ClassProfile>> {
+    let image = archive.image_base..archive.image_base + archive.image_size;
     let mut out: BTreeMap<u16, ClassProfile> = BTreeMap::new();
     for block in BlockIterator::new(body) {
         let block = block?;
@@ -566,13 +705,13 @@ fn profile_chunk(
         c.sampled += 1;
         *c.status.entry(pkt.status).or_default() += 1;
         if pkt.status == DecodeStatus::Clean {
-            observe(c, &pkt, block.param, block.timestamp);
+            observe(c, &pkt, block.param, block.timestamp, &image);
         }
     }
     Ok(out)
 }
 
-fn observe(c: &mut ClassProfile, pkt: &DecodedPacket, param: u32, now: f32) {
+fn observe(c: &mut ClassProfile, pkt: &DecodedPacket, param: u32, now: f32, image: &Range<u64>) {
     let words = pkt.written_words(OBJECT_LIMIT);
     for (off, v) in &words {
         let (ptr, span, count) = if off % 8 == 0 {
@@ -594,9 +733,13 @@ fn observe(c: &mut ClassProfile, pkt: &DecodedPacket, param: u32, now: f32) {
             param,
             now,
             pointer: ptr,
+            image_rva: image_rva(pkt, pkt.object + off, image),
             span,
             count,
         });
+        if let (Some(ptr), Some(count)) = (ptr, count) {
+            observe_array(c, pkt, *off, ptr, count, param, now, image);
+        }
         let at = ptr.and_then(|p| ascii_at(pkt, p));
         let inline = ascii_at(pkt, pkt.object + off);
         for s in at.into_iter().chain(inline) {
@@ -608,6 +751,88 @@ fn observe(c: &mut ClassProfile, pkt: &DecodedPacket, param: u32, now: f32) {
             }
         }
     }
+}
+
+/// Profile the entries behind one array pointer.
+#[allow(clippy::too_many_arguments)]
+fn observe_array(
+    c: &mut ClassProfile,
+    pkt: &DecodedPacket,
+    off: u64,
+    ptr: u64,
+    count: u32,
+    param: u32,
+    now: f32,
+    image: &Range<u64>,
+) {
+    let Some(stride) = stride_of(&pkt.memory, ptr, count) else {
+        return;
+    };
+    let a = c.arrays.entry(off).or_default().entry(stride).or_default();
+    a.blocks += 1;
+    a.max_entries = a.max_entries.max(count);
+    for e in 0..u64::from(count).min(ENTRIES_PER_BLOCK) {
+        let base = ptr + e * stride;
+        a.entries += 1;
+        for k in (0..stride).step_by(4) {
+            let written = [0u64, 1, 2, 3].map(|b| pkt.memory.written(base + k + b));
+            if !written.iter().any(|b| *b) {
+                continue;
+            }
+            let Some(value) = pkt.memory.u32(base + k) else {
+                continue;
+            };
+            let inner = pkt.memory.u64(base + k).filter(|p| in_heap(&pkt.memory, *p));
+            a.words.entry(k).or_default().record(&Obs {
+                value,
+                written,
+                param,
+                now,
+                pointer: inner,
+                image_rva: image_rva(pkt, base + k, image),
+                span: None,
+                count: inner
+                    .and(pkt.memory.u32(base + k + 8))
+                    .filter(|n| (1..=COUNT_MAX).contains(n))
+                    .filter(|n| pkt.memory.u32(base + k + 12) == Some(*n)),
+            });
+        }
+    }
+}
+
+/// The size of one entry in the array of `count` entries at `ptr`.
+///
+/// The deserializer asked the allocator for the whole array in one
+/// block, and the emulator's allocator records every size it hands out,
+/// so this is a division, not a guess. It is then checked against the
+/// map of which bytes the deserializer wrote: it writes the same fields
+/// of every entry, so that map has to repeat with the entry size.
+fn stride_of(mem: &PlainMemory, ptr: u64, count: u32) -> Option<u64> {
+    let count = u64::from(count);
+    if count < 2 {
+        return None;
+    }
+    let size = mem.block_size(ptr)?;
+    let stride = size / count;
+    if !(4..=STRIDE_MAX).contains(&stride) || size % count != 0 || stride % 4 != 0 {
+        return None;
+    }
+    repeats(mem, ptr, count, stride).then_some(stride)
+}
+
+/// Whether the written-byte map of the first entry holds for all of them.
+fn repeats(mem: &PlainMemory, ptr: u64, count: u64, stride: u64) -> bool {
+    let mut any = false;
+    for i in 0..stride {
+        let first = mem.written(ptr + i);
+        any |= first;
+        for e in 1..count {
+            if mem.written(ptr + e * stride + i) != first {
+                return false;
+            }
+        }
+    }
+    any
 }
 
 /// The strings at one offset, if that offset really holds a string.
@@ -654,6 +879,17 @@ fn ascii_at(pkt: &DecodedPacket, addr: u64) -> Option<String> {
 
 fn is_heap(v: u64) -> bool {
     (HEAP_BASE..HEAP_BASE + HEAP_SIZE).contains(&v)
+}
+
+fn in_heap(mem: &PlainMemory, v: u64) -> bool {
+    is_heap(v) && v < mem.end()
+}
+
+/// The image RVA the 64-bit value at `addr` points at, if it points
+/// into the game image at all.
+fn image_rva(pkt: &DecodedPacket, addr: u64, image: &Range<u64>) -> Option<u64> {
+    let v = pkt.memory.u64(addr)?;
+    image.contains(&v).then(|| v - image.start)
 }
 
 fn is_entity(v: u32) -> bool {
@@ -705,13 +941,22 @@ fn classify(off: u64, w: &Word, strings: &[&String]) -> (String, Fmt) {
     let most = |k: u64| k as f64 / n >= MOSTLY;
     let most_nz = |k: u64| k as f64 / nz >= MOSTLY;
 
-    if most(w.eq_param) {
+    if w.eq_param > 0 && most_nz(w.eq_param) {
         let kind = if off == SENDER {
             "sender net id (block `param`)"
         } else {
             "net id, equals the block's `param`"
         };
         return (kind.into(), Fmt::Hex);
+    }
+    if most(w.image_ptr) {
+        let kind = if w.image_rvas.len() == 1 {
+            let rva = w.image_rvas.iter().next().copied().unwrap_or(0);
+            format!("vtable, one class for every entry (image +0x{rva:x})")
+        } else {
+            "pointer into the game image (vtable or static)".into()
+        };
+        return (kind, Fmt::Hex);
     }
     if most(w.pointer) {
         let what = if strings.is_empty() { "heap" } else { "string" };
@@ -872,6 +1117,7 @@ mod tests {
                 param: 0x4000_00AE,
                 now: 10.0,
                 pointer: None,
+                image_rva: None,
                 span: None,
                 count: None,
             });

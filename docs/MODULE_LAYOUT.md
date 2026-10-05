@@ -8,7 +8,7 @@ structure. One-liner per module plus the rationale for the shape.
 ```
 src/
 ├── lib.rs, main.rs, cli.rs, error.rs   crate surface
-│                            CLI: file / decode / inspect / summary / fields
+│                            CLI: file / decode / inspect / summary / fields / explore
 ├── rofl/                    TRANSPORT LAYER (no game knowledge), as proposed below
 ├── emulator/                runs game code over payloads
 │   ├── config.rs, unicorn.rs, packet.rs   format 1: Mowokuma's port (15.x)
@@ -21,6 +21,7 @@ src/
 ├── fields.rs                measured field layout of every class (docs/FIELDS.md)
 ├── game.rs                  parallel whole-replay decode, roster, events, positions, self-check
 ├── summary.rs               file-only analysis: statsJson + transport profile, no archive
+├── explore.rs               file-only, deeper: champions, timelines, netid identification
 └── replay_info.rs           format-1 orchestration (Mowokuma's JSON)
 tests/
 ├── transport_smoke.rs       every replay in ROFL_X_SAMPLES_DIR parses with zero errors

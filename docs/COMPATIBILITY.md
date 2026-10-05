@@ -13,9 +13,11 @@ Columns:
   through the game's own factory and deserializers, see
   [DECODING.md](DECODING.md)).
 - **Decode**: packet-payload decoding (`rofl-x file`) on that patch.
-  Every patch additionally supports file-only analysis (`rofl-x
-  summary`): full statsJson scoreboard plus transport activity profile,
-  no archive, no game contact.
+  Every patch additionally supports file-only analysis with no archive
+  and no game contact: `rofl-x summary` for the statsJson scoreboard
+  and a transport activity profile, `rofl-x explore` for the champion
+  roster, a per-champion timeline and netid identification
+  ([EXPLORE.md](EXPLORE.md)).
 
 | Patch  | Transport | Archive | Decode |
 |--------|-----------|---------|--------|
@@ -25,7 +27,7 @@ Columns:
 | 16.8   | green (sample_a) | none: no binary of this patch kept | summary only |
 | 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named, 16 typed (47.0 % of blocks), every class's fields measured ([FIELDS.md](FIELDS.md)); events, positions, wards, items, vision; self-check 350 / 350 |
 | 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
-| 16.19  | green (26 replays) | **none possible**: the shipped binary is packed | summary only |
+| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | no payloads. File-only: scoreboard, champion entity ids, per-champion timeline, netid 1080 proved to be the champion-death packet, 66 of 273 netids matched to a 16.9 class by fingerprint ([EXPLORE.md](EXPLORE.md)) |
 
 ## The 16.19 binary is packed
 
@@ -55,6 +57,15 @@ scoreboard and an opcode histogram. Only the obfuscated packet payloads
 stay opaque; the netid, entity id (`param`), timestamp and length of
 every block do not.
 
+`rofl-x explore` goes further on the same evidence
+([EXPLORE.md](EXPLORE.md)): it names the ten champions' entity ids from
+the shape of the traffic (verified against the decoder's own roster on
+16.9, 5 of 5), gives a per-champion per-minute timeline, proves the
+identity of netids whose per-champion block count *is* one of Riot's
+end-of-game counters, and proposes a class for the rest by matching
+their behaviour against 16.9. On the twenty 16.19 replays that yields
+one proved netid and 66 confident proposals out of 273.
+
 What would change this: Riot shipping an unpacked binary again, or an
 unpacked binary of a given patch becoming available by legitimate
 means. A format-2 archive builds from such a binary in a few minutes,
@@ -66,7 +77,9 @@ decode needs that patch's binary.
 
 ## Known gaps
 
-1. **Current patches.** Blocked by the packing above.
+1. **Current patches.** Payload decoding is blocked by the packing
+   above; see [EXPLORE.md](EXPLORE.md) for how far the file alone
+   goes.
 2. **Parity runs against Mowokuma on 15.1 – 15.4.** Cheap once a script
    runs both tools and diffs order-normalised JSON.
 3. **Game modes with more than two teams** (Arena). The format-2 team

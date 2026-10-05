@@ -1,0 +1,864 @@
+//! Deep file-only exploration: everything a `.rofl` gives up from block
+//! framing alone, with no game binary and no payload decoding.
+//!
+//! This is the path for patches whose client ships packed (16.10+, see
+//! `docs/COMPATIBILITY.md`). `summary.rs` reports the scoreboard and a
+//! flat activity profile; this goes further, and the extra reach all
+//! comes from one observation: a block's `timestamp`, `netid`, `param`
+//! and length are plaintext, so the *behaviour* of every packet class and
+//! every entity is measurable even when the payload is not.
+//!
+//! Three things come out:
+//!
+//! - **Who the champions are.** Entity ids are handed out in order as the
+//!   game creates objects, and the ten champions are created together.
+//!   They are also the entities the server has the most different things
+//!   to say about. Taking the run of ten consecutive ids with the highest
+//!   netid variety finds them without decoding anything; on 16.9, where
+//!   the decoder knows the answer independently, it finds exactly the
+//!   right ten in every replay.
+//! - **A per-champion timeline.** Blocks per minute per champion: how
+//!   busy each player's champion was, minute by minute, for the whole
+//!   game.
+//! - **A fingerprint per packet class.** Share of blocks, payload length,
+//!   whether the class addresses an entity or the game, how many distinct
+//!   entities it ever named, and when in the game it fires. Netids are
+//!   renumbered every patch, so this is what a class looks like from the
+//!   outside, and it is the raw material for matching a packed patch's
+//!   netids against a patch we can decode (`match_patches`).
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use serde_json::{json, Value};
+
+use crate::error::Result;
+use crate::replay_info::{role_label, team_label};
+use crate::rofl::block::BlockIterator;
+use crate::rofl::decompress::decompress_chunk;
+use crate::rofl::stream::StreamTag;
+use crate::rofl::Replay;
+
+/// A match this far ahead of the runner-up, at this score, is reported
+/// as confident.
+///
+/// Chosen from [`self_test`] on the five 16.9 replays, not by taste.
+/// Across the grid it scans, the margin is what carries the signal and
+/// the score barely moves precision: at a margin of 0.05 every score
+/// cut-off lands near 88 %, at 0.10 near 94 %, at 0.15 near 95 %. This
+/// pair called 72 of 254 netids and was right on 69 of them, 95.8 %.
+/// Raising it further buys nothing and costs calls.
+///
+/// That number is the ceiling, not the expectation. The self-test
+/// renumbers nothing and changes no class: it only asks whether a
+/// fingerprint taken from two games identifies the same class in three
+/// others. A real patch gap also moves the classes themselves.
+pub const CONFIDENT_MARGIN: f64 = 0.15;
+pub const CONFIDENT_SCORE: f64 = 0.85;
+
+/// A `param` at or above this is a runtime entity id.
+const ENTITY_ID_BASE: u32 = 0x4000_0000;
+/// An entity seen in the first and last of these many seconds of the
+/// game counts as present for the whole of it.
+const EDGE_WINDOW: f32 = 90.0;
+/// Different values a statsJson field must take across the ten players
+/// before a match against it means anything.
+const MIN_SPREAD: usize = 3;
+/// Largest constant difference accepted between a block count and a
+/// statsJson counter. One extra block per player is ordinary; ten is a
+/// coincidence dressed up as a match.
+const MAX_OFFSET: i64 = 2;
+/// Replays that must be able to test an identity before it is reported.
+const MIN_TESTS: usize = 3;
+/// Distinct payload lengths kept per netid before we call it variable.
+const LENGTH_CAP: usize = 8;
+
+#[derive(Debug, Default, Clone)]
+struct Entity {
+    blocks: u64,
+    first: f32,
+    last: f32,
+    netids: HashSet<u16>,
+    per_minute: Vec<u64>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct NetId {
+    blocks: u64,
+    /// Blocks whose `param` is not an entity id: the class is about the
+    /// game, not about a unit.
+    global: u64,
+    params: HashSet<u32>,
+    /// Blocks per entity, for the champions only: the full table would
+    /// be thousands of entries per netid and nothing reads it.
+    per_param: HashMap<u32, u64>,
+    lengths: BTreeMap<usize, u64>,
+    first: f32,
+    last: f32,
+    per_minute: Vec<u64>,
+}
+
+/// Everything measured from framing, before it is interpreted.
+#[derive(Debug, Default)]
+pub struct Framing {
+    netids: BTreeMap<u16, NetId>,
+    entities: BTreeMap<u32, Entity>,
+    pub blocks: u64,
+    pub minutes: usize,
+}
+
+fn bump(v: &mut Vec<u64>, minute: usize) {
+    if v.len() <= minute {
+        v.resize(minute + 1, 0);
+    }
+    v[minute] += 1;
+}
+
+/// Walk every game-chunk block and record what its framing says.
+pub fn framing(replay: &Replay<'_>) -> Result<Framing> {
+    let mut f = Framing::default();
+    for chunk in replay.chunks() {
+        let chunk = chunk?;
+        if chunk.stream_tag != StreamTag::GameChunk {
+            continue;
+        }
+        let Ok(body) = decompress_chunk(&chunk) else {
+            continue;
+        };
+        for block in BlockIterator::new(&body) {
+            let Ok(block) = block else { break };
+            let t = block.timestamp.max(0.0);
+            let minute = (t / 60.0) as usize;
+            f.blocks += 1;
+            f.minutes = f.minutes.max(minute + 1);
+
+            let n = f.netids.entry(block.packet_id).or_default();
+            if n.blocks == 0 {
+                n.first = t;
+            }
+            n.blocks += 1;
+            n.last = t;
+            n.params.insert(block.param);
+            *n.per_param.entry(block.param).or_default() += 1;
+            if n.lengths.len() < LENGTH_CAP || n.lengths.contains_key(&block.payload.len()) {
+                *n.lengths.entry(block.payload.len()).or_default() += 1;
+            }
+            bump(&mut n.per_minute, minute);
+
+            if block.param < ENTITY_ID_BASE {
+                n.global += 1;
+                continue;
+            }
+            let e = f.entities.entry(block.param).or_default();
+            if e.blocks == 0 {
+                e.first = t;
+            }
+            e.blocks += 1;
+            e.last = t;
+            e.netids.insert(block.packet_id);
+            bump(&mut e.per_minute, minute);
+        }
+    }
+    Ok(f)
+}
+
+impl Framing {
+    /// The champions' entity ids, in creation order.
+    ///
+    /// Two properties pick them out, neither of which needs a payload.
+    /// They are created together, so their ids are `count` consecutive
+    /// values; and the server has more different things to say about a
+    /// champion than about any other unit, so they carry the most
+    /// distinct netids. Scoring every consecutive run and taking the best
+    /// gets it right on 16.9 against the decoder's own answer.
+    pub fn champion_run(&self, count: usize) -> Option<Vec<u32>> {
+        if count == 0 {
+            return None;
+        }
+        let ids: Vec<u32> = self.entities.keys().copied().collect();
+        let end = self.minutes as f32 * 60.0;
+        let mut best: Option<(usize, u32)> = None;
+        for w in ids.windows(count) {
+            if w[count - 1] - w[0] != count as u32 - 1 {
+                continue;
+            }
+            let spans = w.iter().all(|id| {
+                let e = &self.entities[id];
+                e.first <= EDGE_WINDOW && e.last >= end - EDGE_WINDOW
+            });
+            if !spans {
+                continue;
+            }
+            let score: usize = w.iter().map(|id| self.entities[id].netids.len()).sum();
+            if best.map_or(true, |(b, _)| score > b) {
+                best = Some((score, w[0]));
+            }
+        }
+        best.map(|(_, start)| (0..count as u32).map(|i| start + i).collect())
+    }
+
+    /// Per-netid behaviour, busiest first. This is what a packet class
+    /// looks like from outside its payload.
+    ///
+    /// `players` is the roster size, used to find the champions so that
+    /// each class can report how much of its traffic is about them. That
+    /// one number separates the classes that only ever concern champions
+    /// (items, levels, scores) from the ones that sweep every unit.
+    pub fn fingerprints(&self, players: usize) -> Vec<Fingerprint> {
+        let champions: HashSet<u32> = self
+            .champion_run(players)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        let total = self.blocks.max(1) as f64;
+        let mut out: Vec<Fingerprint> = self
+            .netids
+            .iter()
+            .map(|(netid, n)| {
+                let entities = n.params.iter().filter(|p| **p >= ENTITY_ID_BASE).count();
+                let champion = n.params.iter().filter(|p| champions.contains(p)).count();
+                Fingerprint {
+                    netid: *netid,
+                    blocks: n.blocks,
+                    share: n.blocks as f64 / total,
+                    length: Length::of(n),
+                    global_share: n.global as f64 / n.blocks.max(1) as f64,
+                    entities,
+                    champion_share: champion as f64 / entities.max(1) as f64,
+                    first: n.first,
+                    last: n.last,
+                    shape: shape(&n.per_minute),
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| b.blocks.cmp(&a.blocks).then(a.netid.cmp(&b.netid)));
+        out
+    }
+}
+
+/// What a class's payload length looks like across the replay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Length {
+    /// Every block the same size.
+    Fixed(usize),
+    /// A handful of sizes, listed.
+    Few(Vec<usize>),
+    /// Many sizes: min and max.
+    Variable(usize, usize),
+}
+
+impl Length {
+    /// The sizes themselves, for comparing two classes.
+    fn sizes(&self) -> Vec<usize> {
+        match self {
+            Length::Fixed(n) => vec![*n],
+            Length::Few(v) => v.clone(),
+            Length::Variable(a, b) => vec![*a, *b],
+        }
+    }
+
+    fn of(n: &NetId) -> Length {
+        let mut sizes: Vec<usize> = n.lengths.keys().copied().collect();
+        sizes.sort_unstable();
+        match sizes.len() {
+            0 => Length::Fixed(0),
+            1 => Length::Fixed(sizes[0]),
+            _ if sizes.len() < LENGTH_CAP => Length::Few(sizes),
+            _ => Length::Variable(sizes[0], *sizes.last().unwrap_or(&0)),
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            Length::Fixed(n) => format!("{n}"),
+            Length::Few(v) => v.iter().map(usize::to_string).collect::<Vec<_>>().join("/"),
+            Length::Variable(a, b) => format!("{a}-{b}"),
+        }
+    }
+}
+
+/// One packet class as framing sees it: no payload, no class name.
+#[derive(Debug, Clone)]
+pub struct Fingerprint {
+    pub netid: u16,
+    pub blocks: u64,
+    pub share: f64,
+    pub length: Length,
+    /// Share of blocks whose `param` is not an entity: the class is
+    /// addressed to the game rather than to a unit.
+    pub global_share: f64,
+    pub entities: usize,
+    /// Of the entities this class ever named, the share that were
+    /// champions. 1.0 means it only ever talks about champions.
+    pub champion_share: f64,
+    pub first: f32,
+    pub last: f32,
+    pub shape: &'static str,
+}
+
+/// How a class's traffic is spread over the game.
+fn shape(per_minute: &[u64]) -> &'static str {
+    let live: Vec<u64> = per_minute.iter().copied().filter(|n| *n > 0).collect();
+    if live.len() <= 1 {
+        return "one minute";
+    }
+    let total: u64 = live.iter().sum();
+    let mean = total as f64 / per_minute.len() as f64;
+    let peak = *live.iter().max().unwrap_or(&0) as f64;
+    let covered = live.len() as f64 / per_minute.len() as f64;
+    match () {
+        _ if covered < 0.3 => "bursts",
+        _ if peak > mean * 4.0 => "spiky",
+        _ if covered > 0.9 => "steady",
+        _ => "uneven",
+    }
+}
+
+/// Build the exploration JSON for one replay.
+pub fn explore(replay: &Replay<'_>) -> Result<Value> {
+    let f = framing(replay)?;
+    let meta = &replay.metadata;
+    let run = f.champion_run(meta.players.len());
+
+    let players: Vec<Value> = meta
+        .players
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let id = run.as_ref().and_then(|r| r.get(i).copied());
+            let e = id.and_then(|id| f.entities.get(&id));
+            json!({
+                "index": i,
+                "champion": p.skin,
+                "team": team_label(p.team),
+                "role": role_label(p.role),
+                "win": p.win,
+                "net_id": id.map(|id| format!("0x{id:08x}")),
+                "blocks": e.map(|e| e.blocks),
+                "distinct_netids": e.map(|e| e.netids.len()),
+                "blocks_per_minute": e.map(|e| padded(&e.per_minute, f.minutes)),
+            })
+        })
+        .collect();
+
+    let netids: Vec<Value> = f
+        .fingerprints(meta.players.len())
+        .into_iter()
+        .map(|p| {
+            json!({
+                "netid": p.netid,
+                "blocks": p.blocks,
+                "share": (p.share * 10_000.0).round() / 10_000.0,
+                "payload_bytes": p.length.label(),
+                "addresses": if p.global_share > 0.5 { "the game" } else { "a unit" },
+                "distinct_entities": p.entities,
+                "first_s": (f64::from(p.first) * 10.0).round() / 10.0,
+                "last_s": (f64::from(p.last) * 10.0).round() / 10.0,
+                "shape": p.shape,
+            })
+        })
+        .collect();
+
+    Ok(json!({
+        "patch": replay.header.patch(),
+        "game_length_s": (meta.game_length_ms as f64 / 1000.0 * 10.0).round() / 10.0,
+        "blocks": f.blocks,
+        "minutes": f.minutes,
+        "entities": {
+            "total": f.entities.len(),
+            "champions": run.as_ref().map(|r| {
+                json!({
+                    "first": format!("0x{:08x}", r[0]),
+                    "last": format!("0x{:08x}", r[r.len() - 1]),
+                    "found_by": "longest-lived consecutive run with the most distinct netids",
+                })
+            }),
+        },
+        "players": players,
+        "netids": netids,
+        "note": "Framing only: no payload is decoded and no game binary is read. \
+                 Every number here comes from a block's timestamp, netid, param \
+                 and length, all of which are plaintext.",
+    }))
+}
+
+fn padded(v: &[u64], minutes: usize) -> Vec<u64> {
+    let mut out = v.to_vec();
+    out.resize(minutes, 0);
+    out
+}
+
+/// Propose a netid mapping from one patch to another by fingerprint.
+///
+/// Netids are renumbered every patch, so a class we named on a patch we
+/// can decode has a different number on one we cannot. What does not
+/// change much is how the class behaves: how often it fires, how long
+/// its payload is, whether it addresses a unit or the game, and when in
+/// the game it runs. Matching on that gives candidates, not facts, and
+/// the score says how much of a candidate each one is.
+pub fn match_patches(target: &[Fingerprint], reference: &[Fingerprint]) -> Vec<Match> {
+    // Score every pair, then take them best first. Walking the target
+    // list in order instead lets an early class take a reference that a
+    // later one needed far more.
+    let mut pairs: Vec<(f64, u16, u16)> = Vec::with_capacity(target.len() * reference.len());
+    for t in target {
+        for r in reference {
+            pairs.push((similarity(t, r), t.netid, r.netid));
+        }
+    }
+    pairs.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+    // The margin is against the best *other* reference for the same
+    // class, whether or not that one is still free: two classes that
+    // look alike should both come out unconfident, not just the loser.
+    let mut best_two: HashMap<u16, (f64, f64)> = HashMap::new();
+    for (score, t, _) in &pairs {
+        let e = best_two.entry(*t).or_insert((f64::MIN, f64::MIN));
+        if *score > e.0 {
+            e.1 = e.0;
+            e.0 = *score;
+        } else if *score > e.1 {
+            e.1 = *score;
+        }
+    }
+
+    let mut taken_t: HashSet<u16> = HashSet::new();
+    let mut taken_r: HashSet<u16> = HashSet::new();
+    let mut out = Vec::new();
+    for (score, t, r) in pairs {
+        if !taken_t.insert(t) {
+            continue;
+        }
+        if !taken_r.insert(r) {
+            taken_t.remove(&t);
+            continue;
+        }
+        let (first, second) = best_two.get(&t).copied().unwrap_or((score, 0.0));
+        let margin = first - second.max(0.0);
+        out.push(Match {
+            netid: t,
+            reference_netid: r,
+            score,
+            margin,
+            confident: score >= CONFIDENT_SCORE
+                && margin >= CONFIDENT_MARGIN
+                && (score - first).abs() < 1e-9,
+        });
+    }
+    out.sort_by(|a, b| b.score.total_cmp(&a.score));
+    out
+}
+
+/// One proposed netid correspondence.
+#[derive(Debug, Clone)]
+pub struct Match {
+    pub netid: u16,
+    pub reference_netid: u16,
+    pub score: f64,
+    /// How far ahead of the next candidate this one was. A match with no
+    /// margin is a coin toss between two classes that look alike.
+    pub margin: f64,
+    pub confident: bool,
+}
+
+/// How alike two classes look from outside their payloads, in [0, 1].
+///
+/// Payload length does most of the work. The set of lengths a class
+/// emits is the shape of its fields: one that is 2 bytes on every block
+/// has a single small field, one that emits 5/6/7/10/11 has a fixed head
+/// and a short optional tail. Riot renumbers netids every patch but
+/// rarely rewrites a class, so that set survives where the number does
+/// not.
+fn similarity(a: &Fingerprint, b: &Fingerprint) -> f64 {
+    let length = jaccard(&a.length.sizes(), &b.length.sizes());
+    let kind = f64::from(std::mem::discriminant(&a.length) == std::mem::discriminant(&b.length));
+    let share = 1.0 - ratio_gap(a.share, b.share);
+    let champions = 1.0 - (a.champion_share - b.champion_share).abs();
+    let addressing = 1.0 - (a.global_share - b.global_share).abs();
+    let entities = 1.0 - ratio_gap(a.entities as f64, b.entities as f64);
+    let shape = f64::from(a.shape == b.shape);
+    0.40 * length
+        + 0.05 * kind
+        + 0.20 * share
+        + 0.15 * champions
+        + 0.10 * addressing
+        + 0.05 * entities
+        + 0.05 * shape
+}
+
+/// Overlap of two sets of payload lengths, in [0, 1].
+fn jaccard(a: &[usize], b: &[usize]) -> f64 {
+    let a: HashSet<usize> = a.iter().copied().collect();
+    let b: HashSet<usize> = b.iter().copied().collect();
+    let union = a.union(&b).count();
+    if union == 0 {
+        return 1.0;
+    }
+    a.intersection(&b).count() as f64 / union as f64
+}
+
+/// Distance between two positive quantities on a log scale, clamped to
+/// [0, 1]: 0 when equal, 1 when they differ by 10x or more.
+fn ratio_gap(a: f64, b: f64) -> f64 {
+    let (a, b) = (a.max(1e-9), b.max(1e-9));
+    ((a / b).log10().abs()).min(1.0)
+}
+
+/// Blocks per champion for every netid, in roster order.
+///
+/// This is the quantity that can be checked against Riot's own
+/// end-of-game record, which is the only ground truth a packed patch
+/// offers.
+pub fn champion_counts(f: &Framing, champions: &[u32]) -> BTreeMap<u16, Vec<u64>> {
+    let mut out: BTreeMap<u16, Vec<u64>> = BTreeMap::new();
+    for (netid, n) in &f.netids {
+        let row: Vec<u64> = champions
+            .iter()
+            .map(|id| n.per_param.get(id).copied().unwrap_or(0))
+            .collect();
+        if row.iter().any(|n| *n > 0) {
+            out.insert(*netid, row);
+        }
+    }
+    out
+}
+
+/// One replay's input to [`match_stats`]: blocks per champion for each
+/// netid, and Riot's end-of-game counters for each player.
+pub type StatsRow = (BTreeMap<u16, Vec<u64>>, BTreeMap<String, Vec<i64>>);
+
+/// A netid identified by Riot's own end-of-game numbers.
+#[derive(Debug, Clone)]
+pub struct StatsMatch {
+    pub netid: u16,
+    pub field: String,
+    /// Blocks per champion minus the statsJson value, the same for
+    /// every player. 0 is one block per counted thing; 1 usually means
+    /// one extra at spawn.
+    pub offset: i64,
+    /// Replays where the identity held.
+    pub replays: usize,
+    /// Replays that could test it: the field varied between players and
+    /// the netid fired.
+    pub tested: usize,
+    /// Distinct values the field took across the players, summed over
+    /// the replays it matched. A field that is 0 for everyone matches
+    /// everything and proves nothing.
+    pub spread: usize,
+}
+
+/// Netids whose per-champion block count *is* one of Riot's end-of-game
+/// counters, in every replay.
+///
+/// A packed patch gives up no payloads, but it still carries statsJson,
+/// and statsJson is hundreds of integers per player that the game
+/// produced from the same events the packets describe. If a netid fires
+/// exactly `NUM_DEATHS` times for every player in twenty games, that
+/// netid is the death packet. No binary, no decoding, and not a
+/// fingerprint guess: an identity that held ten players at a time,
+/// twenty times over.
+///
+/// A field has to take at least [`MIN_SPREAD`] different values across
+/// the ten players to count, because a column of zeroes matches any
+/// netid that never fires.
+pub fn match_stats(per_replay: &[StatsRow]) -> Vec<StatsMatch> {
+    let mut hits: HashMap<(u16, String, i64), (usize, usize)> = HashMap::new();
+    // A replay only tests a (netid, field) pair when the field actually
+    // varies between players there and the netid fired at all. Scoring
+    // against the replays where neither was true would punish a real
+    // identity for a short game.
+    let mut tested: HashMap<(u16, String), usize> = HashMap::new();
+    for (counts, stats) in per_replay {
+        for (netid, row) in counts {
+            for (field, truth) in stats {
+                if row.len() != truth.len() {
+                    continue;
+                }
+                let spread = truth.iter().collect::<HashSet<_>>().len();
+                if spread < MIN_SPREAD {
+                    continue;
+                }
+                *tested.entry((*netid, field.clone())).or_default() += 1;
+                let Some(offset) = uniform_offset(row, truth) else {
+                    continue;
+                };
+                let e = hits.entry((*netid, field.clone(), offset)).or_default();
+                e.0 += 1;
+                e.1 += spread;
+            }
+        }
+    }
+    let mut out: Vec<StatsMatch> = hits
+        .into_iter()
+        .filter_map(|((netid, field, offset), (replays, spread))| {
+            // Hold in every replay that could test it, bar one. Three
+            // games is the floor: two agreeing proves little, and one
+            // ragequit should not sink an identity that twenty games
+            // otherwise confirm.
+            let tested = tested.get(&(netid, field.clone())).copied().unwrap_or(0);
+            (replays + 1 >= tested && tested >= MIN_TESTS).then_some(StatsMatch {
+                netid,
+                field,
+                offset,
+                replays,
+                tested,
+                spread,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.replays
+            .cmp(&a.replays)
+            .then(b.spread.cmp(&a.spread))
+            .then(a.netid.cmp(&b.netid))
+    });
+    out
+}
+
+/// The single number that turns `truth` into `row` for every player, if
+/// there is one.
+fn uniform_offset(row: &[u64], truth: &[i64]) -> Option<i64> {
+    let first = row.first()?.to_owned() as i64 - truth.first()?;
+    if first.abs() > MAX_OFFSET {
+        return None;
+    }
+    row.iter()
+        .zip(truth)
+        .all(|(n, t)| *n as i64 - t == first)
+        .then_some(first)
+}
+
+/// How well fingerprint matching recovers a mapping it already knows.
+///
+/// Split one patch's replays in two, fingerprint each half from
+/// different games, and match. The answer is known -- a netid is itself
+/// -- so the share recovered is the method's accuracy under everything
+/// except the one thing this cannot simulate, a class changing between
+/// patches. Run it before believing any cross-patch proposal.
+pub fn self_test(all: &[Framing], players: usize) -> SelfTest {
+    let mid = all.len() / 2;
+    let a = pool(&all[..mid], players);
+    let b = pool(&all[mid..], players);
+    let blocks: u64 = a.iter().map(|f| f.blocks).sum();
+    let mut t = SelfTest {
+        netids: a.len(),
+        ..Default::default()
+    };
+    for m in match_patches(&a, &b) {
+        let hit = m.netid == m.reference_netid;
+        let w = a.iter().find(|f| f.netid == m.netid).map_or(0, |f| f.blocks);
+        if hit {
+            t.correct += 1;
+            t.correct_blocks += w;
+        }
+        if m.confident {
+            t.confident += 1;
+            t.confident_correct += usize::from(hit);
+        }
+        t.calls.push((m.score, m.margin, hit));
+    }
+    t.block_share = t.correct_blocks as f64 / blocks.max(1) as f64;
+    t
+}
+
+/// The result of [`self_test`].
+#[derive(Debug, Default, Clone)]
+pub struct SelfTest {
+    pub netids: usize,
+    pub correct: usize,
+    pub correct_blocks: u64,
+    /// Share of traffic, not of netids: getting the busiest classes
+    /// right is worth more than getting a class that fires twice right.
+    pub block_share: f64,
+    pub confident: usize,
+    pub confident_correct: usize,
+    /// (score, margin, right) for every call, so a gate can be chosen
+    /// from the data instead of by taste.
+    pub calls: Vec<(f64, f64, bool)>,
+}
+
+impl SelfTest {
+    /// Precision and reach of a grid of gates, for calibrating
+    /// [`CONFIDENT_SCORE`] and [`CONFIDENT_MARGIN`].
+    pub fn gates(&self) -> Vec<(f64, f64, usize, usize)> {
+        let mut out = Vec::new();
+        for score in [0.70, 0.80, 0.85, 0.90, 0.93, 0.95] {
+            for margin in [0.0, 0.02, 0.05, 0.10, 0.15] {
+                let kept: Vec<bool> = self
+                    .calls
+                    .iter()
+                    .filter(|(s, m, _)| *s >= score && *m >= margin)
+                    .map(|(_, _, hit)| *hit)
+                    .collect();
+                out.push((score, margin, kept.iter().filter(|h| **h).count(), kept.len()));
+            }
+        }
+        out
+    }
+}
+
+/// Pool fingerprints over several replays of one patch.
+///
+/// Every feature is merged across the replays, not taken from the first
+/// one. Payload lengths especially: a class with an optional field only
+/// shows the longer form in the games where it happened, so the union
+/// over several games is the class's real shape and a single game's is
+/// a sample of it.
+pub fn pool(all: &[Framing], players: usize) -> Vec<Fingerprint> {
+    let mut sizes: HashMap<u16, HashSet<usize>> = HashMap::new();
+    let mut varied: HashSet<u16> = HashSet::new();
+    let mut merged: BTreeMap<u16, (Fingerprint, u64)> = BTreeMap::new();
+    let total: u64 = all.iter().map(|f| f.blocks).sum();
+    for f in all {
+        for p in f.fingerprints(players) {
+            let set = sizes.entry(p.netid).or_default();
+            set.extend(p.length.sizes());
+            if matches!(p.length, Length::Variable(_, _)) {
+                varied.insert(p.netid);
+            }
+            match merged.get_mut(&p.netid) {
+                Some((have, seen)) => {
+                    // Weight the proportions by traffic, keep the extremes.
+                    let (w, v) = (have.blocks as f64, p.blocks as f64);
+                    let mix = |a: f64, b: f64| (a * w + b * v) / (w + v).max(1.0);
+                    have.global_share = mix(have.global_share, p.global_share);
+                    have.champion_share = mix(have.champion_share, p.champion_share);
+                    have.entities = have.entities.max(p.entities);
+                    have.first = have.first.min(p.first);
+                    have.last = have.last.max(p.last);
+                    have.blocks += p.blocks;
+                    *seen += 1;
+                }
+                None => {
+                    merged.insert(p.netid, (p, 1));
+                }
+            }
+        }
+    }
+    let mut out: Vec<Fingerprint> = merged
+        .into_values()
+        .map(|(mut p, _)| {
+            let mut v: Vec<usize> = sizes.remove(&p.netid).unwrap_or_default().into_iter().collect();
+            v.sort_unstable();
+            p.length = match v.len() {
+                0 => Length::Fixed(0),
+                1 => Length::Fixed(v[0]),
+                _ if v.len() < LENGTH_CAP && !varied.contains(&p.netid) => Length::Few(v),
+                _ => Length::Variable(v[0], *v.last().unwrap_or(&0)),
+            };
+            p.share = p.blocks as f64 / total.max(1) as f64;
+            p
+        })
+        .collect();
+    out.sort_by(|a, b| b.blocks.cmp(&a.blocks).then(a.netid.cmp(&b.netid)));
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fp(netid: u16, blocks: u64, share: f64, length: Length) -> Fingerprint {
+        Fingerprint {
+            netid,
+            blocks,
+            share,
+            length,
+            global_share: 0.0,
+            entities: 100,
+            champion_share: 0.1,
+            first: 0.0,
+            last: 1000.0,
+            shape: "steady",
+        }
+    }
+
+    #[test]
+    fn identical_classes_score_one() {
+        let a = fp(1, 100, 0.4, Length::Fixed(2));
+        let b = fp(2, 100, 0.4, Length::Fixed(2));
+        assert!((similarity(&a, &b) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_different_fixed_length_costs_the_length_weight() {
+        let a = fp(1, 100, 0.4, Length::Fixed(2));
+        let b = fp(2, 100, 0.4, Length::Fixed(9));
+        assert!((similarity(&a, &b) - 0.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn overlapping_length_sets_score_in_between() {
+        assert!((jaccard(&[5, 6, 7], &[5, 6, 7]) - 1.0).abs() < 1e-9);
+        assert!((jaccard(&[5, 6], &[5, 6, 7, 8]) - 0.5).abs() < 1e-9);
+        assert_eq!(jaccard(&[1], &[9]), 0.0);
+    }
+
+    #[test]
+    fn ten_times_the_share_is_the_worst_case() {
+        assert!((ratio_gap(0.4, 0.04) - 1.0).abs() < 1e-9);
+        assert!(ratio_gap(0.40, 0.39) < 0.02);
+    }
+
+    #[test]
+    fn matching_is_one_to_one() {
+        let target = vec![
+            fp(10, 400, 0.4, Length::Fixed(2)),
+            fp(11, 100, 0.1, Length::Fixed(2)),
+        ];
+        let reference = vec![
+            fp(90, 100, 0.1, Length::Fixed(2)),
+            fp(91, 400, 0.4, Length::Fixed(2)),
+        ];
+        let m = match_patches(&target, &reference);
+        assert_eq!(m[0].reference_netid, 91);
+        assert_eq!(m[1].reference_netid, 90);
+    }
+
+    #[test]
+    fn a_uniform_offset_is_the_only_match() {
+        assert_eq!(uniform_offset(&[3, 5, 1], &[3, 5, 1]), Some(0));
+        assert_eq!(uniform_offset(&[4, 6, 2], &[3, 5, 1]), Some(1));
+        assert_eq!(uniform_offset(&[4, 6, 3], &[3, 5, 1]), None);
+        assert_eq!(uniform_offset(&[30, 50, 10], &[3, 5, 1]), None);
+    }
+
+    #[test]
+    fn a_flat_statsjson_column_proves_nothing() {
+        let counts = BTreeMap::from([(7u16, vec![0, 0, 0, 0, 0])]);
+        let stats = BTreeMap::from([("ALWAYS_ZERO".to_string(), vec![0, 0, 0, 0, 0])]);
+        assert!(match_stats(&[(counts, stats)]).is_empty());
+    }
+
+    #[test]
+    fn a_counter_that_holds_in_every_replay_is_reported() {
+        let one = |v: Vec<u64>| BTreeMap::from([(7u16, v)]);
+        let truth = |v: Vec<i64>| BTreeMap::from([("NUM_DEATHS".to_string(), v)]);
+        let m = match_stats(&[
+            (one(vec![1, 2, 3, 4, 5]), truth(vec![1, 2, 3, 4, 5])),
+            (one(vec![6, 2, 9, 4, 0]), truth(vec![6, 2, 9, 4, 0])),
+            (one(vec![2, 7, 1, 8, 3]), truth(vec![2, 7, 1, 8, 3])),
+        ]);
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].netid, m[0].offset, m[0].replays), (7, 0, 3));
+        assert_eq!(m[0].tested, 3);
+    }
+
+    #[test]
+    fn two_agreeing_replays_are_not_enough() {
+        let one = |v: Vec<u64>| BTreeMap::from([(7u16, v)]);
+        let truth = |v: Vec<i64>| BTreeMap::from([("NUM_DEATHS".to_string(), v)]);
+        let m = match_stats(&[
+            (one(vec![1, 2, 3, 4, 5]), truth(vec![1, 2, 3, 4, 5])),
+            (one(vec![6, 2, 9, 4, 0]), truth(vec![6, 2, 9, 4, 0])),
+        ]);
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn shape_names_the_spread() {
+        assert_eq!(shape(&[1, 1, 1, 1]), "steady");
+        assert_eq!(shape(&[0, 0, 0, 40, 30, 0, 0, 0]), "bursts");
+        assert_eq!(shape(&[1, 1, 1, 1, 1, 90]), "spiky");
+        assert_eq!(shape(&[1]), "one minute");
+    }
+}

@@ -9,12 +9,15 @@
 //!   class names.
 //! - `fields`: measured field layout of every class, for the ones no
 //!   handler types yet.
+//! - `summary`, `explore`: file-only analysis for patches whose client
+//!   ships packed. No binary, no payloads, framing and metadata alone.
 //! - `game`: whole-replay assembly (roster, events, positions, self-check).
 //!
 //! See `docs/DOMAIN.md`, `docs/MODULE_LAYOUT.md` and `docs/DECODING.md`.
 
 pub mod cli;
 pub mod emulator;
+pub mod explore;
 pub mod error;
 pub mod replay_info;
 pub mod rofl;

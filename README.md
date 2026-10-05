@@ -142,6 +142,20 @@ PUUIDs reduced to their length unless `--include-identities`) and a
 transport activity profile. No game binary is read and no payloads are
 decoded.
 
+Go further on the same evidence — who the champions are, how busy each
+was minute by minute, and what each packet class is — still with no
+binary and no payload ([docs/EXPLORE.md](docs/EXPLORE.md)):
+
+```bash
+rofl-x explore -r EUW1-1234567890.rofl -o explore.json
+rofl-x explore -r <packed patch>.rofl --reference <16.9 replay> --self-test
+```
+
+With `--reference`, netids are matched against a patch ROFL-X can
+decode, so each one gets a proposed class and a score. `--self-test`
+first measures how often that matching is right on a patch where the
+answer is known.
+
 Decode a replay (patch archive in `./patch`, named `<major>-<minor>.patch`):
 
 ```bash
@@ -201,6 +215,7 @@ Read in this order:
 | [docs/PACKETS.md](docs/PACKETS.md) | Packet catalog by Riot class name, typed layouts, netid table for 16.9 |
 | [docs/FIELDS.md](docs/FIELDS.md) | Measured field layout of every class on 16.9, generated |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-patch coverage, and why current patches are blocked |
+| [docs/EXPLORE.md](docs/EXPLORE.md) | How far a replay goes with no binary at all: the 16.19 run |
 | [docs/RE_PATCH.md](docs/RE_PATCH.md) | Building a `.patch` archive for a League patch |
 | [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) | Rust crate layout, as built and as first proposed |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-by-phase project plan with stop points |
@@ -293,9 +308,15 @@ dumped object and checking the fields against something independent
   is packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Unblocked
   only by an unpacked binary obtained legitimately; a format-2 archive
   then builds in minutes.
-- [ ] Richer file-only output: derive a per-minute, per-entity activity
-  timeline (which entities are busy when) from block framing alone, and
-  a scoreboard CSV across a folder of replays.
+- [x] Richer file-only output (`rofl-x explore`,
+  [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
+  alone, a per-champion per-minute timeline, netids proved against
+  statsJson counters, and netids proposed by matching their behaviour
+  against a decodable patch.
+- [ ] A scoreboard CSV across a folder of replays.
+- [ ] Fit the fingerprint weights to a measured cross-patch error rate
+  instead of setting them by hand. Needs two patches with both a
+  decodable binary and replays; we have one.
 
 ### Parity
 

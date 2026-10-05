@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use crate::error::{Result, RoflError};
 use crate::rofl::{block::BlockIterator, decompress::decompress_chunk, stream::StreamTag, Replay};
 
@@ -138,6 +140,42 @@ pub enum Command {
         #[arg(long)]
         markdown: Option<PathBuf>,
     },
+
+    /// Explore a replay from framing alone: who the champions are, how
+    /// busy each of them was minute by minute, and a behavioural
+    /// fingerprint of every packet class (share, payload length, whether
+    /// it addresses a unit or the game, when it fires). Reads no game
+    /// binary and decodes no payload, so it works on patches whose
+    /// client ships packed. With `--reference`, also proposes which
+    /// class each netid is, by matching those fingerprints against a
+    /// patch ROFL-X can decode.
+    Explore {
+        /// Path to a `.rofl` file. Repeat to pool several replays of the
+        /// same patch.
+        #[arg(short, long = "replay", num_args = 1.., required = true)]
+        replays: Vec<PathBuf>,
+
+        /// Replays of a patch with a format-2 archive, used as the
+        /// reference side of the netid matching.
+        #[arg(long = "reference", num_args = 1..)]
+        reference: Vec<PathBuf>,
+
+        /// Directory holding `<major>-<minor>.patch` archives, for
+        /// naming the reference patch's netids.
+        #[arg(short, long, default_value = "patch")]
+        patch_dir: PathBuf,
+
+        /// Measure how well the netid matching works before trusting
+        /// it: split the reference replays in two, match one half
+        /// against the other, and report how much of the known answer
+        /// comes back.
+        #[arg(long)]
+        self_test: bool,
+
+        /// Output JSON path. Without it, a text report goes to stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -177,6 +215,13 @@ pub fn run(cli: Cli) -> Result<()> {
             output.as_deref(),
             markdown.as_deref(),
         ),
+        Command::Explore {
+            replays,
+            reference,
+            patch_dir,
+            self_test,
+            output,
+        } => explore(&replays, &reference, &patch_dir, self_test, output.as_deref()),
     }
 }
 
@@ -387,6 +432,291 @@ fn decode(
         clean as f64 * 100.0 / total.max(1) as f64
     );
     Ok(())
+}
+
+/// Class names for the reference patch's netids, when an archive for it
+/// is on disk. Without one the matching still runs; the proposals just
+/// carry netids instead of names.
+fn reference_names(patch_dir: &Path, replay: &Replay<'_>) -> BTreeMap<u16, String> {
+    use crate::emulator::PatchArchive;
+
+    let Ok(path) = find_archive(patch_dir, replay) else {
+        return BTreeMap::new();
+    };
+    if !PatchArchive::is_format2(&path).unwrap_or(false) {
+        return BTreeMap::new();
+    }
+    let Ok(archive) = PatchArchive::load(&path) else {
+        return BTreeMap::new();
+    };
+    archive
+        .packets
+        .iter()
+        .filter_map(|(netid, names)| Some((*netid, names.first()?.class.clone())))
+        .collect()
+}
+
+fn explore(
+    replays: &[PathBuf],
+    reference: &[PathBuf],
+    patch_dir: &Path,
+    self_test: bool,
+    output: Option<&Path>,
+) -> Result<()> {
+    use crate::explore::{
+        champion_counts, explore as explore_one, framing, match_patches, match_stats, pool, Framing,
+    };
+    use crate::explore::StatsRow;
+
+    // One replay in memory at a time: twenty of them is gigabytes.
+    let mut framings: Vec<Framing> = Vec::new();
+    let mut per_replay: Vec<Value> = Vec::new();
+    let mut stats_rows: Vec<StatsRow> = Vec::new();
+    let mut patch = String::new();
+    for path in replays {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        if patch.is_empty() {
+            patch = replay.header.patch().to_string();
+        } else if patch != replay.header.patch() {
+            return Err(RoflError::Emulator(format!(
+                "{}: patch {} does not match the pooled {patch}",
+                path.display(),
+                replay.header.patch()
+            )));
+        }
+        let f = framing(&replay)?;
+        if let Some(run) = f.champion_run(replay.metadata.players.len()) {
+            stats_rows.push((champion_counts(&f, &run), player_counters(&replay)));
+        }
+        framings.push(f);
+        per_replay.push(explore_one(&replay)?);
+    }
+
+    let identified: Vec<Value> = match_stats(&stats_rows)
+        .into_iter()
+        .map(|m| {
+            serde_json::json!({
+                "netid": m.netid,
+                "statsjson_field": m.field,
+                "blocks_minus_field": m.offset,
+                "held_in_replays": m.replays,
+                "replays_that_could_test_it": m.tested,
+            })
+        })
+        .collect();
+
+    let mut out = serde_json::json!({
+        "patch": patch,
+        "replays": per_replay,
+        "identified_by_statsjson": {
+            "method": "a netid whose per-champion block count equals one of Riot's \
+                       end-of-game counters, for all ten players, in every replay",
+            "checked_replays": stats_rows.len(),
+            "note": "This is a proof, not a fingerprint guess: no binary is read and \
+                     no payload decoded, but the identity held ten players at a time \
+                     in every game. A constant offset of 1 means one extra block per \
+                     player, usually at spawn.",
+            "netids": identified,
+        },
+    });
+
+    if !reference.is_empty() {
+        let mut ref_framings = Vec::new();
+        let mut names = BTreeMap::new();
+        let mut ref_patch = String::new();
+        for path in reference {
+            let bytes = std::fs::read(path)?;
+            let replay = Replay::parse(&bytes)?;
+            ref_patch = replay.header.patch().to_string();
+            if names.is_empty() {
+                names = reference_names(patch_dir, &replay);
+            }
+            ref_framings.push(framing(&replay)?);
+        }
+        if self_test {
+            let t = crate::explore::self_test(&ref_framings, 10);
+            out["netid_proposals_self_test"] = serde_json::json!({
+                "patch": ref_patch,
+                "method": "the reference replays split in two, one half matched \
+                           against the other, where the right answer is known",
+                "netids": t.netids,
+                "recovered": t.correct,
+                "recovered_share_of_traffic": (t.block_share * 1000.0).round() / 1000.0,
+                "called_confident": t.confident,
+                "confident_and_right": t.confident_correct,
+                "gates": t.gates().iter()
+                    .map(|(s, m, right, n)| serde_json::json!({
+                        "score": s, "margin": m, "right": right, "calls": n,
+                    }))
+                    .collect::<Vec<_>>(),
+            });
+        }
+        let target = pool(&framings, 10);
+        let reference = pool(&ref_framings, 10);
+        let by_netid: BTreeMap<u16, _> = reference.iter().map(|f| (f.netid, f)).collect();
+        let proposals: Vec<Value> = match_patches(&target, &reference)
+            .into_iter()
+            .filter_map(|m| {
+                let t = target.iter().find(|f| f.netid == m.netid)?;
+                let r = by_netid.get(&m.reference_netid)?;
+                Some(serde_json::json!({
+                    "netid": m.netid,
+                    "share": (t.share * 10_000.0).round() / 10_000.0,
+                    "payload_bytes": t.length.label(),
+                    "proposed_class": names.get(&m.reference_netid),
+                    "reference_netid": m.reference_netid,
+                    "reference_share": (r.share * 10_000.0).round() / 10_000.0,
+                    "reference_payload_bytes": r.length.label(),
+                    "score": (m.score * 1000.0).round() / 1000.0,
+                    "margin": (m.margin * 1000.0).round() / 1000.0,
+                    "confident": m.confident,
+                }))
+            })
+            .collect();
+        out["netid_proposals"] = serde_json::json!({
+            "reference_patch": ref_patch,
+            "method": "greedy one-to-one match on block share, payload length,                        whether the class addresses a unit or the game, how many                        entities it names, and how its traffic is spread over the game",
+            "warning": "Hypotheses, not facts. Nothing here is checked against a                         decoded payload, because the payloads of this patch cannot                         be decoded. Treat a low margin as no answer.",
+            "proposals": proposals,
+        });
+    }
+
+    match output {
+        Some(path) => {
+            std::fs::write(path, out.to_string().as_bytes())?;
+            eprintln!("wrote {}", path.display());
+        }
+        None => print_explore(&out),
+    }
+    Ok(())
+}
+
+/// Riot's end-of-game integer counters, per player, in roster order.
+fn player_counters(replay: &Replay<'_>) -> BTreeMap<String, Vec<i64>> {
+    let stats: Vec<Value> =
+        serde_json::from_str(&replay.metadata.stats_json_raw).unwrap_or_default();
+    let mut out: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    for p in &stats {
+        let Some(obj) = p.as_object() else { continue };
+        for (k, v) in obj {
+            let Some(n) = v.as_str().and_then(|s| s.parse::<i64>().ok()) else {
+                continue;
+            };
+            out.entry(k.clone()).or_default().push(n);
+        }
+    }
+    // A field some players are missing cannot be compared player by player.
+    out.retain(|_, v| v.len() == stats.len());
+    out
+}
+
+fn print_explore(out: &Value) {
+    for r in out["replays"].as_array().into_iter().flatten() {
+        println!(
+            "patch {}  {} blocks  {} min  {} entities",
+            r["patch"].as_str().unwrap_or("?"),
+            r["blocks"],
+            r["minutes"],
+            r["entities"]["total"],
+        );
+        let champs = &r["entities"]["champions"];
+        if let Some(first) = champs["first"].as_str() {
+            println!("champions: {first} .. {}", champs["last"].as_str().unwrap_or("?"));
+        } else {
+            println!("champions: not identified");
+        }
+        println!("{:<4} {:<8} {:<14} {:>10} {:>8}  net id", "", "team", "champion", "blocks", "netids");
+        for p in r["players"].as_array().into_iter().flatten() {
+            println!(
+                "{:<4} {:<8} {:<14} {:>10} {:>8}  {}",
+                p["index"],
+                p["team"].as_str().unwrap_or(""),
+                p["champion"].as_str().unwrap_or(""),
+                p["blocks"],
+                p["distinct_netids"],
+                p["net_id"].as_str().unwrap_or("-"),
+            );
+        }
+        println!();
+        println!(
+            "{:>6} {:>8} {:>8} {:>9}  {:<10} {:>9}  shape",
+            "netid", "blocks", "share", "payload", "addresses", "entities"
+        );
+        for n in r["netids"].as_array().into_iter().flatten().take(20) {
+            println!(
+                "{:>6} {:>8} {:>7.2}% {:>9}  {:<10} {:>9}  {}",
+                n["netid"],
+                n["blocks"],
+                n["share"].as_f64().unwrap_or(0.0) * 100.0,
+                n["payload_bytes"].as_str().unwrap_or(""),
+                n["addresses"].as_str().unwrap_or(""),
+                n["distinct_entities"],
+                n["shape"].as_str().unwrap_or("")
+            );
+        }
+        println!();
+    }
+    if let Some(i) = out.get("identified_by_statsjson") {
+        let rows = i["netids"].as_array().map(Vec::as_slice).unwrap_or_default();
+        println!(
+            "identified by statsJson, across {} replays: {} netids",
+            i["checked_replays"], rows.len()
+        );
+        for m in rows {
+            let off = m["blocks_minus_field"].as_i64().unwrap_or(0);
+            let tail = match off {
+                0 => String::new(),
+                n => format!(" {n:+}"),
+            };
+            println!(
+                "  netid {:>5}  blocks per champion = {}{}  (held in {} of {} replays that could test it)",
+                m["netid"],
+                m["statsjson_field"].as_str().unwrap_or("?"),
+                tail,
+                m["held_in_replays"],
+                m["replays_that_could_test_it"],
+            );
+        }
+        println!();
+    }
+    if let Some(t) = out.get("netid_proposals_self_test") {
+        println!(
+            "matcher self-test on patch {}: {} of {} netids recovered ({:.1} % of traffic); \
+             {} of {} confident calls right\n",
+            t["patch"].as_str().unwrap_or("?"),
+            t["recovered"],
+            t["netids"],
+            t["recovered_share_of_traffic"].as_f64().unwrap_or(0.0) * 100.0,
+            t["confident_and_right"],
+            t["called_confident"],
+        );
+    }
+    if let Some(p) = out.get("netid_proposals") {
+        println!(
+            "netid proposals against patch {} (hypotheses, unchecked):",
+            p["reference_patch"].as_str().unwrap_or("?")
+        );
+        println!("{:>6} {:>8} {:>9}  {:>6} {:>7}  class", "netid", "share", "payload", "score", "margin");
+        for m in p["proposals"].as_array().into_iter().flatten() {
+            if m["confident"] != Value::Bool(true) {
+                continue;
+            }
+            println!(
+                "{:>6} {:>7.2}% {:>9}  {:>6.3} {:>7.3}  {}",
+                m["netid"],
+                m["share"].as_f64().unwrap_or(0.0) * 100.0,
+                m["payload_bytes"].as_str().unwrap_or(""),
+                m["score"].as_f64().unwrap_or(0.0),
+                m["margin"].as_f64().unwrap_or(0.0),
+                m["proposed_class"].as_str().unwrap_or("(reference netid unnamed)"),
+            );
+        }
+        let n = p["proposals"].as_array().map_or(0, Vec::len);
+        let c = p["proposals"].as_array().into_iter().flatten()
+            .filter(|m| m["confident"] == Value::Bool(true)).count();
+        println!("{c} of {n} netids matched confidently; the rest are not reported.");
+    }
 }
 
 #[cfg(feature = "emulator")]

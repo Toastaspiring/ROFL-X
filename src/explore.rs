@@ -36,6 +36,7 @@ use crate::replay_info::{role_label, team_label};
 use crate::rofl::block::BlockIterator;
 use crate::rofl::decompress::decompress_chunk;
 use crate::rofl::stream::StreamTag;
+use crate::rofl::metadata::Team;
 use crate::rofl::Replay;
 
 /// A match this far ahead of the runner-up, at this score, is reported
@@ -54,6 +55,10 @@ use crate::rofl::Replay;
 /// others. A real patch gap also moves the classes themselves.
 pub const CONFIDENT_MARGIN: f64 = 0.15;
 pub const CONFIDENT_SCORE: f64 = 0.85;
+
+/// Team ids as the game numbers them, the same on every patch measured.
+pub const TEAM_ORDER: u8 = 1;
+pub const TEAM_CHAOS: u8 = 2;
 
 /// A `param` at or above this is a runtime entity id.
 const ENTITY_ID_BASE: u32 = 0x4000_0000;
@@ -314,10 +319,34 @@ fn shape(per_minute: &[u64]) -> &'static str {
 }
 
 /// Build the exploration JSON for one replay.
+/// Team ids of the roster, in order.
+pub fn roster_teams(replay: &Replay<'_>) -> Vec<u8> {
+    replay
+        .metadata
+        .players
+        .iter()
+        .map(|p| match p.team {
+            Team::Blue => TEAM_ORDER,
+            Team::Red => TEAM_CHAOS,
+        })
+        .collect()
+}
+
 pub fn explore(replay: &Replay<'_>) -> Result<Value> {
     let f = framing(replay)?;
     let meta = &replay.metadata;
     let run = f.champion_run(meta.players.len());
+
+    let teams = roster_teams(replay);
+    let solved = match &run {
+        Some(run) => solve_visibility(replay, &f, run, &teams)?,
+        None => Vec::new(),
+    };
+    let windows = match &run {
+        Some(run) if !solved.is_empty() => vision_windows(replay, &solved, run)?,
+        _ => Vec::new(),
+    };
+    let game_len = (meta.game_length_ms as f32 / 1000.0).max(1.0);
 
     let players: Vec<Value> = meta
         .players
@@ -326,6 +355,8 @@ pub fn explore(replay: &Replay<'_>) -> Result<Value> {
         .map(|(i, p)| {
             let id = run.as_ref().and_then(|r| r.get(i).copied());
             let e = id.and_then(|id| f.entities.get(&id));
+            let w = windows.get(i);
+            let seen: f32 = w.map_or(0.0, |w| w.iter().map(|(a, b)| b - a).sum());
             json!({
                 "index": i,
                 "champion": p.skin,
@@ -336,6 +367,9 @@ pub fn explore(replay: &Replay<'_>) -> Result<Value> {
                 "blocks": e.map(|e| e.blocks),
                 "distinct_netids": e.map(|e| e.netids.len()),
                 "blocks_per_minute": e.map(|e| padded(&e.per_minute, f.minutes)),
+                "seen_by_enemy_s": w.map(|_| (f64::from(seen) * 10.0).round() / 10.0),
+                "seen_by_enemy_share": w.map(|_| (f64::from(seen / game_len) * 1000.0).round() / 1000.0),
+                "vision_windows": w.map(Vec::len),
             })
         })
         .collect();
@@ -374,6 +408,16 @@ pub fn explore(replay: &Replay<'_>) -> Result<Value> {
             }),
         },
         "players": players,
+        "decoded_without_the_binary": solved.iter().map(|s| json!({
+            "netid": s.netid,
+            "field": "team that gained or lost sight",
+            "role": if s.is_enter { "enter" } else { "leave" },
+            "payload_to_team": s.mapping.iter()
+                .map(|(k, v)| (k.iter().map(|b| format!("{b:02x}")).collect::<String>(), *v))
+                .collect::<BTreeMap<_, _>>(),
+            "labelled_blocks": s.samples,
+            "exceptions": s.exceptions,
+        })).collect::<Vec<_>>(),
         "netids": netids,
         "note": "Framing only: no payload is decoded and no game binary is read. \
                  Every number here comes from a block's timestamp, netid, param \
@@ -501,6 +545,196 @@ fn jaccard(a: &[usize], b: &[usize]) -> f64 {
 fn ratio_gap(a: f64, b: f64) -> f64 {
     let (a, b) = (a.max(1e-9), b.max(1e-9));
     ((a / b).log10().abs()).min(1.0)
+}
+
+/// A class whose payload we can read on a patch we cannot decode.
+///
+/// The payload encoding is not a cipher. Measured on 16.9, where both
+/// the raw payload and the decoded object are in hand, a class's
+/// payload is its fields run through one 256-entry byte substitution:
+/// the same plaintext byte always becomes the same payload byte, at any
+/// position, in every block of every game, and sibling classes share
+/// the table. `PKT_S2C_OnEnterTeamVisibility_s` and its leave twin emit
+/// exactly two payloads on 16.9, `c719` and `c7c1`, for team 1 and team
+/// 2.
+///
+/// So a class whose plaintext we can pin down from outside is readable
+/// without the game's code. The visibility pair is the clean case: the
+/// payload is two fixed bytes, the only varying field is the team, and
+/// the game guarantees which team it is, because a unit is always
+/// visible to its own side and a visibility change can therefore only
+/// ever name the other one. The champions' teams are known from the
+/// metadata, so every block whose `param` is a champion is a labelled
+/// sample, and one block landing on the wrong side falsifies the whole
+/// mapping.
+#[derive(Debug, Clone)]
+pub struct Solved {
+    pub netid: u16,
+    /// Payload bytes to the team they mean.
+    pub mapping: BTreeMap<Vec<u8>, u8>,
+    /// Labelled champion blocks the mapping was read off and checked on.
+    pub samples: u64,
+    /// Labelled blocks that contradict it. Anything but 0 is a refusal.
+    pub exceptions: u64,
+    /// True for the class that opens a visibility window.
+    pub is_enter: bool,
+}
+
+/// Recover the team byte of the visibility classes from the file alone.
+///
+/// Candidates are the classes with a fixed 2-byte payload that address
+/// units and name many of them. For each, every block whose `param` is
+/// a champion votes: this payload means the team opposite that
+/// champion's. A payload that ever votes both ways is thrown out, and
+/// so is the whole netid.
+///
+/// Which of the pair opens a window is settled by the first visibility
+/// event each champion ever gets: you cannot leave a vision you never
+/// entered.
+pub fn solve_visibility(
+    replay: &Replay<'_>,
+    f: &Framing,
+    champions: &[u32],
+    teams: &[u8],
+) -> Result<Vec<Solved>> {
+    let candidates: Vec<u16> = f
+        .netids
+        .iter()
+        .filter(|(_, n)| {
+            matches!(Length::of(n), Length::Fixed(2))
+                && n.global * 2 < n.blocks
+                && n.params.len() > champions.len()
+        })
+        .map(|(netid, _)| *netid)
+        .collect();
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let team_of: HashMap<u32, u8> = champions.iter().copied().zip(teams.iter().copied()).collect();
+    let mut votes: HashMap<(u16, Vec<u8>), HashMap<u8, u64>> = HashMap::new();
+    for chunk in replay.chunks() {
+        let chunk = chunk?;
+        if chunk.stream_tag != StreamTag::GameChunk {
+            continue;
+        }
+        let Ok(body) = decompress_chunk(&chunk) else {
+            continue;
+        };
+        for block in BlockIterator::new(&body) {
+            let Ok(block) = block else { break };
+            if !candidates.contains(&block.packet_id) {
+                continue;
+            }
+            let Some(own) = team_of.get(&block.param) else {
+                continue;
+            };
+            // The team that gained or lost sight is the other one.
+            let other = if *own == TEAM_ORDER { TEAM_CHAOS } else { TEAM_ORDER };
+            *votes
+                .entry((block.packet_id, block.payload.to_vec()))
+                .or_default()
+                .entry(other)
+                .or_default() += 1;
+        }
+    }
+
+    // Which of the pair opens a window. Every object that becomes
+    // visible emits an enter, but a great many are destroyed while
+    // still visible and never emit a leave, so across all entities
+    // enter outnumbers leave heavily -- on 16.9, 3,091,816 against
+    // 42,014. Timestamps do not settle it: both classes fire at t=0
+    // and the champion's earliest event splits 6-4 between them.
+    let enter = candidates
+        .iter()
+        .max_by_key(|n| f.netids.get(n).map_or(0, |n| n.blocks))
+        .copied();
+
+    let mut out = Vec::new();
+    for netid in candidates {
+        let mut mapping = BTreeMap::new();
+        let mut samples = 0u64;
+        let mut exceptions = 0u64;
+        for ((n, payload), by_team) in &votes {
+            if *n != netid {
+                continue;
+            }
+            let total: u64 = by_team.values().sum();
+            let (team, best) = by_team.iter().max_by_key(|(_, n)| **n).unwrap();
+            samples += total;
+            exceptions += total - best;
+            mapping.insert(payload.clone(), *team);
+        }
+        // Two payloads for two teams, every labelled block agreeing.
+        let teams_named: HashSet<u8> = mapping.values().copied().collect();
+        if mapping.len() < 2 || teams_named.len() != mapping.len() || samples < MIN_LABELLED {
+            continue;
+        }
+        out.push(Solved {
+            netid,
+            mapping,
+            samples,
+            exceptions,
+            is_enter: Some(netid) == enter,
+        });
+    }
+    out.retain(|s| s.exceptions == 0);
+    out.sort_by_key(|s| s.netid);
+    Ok(out)
+}
+
+/// Labelled champion blocks a solved mapping must rest on.
+const MIN_LABELLED: u64 = 200;
+
+/// Per champion, the stretches spent inside the other team's vision,
+/// read off a solved visibility pair.
+///
+/// This is the same timeline `game.rs` builds on a patch it can decode,
+/// built here with no binary and no deserializer: the entity is the
+/// block's `param`, and the team comes from the solved payload.
+pub fn vision_windows(
+    replay: &Replay<'_>,
+    solved: &[Solved],
+    champions: &[u32],
+) -> Result<Vec<Vec<(f32, f32)>>> {
+    let enter: HashSet<u16> = solved.iter().filter(|s| s.is_enter).map(|s| s.netid).collect();
+    let leave: HashSet<u16> = solved.iter().filter(|s| !s.is_enter).map(|s| s.netid).collect();
+    if enter.is_empty() || leave.is_empty() {
+        return Ok(Vec::new());
+    }
+    let index: HashMap<u32, usize> = champions.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let mut open: Vec<Option<f32>> = vec![None; champions.len()];
+    let mut out: Vec<Vec<(f32, f32)>> = vec![Vec::new(); champions.len()];
+    let mut last = 0.0f32;
+    for chunk in replay.chunks() {
+        let chunk = chunk?;
+        if chunk.stream_tag != StreamTag::GameChunk {
+            continue;
+        }
+        let Ok(body) = decompress_chunk(&chunk) else {
+            continue;
+        };
+        for block in BlockIterator::new(&body) {
+            let Ok(block) = block else { break };
+            last = last.max(block.timestamp);
+            let Some(i) = index.get(&block.param).copied() else {
+                continue;
+            };
+            if enter.contains(&block.packet_id) {
+                open[i].get_or_insert(block.timestamp);
+            } else if leave.contains(&block.packet_id) {
+                if let Some(start) = open[i].take() {
+                    out[i].push((start, block.timestamp));
+                }
+            }
+        }
+    }
+    for (i, start) in open.into_iter().enumerate() {
+        if let Some(start) = start {
+            out[i].push((start, last));
+        }
+    }
+    Ok(out)
 }
 
 /// Blocks per champion for every netid, in roster order.

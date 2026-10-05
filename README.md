@@ -154,7 +154,13 @@ rofl-x explore -r <packed patch>.rofl --reference <16.9 replay> --self-test
 With `--reference`, netids are matched against a patch ROFL-X can
 decode, so each one gets a proposed class and a score. `--self-test`
 first measures how often that matching is right on a patch where the
-answer is known.
+answer is known. `--dump-netid N` writes every block of one netid with
+its raw payload bytes, which is where payload work starts.
+
+On a packed patch this still reads the visibility classes outright —
+37.9 % of all blocks — because their payload encoding can be recovered
+from the champions' known teams. The same code on 16.9 agrees with the
+emulator to within 0.1 s, which `tests/decode_replays.rs` asserts.
 
 Decode a replay (patch archive in `./patch`, named `<major>-<minor>.patch`):
 
@@ -215,7 +221,7 @@ Read in this order:
 | [docs/PACKETS.md](docs/PACKETS.md) | Packet catalog by Riot class name, typed layouts, netid table for 16.9 |
 | [docs/FIELDS.md](docs/FIELDS.md) | Measured field layout of every class on 16.9, generated |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-patch coverage, and why current patches are blocked |
-| [docs/EXPLORE.md](docs/EXPLORE.md) | How far a replay goes with no binary at all: the 16.19 run |
+| [docs/EXPLORE.md](docs/EXPLORE.md) | How far a replay goes with no binary at all, including reading a payload without one: the 16.19 run |
 | [docs/RE_PATCH.md](docs/RE_PATCH.md) | Building a `.patch` archive for a League patch |
 | [docs/MODULE_LAYOUT.md](docs/MODULE_LAYOUT.md) | Rust crate layout, as built and as first proposed |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phase-by-phase project plan with stop points |
@@ -304,10 +310,18 @@ dumped object and checking the fields against something independent
 
 - [x] File-only analysis (`rofl-x summary`): scoreboard + transport
   profile, no game contact. Works on 16.19.
-- [ ] Payload decoding is blocked: from some patch after 16.9 the binary
-  is packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Unblocked
-  only by an unpacked binary obtained legitimately; a format-2 archive
-  then builds in minutes.
+- [ ] Emulated decoding is blocked: from some patch after 16.9 the
+  binary is packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)).
+  Unblocked only by an unpacked binary obtained legitimately; a
+  format-2 archive then builds in minutes.
+- [x] Read a payload on a packed patch without the binary, by
+  recovering a class's byte substitution from plaintext the file itself
+  pins down ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). Done for the
+  visibility pair, 37.9 % of 16.19 blocks.
+- [ ] More classes the same way. Best handles: the death class (netid
+  1080, already proved) whose killer field is drawn from the ten known
+  champion ids; a position class, where coordinates must lie on the map
+  and move continuously.
 - [x] Richer file-only output (`rofl-x explore`,
   [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
   alone, a per-champion per-minute timeline, netids proved against

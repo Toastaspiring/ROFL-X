@@ -172,6 +172,16 @@ pub enum Command {
         #[arg(long)]
         self_test: bool,
 
+        /// Write every block of this netid, with its raw payload bytes,
+        /// as JSON lines to `--dump`. Framing only, so it works on any
+        /// patch: this is how you look at the payload bytes themselves.
+        #[arg(long)]
+        dump_netid: Option<u16>,
+
+        /// Where `--dump-netid` writes.
+        #[arg(long, default_value = "netid.jsonl")]
+        dump: PathBuf,
+
         /// Output JSON path. Without it, a text report goes to stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -220,8 +230,13 @@ pub fn run(cli: Cli) -> Result<()> {
             reference,
             patch_dir,
             self_test,
+            dump_netid,
+            dump,
             output,
-        } => explore(&replays, &reference, &patch_dir, self_test, output.as_deref()),
+        } => match dump_netid {
+            Some(netid) => self::dump_netid(&replays, netid, &dump),
+            None => explore(&replays, &reference, &patch_dir, self_test, output.as_deref()),
+        },
     }
 }
 
@@ -389,6 +404,7 @@ fn decode(
                     "class": archive.class_of(block.packet_id),
                     "param": format!("0x{:08x}", block.param),
                     "status": pkt.status.label(),
+                    "payload": hex(block.payload),
                     "words": words,
                 });
                 writeln!(w, "{line}")?;
@@ -609,6 +625,52 @@ fn player_counters(replay: &Replay<'_>) -> BTreeMap<String, Vec<i64>> {
     // A field some players are missing cannot be compared player by player.
     out.retain(|_, v| v.len() == stats.len());
     out
+}
+
+/// Lowercase hex of a block's raw payload, as it sits in the file.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Write every block of one netid as framing plus its raw payload. No
+/// archive and no decoding, so this works on a packed patch: it is how
+/// you look at the bytes themselves.
+fn dump_netid(replays: &[PathBuf], netid: u16, out: &Path) -> Result<()> {
+    use std::io::Write;
+
+    let mut w = std::io::BufWriter::new(std::fs::File::create(out)?);
+    let mut n = 0usize;
+    for path in replays {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        let file = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+        for chunk in replay.chunks() {
+            let chunk = chunk?;
+            if chunk.stream_tag != StreamTag::GameChunk {
+                continue;
+            }
+            let Ok(body) = decompress_chunk(&chunk) else {
+                continue;
+            };
+            for block in BlockIterator::new(&body) {
+                let Ok(block) = block else { break };
+                if block.packet_id != netid {
+                    continue;
+                }
+                let line = serde_json::json!({
+                    "replay": file,
+                    "t": block.timestamp,
+                    "netid": block.packet_id,
+                    "param": format!("0x{:08x}", block.param),
+                    "payload": hex(block.payload),
+                });
+                writeln!(w, "{line}")?;
+                n += 1;
+            }
+        }
+    }
+    eprintln!("wrote {n} blocks of netid {netid} to {}", out.display());
+    Ok(())
 }
 
 fn print_explore(out: &Value) {

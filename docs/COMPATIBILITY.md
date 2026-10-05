@@ -27,7 +27,7 @@ Columns:
 | 16.8   | green (sample_a) | none: no binary of this patch kept | summary only |
 | 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named, 16 typed (47.0 % of blocks), every class's fields measured ([FIELDS.md](FIELDS.md)); events, positions, wards, items, vision; self-check 350 / 350 |
 | 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
-| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | no payloads. File-only: scoreboard, champion entity ids, per-champion timeline, netid 1080 proved to be the champion-death packet, 66 of 273 netids matched to a 16.9 class by fingerprint ([EXPLORE.md](EXPLORE.md)) |
+| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | no emulation. File-only ([EXPLORE.md](EXPLORE.md)): scoreboard, champion entity ids, per-champion timeline; the visibility pair's payload **read without the binary** (37.9 % of blocks, 31,154 labelled champion blocks, 0 exceptions) giving a vision timeline; netid 1080 proved to be the champion-death packet; 66 of 273 netids matched to a 16.9 class by fingerprint |
 
 ## The 16.19 binary is packed
 
@@ -65,6 +65,15 @@ identity of netids whose per-champion block count *is* one of Riot's
 end-of-game counters, and proposes a class for the rest by matching
 their behaviour against 16.9. On the twenty 16.19 replays that yields
 one proved netid and 66 confident proposals out of 273.
+
+It also reads one class's payload outright. The obfuscation is a
+per-class byte substitution, not a cipher — measurable on 16.9, where
+both the raw bytes and the decoded object are in hand — so a class
+whose plaintext something outside the file pins down can be recovered
+from the file. The visibility pair qualifies, and on 16.19 it decodes
+with 31,154 labelled champion blocks agreeing and none disagreeing:
+37.9 % of all blocks, and a per-champion vision timeline that matches
+the emulator's to within 0.1 s when the same code is run on 16.9.
 
 What would change this: Riot shipping an unpacked binary again, or an
 unpacked binary of a given patch becoming available by legitimate

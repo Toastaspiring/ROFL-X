@@ -8,7 +8,9 @@
 //!   - every self-check against statsJson passes (kills / deaths /
 //!     assists, kill events, level, final items, damage to champions,
 //!     wards placed);
-//!   - the output keeps its top-level keys.
+//!   - the output keeps its top-level keys;
+//!   - the file-only path (`explore`, no binary and no deserializer)
+//!     reaches the same per-player vision time as the decoder does.
 //!
 //! Skipped when the samples directory is unset or no replay has an
 //! archive, so CI without game data still passes. Replays on patches with
@@ -20,6 +22,47 @@ use std::path::{Path, PathBuf};
 use rofl_x::emulator::config::Config;
 use rofl_x::emulator::PatchArchive;
 use rofl_x::Replay;
+
+/// The file-only path has to land where the decoder lands.
+///
+/// `explore` reads the visibility classes without the game's code at
+/// all: it recovers what the payload bytes mean from the champions'
+/// known teams, then builds the same timeline. Run on a patch we can
+/// decode, it has to agree with the decoder, or the method is not sound
+/// enough to use on a patch we cannot.
+fn file_only_vision_agrees(replay: &Replay<'_>, decoded: &serde_json::Value, path: &Path) {
+    use rofl_x::explore;
+
+    let f = explore::framing(replay).expect("framing");
+    let Some(run) = f.champion_run(replay.metadata.players.len()) else {
+        panic!("{}: file-only path found no champion run", path.display());
+    };
+    let ids: Vec<String> = run.iter().map(|id| format!("0x{id:08x}")).collect();
+    let decoded_ids: Vec<String> = decoded["players"]
+        .as_array()
+        .expect("players")
+        .iter()
+        .map(|p| p["net_id"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(ids, decoded_ids, "{}: champion run differs", path.display());
+
+    let teams = explore::roster_teams(replay);
+    let solved = explore::solve_visibility(replay, &f, &run, &teams).expect("solve");
+    assert_eq!(solved.len(), 2, "{}: visibility pair not solved", path.display());
+    for s in &solved {
+        assert_eq!(s.exceptions, 0, "{}: netid {} has exceptions", path.display(), s.netid);
+    }
+    let windows = explore::vision_windows(replay, &solved, &run).expect("windows");
+    for (i, w) in windows.iter().enumerate() {
+        let mine: f32 = w.iter().map(|(a, b)| b - a).sum();
+        let theirs = decoded["vision"][i]["seen_by_enemy_s"].as_f64().unwrap_or(-1.0);
+        assert!(
+            (f64::from(mine) - theirs).abs() <= 1.0,
+            "{}: player {i} vision {mine} file-only vs {theirs} decoded",
+            path.display()
+        );
+    }
+}
 
 fn rofls(dir: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = fs::read_dir(dir)
@@ -71,6 +114,7 @@ fn every_block_clean_and_every_check_passes() {
             let (ok, all) = score.split_once('/').expect("ok/all");
             assert_eq!(ok, all, "{}: self-check {field} = {score}", path.display());
         }
+        file_only_vision_agrees(&replay, &out, &path);
         eprintln!(
             "{}: {} blocks clean, checks {:?}",
             path.file_name().unwrap().to_string_lossy(),

@@ -2,23 +2,27 @@
 
 From some patch after 16.9, `League of Legends.exe` ships with its code
 encrypted on disk ([COMPATIBILITY.md](COMPATIBILITY.md)). Without the
-game's code there is no deserializer, so no packet payload on those
-patches can be decoded, and ROFL-X will not go after the code
-(README § Non-goals).
+game's code there is no deserializer to run, and ROFL-X will not go
+after the code (README § Non-goals).
 
-That is not the same as learning nothing. A block's `timestamp`,
-`netid`, `param` and length are plaintext even when its payload is not,
-and the file also carries Riot's own end-of-game record. `rofl-x
-explore` is what those two facts are worth, and this page is the run on
-the twenty patch-16.19 replays we hold.
+The replay is a different matter. It is a file, it belongs to whoever
+played the game, and most of it was never obscured in the first place:
+a block's `timestamp`, `netid`, `param` and length are plaintext, and
+the file carries Riot's own end-of-game record alongside them. `rofl-x
+explore` is what that is worth — and it is worth more than framing,
+because the payload obfuscation turns out to be a per-class byte
+substitution rather than a cipher, so a class whose plaintext something
+outside the file pins down can be read from the file too (§ 3).
 
 ```
 rofl-x explore -r <replay> [-r <replay> ...] \
   [--reference <16.9 replay> ...] [--self-test] [-o out.json]
+rofl-x explore -r <replay> --dump-netid 539 --dump bytes.jsonl
 ```
 
-Everything below was produced by that command. No game binary is read
-and no payload is decoded.
+This page is the run on the twenty patch-16.19 replays we hold, and
+everything in it came out of those files. No binary is unpacked, no
+process is read, nothing touches the game.
 
 ---
 
@@ -86,7 +90,79 @@ one per death. It is listed second because "almost" is not "exactly" —
 over twenty games it drifts by a few blocks, so the strict test drops
 it.
 
-## 3. Netids proposed by fingerprint
+## 3. Reading a payload without the binary
+
+The obfuscation is not a cipher, and that can be measured rather than
+assumed. On 16.9 both sides are in hand — the raw payload bytes from
+the file and the plaintext object the game's own deserializer produced
+— so the transform between them can simply be read off.
+
+What it is: **one 256-entry byte substitution per class**, applied to
+the fields serialised in order. The same plaintext byte always becomes
+the same payload byte, at any position in the payload, in every block
+of every game. No key, no block state, no per-session nonce.
+
+`PKT_S2C_UpdateDeathTimer_s` on 16.9 carries a single `f32`, and 62
+blocks of it yield 107 distinct plaintext bytes with **zero
+conflicts**, injectively. `PKT_S2C_FaceDirection_s` yields a table too,
+a different one — so the table is per class, not per patch. Sibling
+classes share: `PKT_S2C_OnEnterTeamVisibility_s` and
+`PKT_S2C_OnLeaveTeamVisibility_s` both encode team 1 as `c719` and team
+2 as `c7c1`.
+
+That changes the problem. A class whose plaintext we can pin down from
+outside is readable on a packed patch, because the table can be
+recovered from the file.
+
+### The visibility pair, decoded on 16.19
+
+The clean case. The payload is two fixed bytes, the only varying field
+is the team, and the game guarantees which team it is: a unit is always
+visible to its own side, so a visibility change can only ever name the
+other one. The champions' teams come from the metadata, so every block
+whose `param` is a champion is a **labelled sample**, and a single
+block landing on the wrong side would falsify the mapping.
+
+| patch | netid | payload → team | labelled blocks | exceptions |
+|-------|------:|----------------|----------------:|-----------:|
+| 16.9 | 1068 (enter), 920 (leave) | `c719` → 1, `c7c1` → 2 | 1,713 | 0 |
+| 16.19 | 539 (enter), 69 (leave) | `1b03` → 1, `1b50` → 2 | **31,154** | **0** |
+
+Across 19 of the 20 replays (the twentieth is a two-minute remake with
+too few labelled blocks to pass the floor), 31,154 champion blocks
+agree and none disagree. `1b03` is ORDER, `1b50` is CHAOS.
+
+Which of the pair opens a window is settled structurally: every object
+that becomes visible emits an enter, but a great many are destroyed
+while still visible and never emit a leave, so enter outnumbers leave
+heavily — 3,091,816 to 42,014 on 16.9. Timestamps do not settle it;
+both fire at t=0 and a champion's earliest event splits 6–4 between
+them.
+
+**That is 37.9 % of every block in a 16.19 replay, fully read, with no
+binary and no emulator.** The output gains the same per-champion vision
+timeline that a decodable patch gets: when each player was inside the
+enemy team's vision, and for how long.
+
+### How we know it is right
+
+The same code runs on 16.9, where the emulator's answer is independent
+ground truth. Per-player vision time agrees to **within 0.1 second on
+all five replays** — float rounding. `tests/decode_replays.rs` asserts
+it, so the file-only path cannot drift from the decoded one without the
+test suite failing.
+
+### What this does and does not generalise to
+
+It generalises to any class whose plaintext can be pinned from outside:
+a field with few possible values and a rule that fixes which, a counter
+that statsJson also records, a coordinate constrained by the map and by
+continuity in time. It does **not** give a general decoder — each class
+has its own table, and a class with 10 varying bytes and no external
+handle on their values stays shut. Nothing here reads the game's code;
+this is file analysis, and the tables come out of the file.
+
+## 4. Netids proposed by fingerprint
 
 Riot renumbers netids every patch but rarely rewrites a class, so what
 a class looks like from outside its payload mostly survives: how often
@@ -137,14 +213,15 @@ class in three others. A real ten-patch gap also moves the classes
 themselves. About one in twenty of the confident calls is wrong even
 under ideal conditions, and nobody knows which one.
 
-Where § 2 and § 3 agree — netid 601 — the answer is not a hypothesis
+Where § 2 and § 4 agree — netid 601 — the answer is not a hypothesis
 any more.
 
 ## What this does not do
 
-- **No payload is decoded.** Positions, damage numbers, item ids, spell
-  casts: none of it is reachable on a packed patch, and none of it is
-  claimed here.
+- **Most payloads stay unread.** § 3 opens the classes whose plaintext
+  something outside the file pins down; the visibility pair is 37.9 %
+  of traffic and the rest of that work is not done. Positions, damage
+  numbers, item ids and spell casts are not reachable today.
 - **No class is named with certainty by fingerprint alone.** Only § 2
   produces proof, and only for classes that happen to correspond to a
   counter Riot kept.

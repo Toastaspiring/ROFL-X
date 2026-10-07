@@ -29,6 +29,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::error::Result;
@@ -737,6 +738,321 @@ pub fn vision_windows(
     Ok(out)
 }
 
+/// One replay's input to [`solve_netid_field`]: the payloads of the
+/// class in question, the champions' net ids in roster order, and the
+/// statsJson counter the field is supposed to explain.
+pub type FieldInput = (Vec<Vec<u8>>, Vec<u32>, Vec<i64>);
+
+/// A net-id field inside a payload, read without the game's code.
+#[derive(Debug, Clone)]
+pub struct SolvedNetIdField {
+    pub netid: u16,
+    /// Bytes the class writes after this field. The field itself is
+    /// found by counting back from the end of the payload: the net
+    /// id's varint groups, then this.
+    pub tail: usize,
+    /// Payload byte to the varint byte it stands for. This is a slice
+    /// of the class's substitution table, at the net ids the rosters
+    /// happened to use.
+    pub table: BTreeMap<u8, u8>,
+    pub replays: usize,
+    pub players_checked: usize,
+    pub players_right: usize,
+}
+
+/// Net ids are stored XORed with 0x40000000 unless their low 24 bits
+/// are zero.
+fn mask(net_id: u32) -> u32 {
+    if net_id & 0x00FF_FFFF != 0 {
+        net_id ^ 0x4000_0000
+    } else {
+        net_id
+    }
+}
+
+/// The first byte a net id's varint writes.
+///
+/// A varint byte is its 7-bit group plus a continuation bit when more
+/// groups follow, and that whole byte is what the substitution table
+/// sees. The bit matters: net id 0x34 is written as the single byte
+/// 0x34, while 0xb4 is written as 0xb4 then 0x01, and the two first
+/// bytes share their low 7 bits but are different plaintext. Measured
+/// on 16.19, those two cases do map to different payload bytes -- 0x34
+/// to 0x94, 0xb4 to 0x56 -- so the bit is in the table's key, not
+/// stripped from it.
+fn first_varint_byte(net_id: u32) -> u8 {
+    let m = mask(net_id);
+    if m >= 0x80 {
+        ((m & 0x7F) | 0x80) as u8
+    } else {
+        m as u8
+    }
+}
+
+/// How many 7-bit groups a net id's varint takes.
+fn groups(net_id: u32) -> usize {
+    let mut v = mask(net_id) >> 7;
+    let mut n = 1;
+    while v != 0 {
+        v >>= 7;
+        n += 1;
+    }
+    n
+}
+
+/// Where in the payload a roster's net ids put their first varint byte.
+///
+/// Net ids go into the stream as a 7-bit varint, **low group first**,
+/// so a field naming a unit ends with that unit's higher groups and the
+/// byte we want sits that many places from the end. A roster is not
+/// always small: ten champions at 0x34..0x3d take one varint byte each
+/// and the byte is last, ten at 0xae..0xb7 take two and it is
+/// second-to-last, with a constant byte after it because the high group
+/// of every id in that range is 1. Deriving the offset from the roster
+/// beats searching for it, and the two cases cross-check, since those
+/// rosters overlap at low groups 0x34..0x37.
+///
+/// `tail` is how many bytes the class writes after the field; 0 when
+/// the field is the last thing in the payload.
+fn first_byte_position(ids: &[u32], tail: usize) -> Option<i32> {
+    let n = groups(*ids.first()?);
+    ids.iter().all(|id| groups(*id) == n).then(|| -((n + tail) as i32))
+}
+
+/// Find the byte of a class's payload that names a champion, by making
+/// it account for one of Riot's end-of-game counters.
+///
+/// Worked on the champion-death class: it fires once per death, and the
+/// byte that says who got the kill must, across the whole game, name
+/// each player exactly `CHAMPIONS_KILLED` times. Scanning byte
+/// positions and keeping the one where that holds finds the field; the
+/// byte values then map to the champions, which is a slice of the
+/// class's substitution table.
+///
+/// Two things make this a proof rather than a fit. The assignment is
+/// only taken from a replay where it is *forced* — every champion's
+/// count matching exactly one byte value, no value serving two
+/// champions. And the table learned that way is then used to *predict*
+/// the counts in the other replays, including ones that were ambiguous
+/// on their own.
+pub fn solve_netid_field(netid: u16, per_replay: &[FieldInput]) -> Option<SolvedNetIdField> {
+    let mut best: Option<SolvedNetIdField> = None;
+    for tail in 0..TAIL_MAX {
+        // Learn only where the assignment is forced, then feed what is
+        // known back in: a replay that is ambiguous on its own often
+        // has only one unsolved champion left once the others are
+        // pinned, and solving that one pins a further byte. Repeat
+        // until nothing new falls out.
+        let mut table: BTreeMap<u8, u8> = BTreeMap::new();
+        let mut known: BTreeMap<u8, u8> = BTreeMap::new();
+        let mut broken = false;
+        loop {
+            let before = table.len();
+            for (payloads, ids, counter) in per_replay {
+                let Some(position) = first_byte_position(ids, tail) else {
+                    continue;
+                };
+                let Some(pairs) = forced(payloads, ids, counter, position, &known) else {
+                    continue;
+                };
+                for (plain, cipher) in pairs {
+                    if table.get(&cipher).is_some_and(|p| *p != plain)
+                        || known.get(&plain).is_some_and(|c| *c != cipher)
+                    {
+                        broken = true;
+                        break;
+                    }
+                    table.insert(cipher, plain);
+                    known.insert(plain, cipher);
+                }
+                if broken {
+                    break;
+                }
+            }
+            if broken || table.len() == before {
+                break;
+            }
+        }
+        if broken || table.is_empty() {
+            continue;
+        }
+        // Predict every replay the table covers and score it.
+        let by_plain: BTreeMap<u8, u8> = table.iter().map(|(c, p)| (*p, *c)).collect();
+        let (mut checked, mut right, mut replays) = (0usize, 0usize, 0usize);
+        for (payloads, ids, counter) in per_replay {
+            let wanted: Option<Vec<u8>> = ids
+                .iter()
+                .map(|id| by_plain.get(&first_varint_byte(*id)).copied())
+                .collect();
+            let (Some(wanted), Some(position)) = (wanted, first_byte_position(ids, tail)) else {
+                continue;
+            };
+            let seen = counts(payloads, position);
+            replays += 1;
+            for (byte, truth) in wanted.iter().zip(counter) {
+                checked += 1;
+                right += usize::from(i64::from(seen.get(byte).copied().unwrap_or(0)) == *truth);
+            }
+        }
+        let score = (right, checked);
+        if checked >= MIN_PREDICTIONS
+            && right * 100 >= checked * FIELD_PRECISION
+            && best.as_ref().map_or(true, |b| (b.players_right, b.players_checked) < score)
+        {
+            best = Some(SolvedNetIdField {
+                netid,
+                tail,
+                table,
+                replays,
+                players_checked: checked,
+                players_right: right,
+            });
+        }
+    }
+    best
+}
+
+/// How many bytes after the field we are willing to assume the class
+/// writes. A payload whose length varies keeps its tail in place, not
+/// its head, so everything is counted from the end.
+const TAIL_MAX: usize = 8;
+/// Player-games a solved field must be checked against.
+const MIN_PREDICTIONS: usize = 50;
+/// Percent of those it must get exactly right.
+const FIELD_PRECISION: usize = 97;
+
+fn byte_at(payload: &[u8], position: i32) -> Option<u8> {
+    let i = if position < 0 {
+        payload.len().checked_sub(position.unsigned_abs() as usize)?
+    } else {
+        position as usize
+    };
+    payload.get(i).copied()
+}
+
+fn counts(payloads: &[Vec<u8>], position: i32) -> HashMap<u8, u32> {
+    let mut out: HashMap<u8, u32> = HashMap::new();
+    for p in payloads {
+        if let Some(b) = byte_at(p, position) {
+            *out.entry(b).or_default() += 1;
+        }
+    }
+    out
+}
+
+/// (masked net id, payload byte) pairs this replay leaves no choice
+/// about, given what is already `known` (masked net id to payload
+/// byte).
+///
+/// A champion already in `known` has to match its count or the whole
+/// replay is rejected; it then stops competing for the remaining
+/// counts, which is what lets a second pass solve the rest.
+fn forced(
+    payloads: &[Vec<u8>],
+    ids: &[u32],
+    counter: &[i64],
+    position: i32,
+    known: &BTreeMap<u8, u8>,
+) -> Option<Vec<(u8, u8)>> {
+    let seen = counts(payloads, position);
+    let mut taken: HashSet<u8> = HashSet::new();
+    let mut unsolved: Vec<(u8, i64)> = Vec::new();
+    for (id, want) in ids.iter().zip(counter) {
+        let plain = first_varint_byte(*id);
+        match known.get(&plain) {
+            Some(byte) => {
+                if i64::from(seen.get(byte).copied().unwrap_or(0)) != *want {
+                    return None;
+                }
+                taken.insert(*byte);
+            }
+            None if *want == 0 => {}
+            None => unsolved.push((plain, *want)),
+        }
+    }
+    let mut by_count: HashMap<i64, Vec<u8>> = HashMap::new();
+    for (byte, n) in &seen {
+        if !taken.contains(byte) {
+            by_count.entry(i64::from(*n)).or_default().push(*byte);
+        }
+    }
+    // Two players on the same kill count cannot be told apart by it.
+    // Take the ones that can be, and leave the rest for a later pass:
+    // once their neighbours are pinned the tie usually breaks.
+    let mut pairs = Vec::new();
+    for (plain, want) in unsolved {
+        if let Some([byte]) = by_count.get(&want).map(Vec::as_slice) {
+            pairs.push((plain, *byte));
+        }
+    }
+    let distinct: HashSet<u8> = pairs.iter().map(|(_, b)| *b).collect();
+    (!pairs.is_empty() && distinct.len() == pairs.len()).then_some(pairs)
+}
+
+/// One replay's death blocks: timestamp, victim net id, payload.
+pub type DeathBlocks = Vec<(f32, u32, Vec<u8>)>;
+
+/// Kills read off a solved killer field: who killed whom, and when.
+#[derive(Debug, Clone, Serialize)]
+pub struct Kill {
+    pub t: f32,
+    pub victim: usize,
+    pub killer: Option<usize>,
+}
+
+/// The kill timeline of one replay, from the solved field.
+pub fn kills(
+    payloads: &DeathBlocks,
+    field: &SolvedNetIdField,
+    champions: &[u32],
+) -> Vec<Kill> {
+    let index: HashMap<u8, usize> = champions
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (first_varint_byte(*id), i))
+        .collect();
+    let victim_of: HashMap<u32, usize> =
+        champions.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let Some(position) = first_byte_position(champions, field.tail) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (t, param, payload) in payloads {
+        let Some(victim) = victim_of.get(param).copied() else {
+            continue;
+        };
+        let killer = byte_at(payload, position)
+            .and_then(|b| field.table.get(&b))
+            .and_then(|plain| index.get(plain))
+            .copied();
+        out.push(Kill { t: *t, victim, killer });
+    }
+    out.sort_by(|a, b| a.t.total_cmp(&b.t));
+    out
+}
+
+/// Every block of one netid, as (timestamp, param, payload). Framing
+/// only, so this is available on a patch whose payloads are opaque.
+pub fn blocks_of(replay: &Replay<'_>, netid: u16) -> Result<DeathBlocks> {
+    let mut out = Vec::new();
+    for chunk in replay.chunks() {
+        let chunk = chunk?;
+        if chunk.stream_tag != StreamTag::GameChunk {
+            continue;
+        }
+        let Ok(body) = decompress_chunk(&chunk) else {
+            continue;
+        };
+        for block in BlockIterator::new(&body) {
+            let Ok(block) = block else { break };
+            if block.packet_id == netid {
+                out.push((block.timestamp, block.param, block.payload.to_vec()));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Blocks per champion for every netid, in roster order.
 ///
 /// This is the quantity that can be checked against Riot's own
@@ -1086,6 +1402,74 @@ mod tests {
             (one(vec![6, 2, 9, 4, 0]), truth(vec![6, 2, 9, 4, 0])),
         ]);
         assert!(m.is_empty());
+    }
+
+    #[test]
+    fn a_field_is_only_learned_where_the_counts_force_it() {
+        // Two champions, two kills each: nothing to tell them apart.
+        let payloads = vec![vec![0u8, 0xaa], vec![0, 0xaa], vec![0, 0xbb], vec![0, 0xbb]];
+        assert!(forced(&payloads, &[0x4000_0034, 0x4000_0035], &[2, 2], -1, &BTreeMap::new()).is_none());
+        // Different counts: forced.
+        let payloads = vec![vec![0u8, 0xaa], vec![0, 0xbb], vec![0, 0xbb]];
+        let got = forced(&payloads, &[0x40000034, 0x40000035], &[1, 2], -1, &BTreeMap::new()).unwrap();
+        assert_eq!(got, vec![(0x34, 0xaa), (0x35, 0xbb)]);
+    }
+
+    #[test]
+    fn a_solved_field_predicts_the_replays_it_did_not_learn_from() {
+        let rows = |v: Vec<u8>| v.into_iter().map(|b| vec![0u8, b]).collect::<Vec<_>>();
+        let ids = vec![0x4000_0034, 0x4000_0035];
+        // One replay where the counts differ, so the assignment is forced.
+        let mut input = vec![(rows(vec![0xaa, 0xbb, 0xbb]), ids.clone(), vec![1, 2])];
+        // Many where they are equal, so only the learned table can
+        // explain them.
+        for _ in 0..(MIN_PREDICTIONS / 2) {
+            input.push((rows(vec![0xaa, 0xaa, 0xbb, 0xbb]), ids.clone(), vec![2, 2]));
+        }
+        let f = solve_netid_field(9, &input).unwrap();
+        assert_eq!(f.tail, 0);
+        assert_eq!(f.players_right, f.players_checked);
+        assert_eq!(f.table.get(&0xaa), Some(&0x34));
+    }
+
+    #[test]
+    fn what_is_known_unlocks_what_is_not() {
+        // Both champions killed twice, so the counts alone say nothing
+        // -- but one of them is already pinned, so the other follows.
+        let payloads = vec![vec![0u8, 0xaa], vec![0, 0xaa], vec![0, 0xbb], vec![0, 0xbb]];
+        let known = BTreeMap::from([(0x34u8, 0xaau8)]);
+        let got = forced(&payloads, &[0x4000_0034, 0x4000_0035], &[2, 2], -1, &known).unwrap();
+        assert_eq!(got, vec![(0x35, 0xbb)]);
+    }
+
+    #[test]
+    fn a_known_pair_that_does_not_match_rejects_the_replay() {
+        let payloads = vec![vec![0u8, 0xaa], vec![0, 0xbb]];
+        let known = BTreeMap::from([(0x34u8, 0xaau8)]);
+        assert!(forced(&payloads, &[0x4000_0034, 0x4000_0035], &[9, 1], -1, &known).is_none());
+    }
+
+    #[test]
+    fn the_offset_follows_the_size_of_the_roster_ids() {
+        // Ten champions below 0x80: one varint byte, so the low group
+        // is the last byte of the payload.
+        let small: Vec<u32> = (0x34..0x3e).map(|n| 0x4000_0000 | n).collect();
+        assert_eq!(first_byte_position(&small, 0), Some(-1));
+        // At 0xae..0xb7 the varint needs two, and the high group is
+        // written after the low one.
+        let big: Vec<u32> = (0xae..0xb8).map(|n| 0x4000_0000 | n).collect();
+        assert_eq!(first_byte_position(&big, 0), Some(-2));
+        assert_eq!(first_byte_position(&big, 1), Some(-3));
+        // A roster straddling the boundary has no single offset.
+        assert_eq!(first_byte_position(&[0x4000_007f, 0x4000_0080], 0), None);
+    }
+
+    #[test]
+    fn negative_positions_count_from_the_end() {
+        assert_eq!(byte_at(&[1, 2, 3], -1), Some(3));
+        assert_eq!(byte_at(&[1, 2, 3], -3), Some(1));
+        assert_eq!(byte_at(&[1, 2, 3], -4), None);
+        assert_eq!(byte_at(&[1, 2, 3], 0), Some(1));
     }
 
     #[test]

@@ -509,6 +509,11 @@ fn explore(
         per_replay.push(explore_one(&replay)?);
     }
 
+    let deaths_netid = match_stats(&stats_rows)
+        .into_iter()
+        .find(|m| m.field == "NUM_DEATHS" && m.offset == 0)
+        .map(|m| m.netid);
+
     let identified: Vec<Value> = match_stats(&stats_rows)
         .into_iter()
         .map(|m| {
@@ -521,6 +526,11 @@ fn explore(
             })
         })
         .collect();
+
+    let killer = match deaths_netid {
+        Some(netid) => solve_killer(replays, netid)?,
+        None => None,
+    };
 
     let mut out = serde_json::json!({
         "patch": patch,
@@ -535,6 +545,7 @@ fn explore(
                      player, usually at spawn.",
             "netids": identified,
         },
+        "kill_timeline": killer,
     });
 
     if !reference.is_empty() {
@@ -606,6 +617,83 @@ fn explore(
         None => print_explore(&out),
     }
     Ok(())
+}
+
+/// Read the killer field of the champion-death class, then use it.
+///
+/// The death class is already identified: it is the netid that fires
+/// exactly `NUM_DEATHS` times per champion. One of its payload bytes
+/// has to name whoever got the kill, and across a whole game that byte
+/// must name each player exactly `CHAMPIONS_KILLED` times. That is what
+/// finds it, and what checks it afterwards.
+fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
+    use crate::explore::{
+        blocks_of, framing, kills, solve_netid_field, DeathBlocks, FieldInput,
+    };
+
+    let mut inputs: Vec<FieldInput> = Vec::new();
+    let mut games: Vec<(DeathBlocks, Vec<u32>)> = Vec::new();
+    for path in replays {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        let f = framing(&replay)?;
+        let Some(run) = f.champion_run(replay.metadata.players.len()) else {
+            continue;
+        };
+        let rows = blocks_of(&replay, netid)?;
+        let counter = player_counters(&replay);
+        let Some(k) = counter.get("CHAMPIONS_KILLED") else {
+            continue;
+        };
+        inputs.push((
+            rows.iter().map(|(_, _, p)| p.clone()).collect(),
+            run.clone(),
+            k.clone(),
+        ));
+        games.push((rows, run));
+    }
+    let Some(field) = solve_netid_field(netid, &inputs) else {
+        return Ok(None);
+    };
+
+    let mut timeline = 0usize;
+    let mut unnamed = 0usize;
+    let mut sample = Vec::new();
+    for (rows, run) in &games {
+        let ks = kills(rows, &field, run);
+        timeline += ks.len();
+        unnamed += ks.iter().filter(|k| k.killer.is_none()).count();
+        if sample.is_empty() {
+            sample = ks
+                .iter()
+                .take(8)
+                .map(|k| {
+                    serde_json::json!({
+                        "t": (f64::from(k.t) * 10.0).round() / 10.0,
+                        "victim": k.victim,
+                        "killer": k.killer,
+                    })
+                })
+                .collect();
+        }
+    }
+
+    Ok(Some(serde_json::json!({
+        "netid": field.netid,
+        "bytes_after_the_field": field.tail,
+        "method": "the byte of the death packet that names each player exactly \
+                   CHAMPIONS_KILLED times; learned only where the counts force \
+                   the assignment, then used to predict the other replays",
+        "payload_byte_to_net_id": field.table.iter()
+            .map(|(c, p)| (format!("{c:02x}"), format!("net id varint byte 0x{p:02x}")))
+            .collect::<BTreeMap<_, _>>(),
+        "replays_predicted": field.replays,
+        "players_checked": field.players_checked,
+        "players_right": field.players_right,
+        "deaths": timeline,
+        "deaths_with_no_champion_killer": unnamed,
+        "first_kills": sample,
+    })))
 }
 
 /// Riot's end-of-game integer counters, per player, in roster order.
@@ -718,6 +806,21 @@ fn print_explore(out: &Value) {
             );
         }
         println!();
+    }
+    if let Some(k) = out.get("kill_timeline") {
+        if !k.is_null() {
+            println!(
+                "killer field: netid {}, last field of the payload (tail {}) -- predicted {} of {} player-games right \
+                 across {} replays, {} deaths placed, {} with no champion killer\n",
+                k["netid"],
+                k["bytes_after_the_field"],
+                k["players_right"],
+                k["players_checked"],
+                k["replays_predicted"],
+                k["deaths"],
+                k["deaths_with_no_champion_killer"],
+            );
+        }
     }
     if let Some(i) = out.get("identified_by_statsjson") {
         let rows = i["netids"].as_array().map(Vec::as_slice).unwrap_or_default();

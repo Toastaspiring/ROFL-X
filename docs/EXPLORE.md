@@ -152,15 +152,80 @@ all five replays** — float rounding. `tests/decode_replays.rs` asserts
 it, so the file-only path cannot drift from the decoded one without the
 test suite failing.
 
+### The death packet's killer field, on 16.19
+
+The second case, and a harder one: a field with ten possible values
+instead of two, inside a payload whose length varies from 16 to 37
+bytes.
+
+Netid 1080 is already known to be the champion-death class (§ 2). One
+of its bytes has to say who got the kill, and statsJson records
+`CHAMPIONS_KILLED` per player — so **across a whole game that byte must
+name each player exactly that many times**. That is what finds the
+field and what checks it.
+
+Finding *where* it sits needs one fact about the format, taken from
+16.9: a net id is written as a 7-bit varint, **low group first**, and
+each byte carries its continuation bit. So a field naming a unit ends
+with that unit's higher groups, and the byte we want sits a known
+number of places from the end — one for a roster at 0x34..0x3d, two
+for a roster at 0xae..0xb7, which both occur in these twenty replays.
+The offset is derived from the roster, not searched for.
+
+The continuation bit is part of the plaintext, not noise to be
+stripped. Net id 0x34 is written as the single byte `0x34` and comes
+out as `0x94`; net id 0xb4 is written as `0xb4` then `0x01` and its
+first byte comes out as `0x56`. Same low seven bits, different
+plaintext, different cipher byte — the measurement says so, and keying
+the table on the low bits alone makes the two rosters contradict each
+other.
+
+The method is then deliberately split in two, so that it proves rather
+than fits:
+
+- **Learn** only from a replay where the assignment is *forced* — each
+  player's kill count matched by exactly one byte value, no value
+  serving two players. Players who tie on kills are left unsolved and
+  picked up on a later pass once their neighbours are pinned.
+- **Predict** every other replay from the table so built, including
+  ones that were ambiguous on their own, and score it.
+
+| | |
+|---|---|
+| player-games predicted | **200** across all 20 replays |
+| predicted exactly right | **199** |
+| table entries recovered | 36 |
+| deaths placed with a killer | 1,944 of 1,955 |
+| deaths with no champion killer | 11 (turret and minion executes) |
+
+The one miss is a single player short by one kill, in the replay whose
+last kill ends the game.
+
+What comes out is a kill feed from a replay whose payloads are
+supposedly unreadable:
+
+```
+   68.8s  B Swain          killed  R Amumu
+   72.5s  R KogMaw         killed  B Yone
+   75.6s  B Swain          killed  R Velkoz
+   80.2s  B Jinx           killed  R Mordekaiser
+   82.5s  B Swain          killed  R Kayle
+   88.2s  R Amumu          killed  B Jinx
+```
+
 ### What this does and does not generalise to
 
-It generalises to any class whose plaintext can be pinned from outside:
-a field with few possible values and a rule that fixes which, a counter
-that statsJson also records, a coordinate constrained by the map and by
-continuity in time. It does **not** give a general decoder — each class
-has its own table, and a class with 10 varying bytes and no external
-handle on their values stays shut. Nothing here reads the game's code;
-this is file analysis, and the tables come out of the file.
+It generalises to any class whose plaintext can be pinned from
+outside. Two kinds have worked so far: a field with few possible values
+and a game rule that fixes which (the visibility team byte), and a
+field whose values are counted by statsJson (the killer). A third looks
+reachable — a coordinate, constrained by having to lie on the map and
+to move continuously in time — and is not done.
+
+It does **not** give a general decoder. Each class has its own table,
+and a class with ten varying bytes and no external handle on their
+values stays shut. Nothing here reads the game's code; this is file
+analysis, and the tables come out of the file.
 
 ## 4. Netids proposed by fingerprint
 
@@ -219,8 +284,8 @@ any more.
 ## What this does not do
 
 - **Most payloads stay unread.** § 3 opens the classes whose plaintext
-  something outside the file pins down; the visibility pair is 37.9 %
-  of traffic and the rest of that work is not done. Positions, damage
+  something outside the file pins down — the visibility pair, 37.9 % of
+  traffic, and the killer field of the death class. Positions, damage
   numbers, item ids and spell casts are not reachable today.
 - **No class is named with certainty by fingerprint alone.** Only § 2
   produces proof, and only for classes that happen to correspond to a

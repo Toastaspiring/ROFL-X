@@ -157,10 +157,14 @@ first measures how often that matching is right on a patch where the
 answer is known. `--dump-netid N` writes every block of one netid with
 its raw payload bytes, which is where payload work starts.
 
-On a packed patch this still reads the visibility classes outright —
-37.9 % of all blocks — because their payload encoding can be recovered
-from the champions' known teams. The same code on 16.9 agrees with the
-emulator to within 0.1 s, which `tests/decode_replays.rs` asserts.
+On a packed patch this still reads some payloads outright, because the
+obfuscation is a per-class byte substitution and the tables can be
+recovered from plaintext the file itself pins down. The visibility
+classes (37.9 % of all blocks) come from the champions' known teams;
+the death class's killer field comes from statsJson's
+`CHAMPIONS_KILLED`, giving a kill feed. The same code on 16.9 agrees
+with the emulator to within 0.1 s, which `tests/decode_replays.rs`
+asserts.
 
 Decode a replay (patch archive in `./patch`, named `<major>-<minor>.patch`):
 
@@ -318,10 +322,11 @@ dumped object and checking the fields against something independent
   recovering a class's byte substitution from plaintext the file itself
   pins down ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). Done for the
   visibility pair, 37.9 % of 16.19 blocks.
-- [ ] More classes the same way. Best handles: the death class (netid
-  1080, already proved) whose killer field is drawn from the ten known
-  champion ids; a position class, where coordinates must lie on the map
-  and move continuously.
+- [x] The death class's killer field (netid 1080), from statsJson's
+  `CHAMPIONS_KILLED`: 199 of 200 player-games predicted right.
+- [ ] More classes the same way. Best remaining handle: a position
+  class, where coordinates must lie on the map and move continuously
+  in time — a much tighter constraint on a substitution than a counter.
 - [x] Richer file-only output (`rofl-x explore`,
   [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
   alone, a per-champion per-minute timeline, netids proved against

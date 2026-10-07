@@ -9,6 +9,8 @@
 //!   class names.
 //! - `fields`: measured field layout of every class, for the ones no
 //!   handler types yet.
+//! - `layout`: a class's payload byte by byte, and its substitution
+//!   table, measured against the deserializer's own output.
 //! - `summary`, `explore`: file-only analysis for patches whose client
 //!   ships packed. No binary, no payloads, framing and metadata alone.
 //! - `game`: whole-replay assembly (roster, events, positions, self-check).
@@ -25,6 +27,8 @@ pub mod summary;
 
 #[cfg(feature = "emulator")]
 pub mod fields;
+#[cfg(feature = "emulator")]
+pub mod layout;
 #[cfg(feature = "emulator")]
 pub mod game;
 #[cfg(feature = "emulator")]

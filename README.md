@@ -191,12 +191,21 @@ replays, one table for each of the 273 classes they use:
 rofl-x fields -r EUW1-1234567890.rofl --samples 2000 --markdown FIELDS.md
 ```
 
-Research view, every block of one netid as plaintext object words:
+Research view, every block of one netid as plaintext object words,
+and one class's payload worked out byte by byte:
 
 ```bash
 rofl-x decode -r EUW1-1234567890.rofl --netid 472 --jsonl out.jsonl
 rofl-x decode -r EUW1-1234567890.rofl --find YellowTrinket
+rofl-x decode -r EUW1-1234567890.rofl --netid 201 --layout
 ```
+
+`--layout` reports which object field each payload byte carries, the
+order and byte order the class writes its fields in, and the
+substitution table that turns one into the other — measured against
+the deserializer's own output, not guessed. It is what says where to
+look on a patch whose payloads cannot be decoded
+([docs/EXPLORE.md](docs/EXPLORE.md)).
 
 Build a format-2 archive from an unpacked `League of Legends.exe` of the
 same patch ([docs/RE_PATCH.md](docs/RE_PATCH.md)):
@@ -324,9 +333,14 @@ dumped object and checking the fields against something independent
   visibility pair, 37.9 % of 16.19 blocks.
 - [x] The death class's killer field (netid 1080), from statsJson's
   `CHAMPIONS_KILLED`: 199 of 200 player-games predicted right.
+- [x] `decode --layout`: a class's payload byte by byte and its
+  substitution table, measured on a decodable patch. Recovers all 256
+  entries of `PKT_S2C_FaceDirection_s` with no conflict.
 - [ ] More classes the same way. Best remaining handle: a position
   class, where coordinates must lie on the map and move continuously
   in time — a much tighter constraint on a substitution than a counter.
+  On 16.19 the death class's coordinates are located but not read;
+  see [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
 - [x] Richer file-only output (`rofl-x explore`,
   [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
   alone, a per-champion per-minute timeline, netids proved against

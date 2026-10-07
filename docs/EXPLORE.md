@@ -213,6 +213,61 @@ supposedly unreadable:
    88.2s  R Amumu          killed  B Jinx
 ```
 
+### Where the shape comes from: `decode --layout`
+
+Everything above needed to know *where* a field sits and *how* it is
+written. On a patch with an archive, neither has to be guessed, and
+`rofl-x decode --netid N --layout` works it out:
+
+```
+rofl-x decode -r <16.9 replay> --netid 472 --layout
+```
+
+For every payload byte and every byte of every object word it asks
+whether the map between the two holds in both directions across every
+block. A real correspondence survives thousands of blocks; a
+coincidence does not. On `PKT_S2C_FaceDirection_s`:
+
+```
+fields in the order the class writes them:
+  +0x01c  4 bytes, little-endian
+  +0x018  4 bytes, little-endian
+  +0x014  4 bytes, little-endian
+substitution table: 256 of 256 entries from 10 positions, 0 conflicts
+```
+
+A complete table, no conflicts, from one class in one replay. That is
+the measurement behind "one 256-entry substitution per class".
+
+The same run on `PKT_NPC_Hero_Die_s` gives the layout this section
+relies on — fields written `z`, `height`, `x`, then two more, then the
+death timer, then the killer, every one little-endian, the killer last
+— and then says:
+
+```
+NOT SETTLED: with 34 blocks some of the layout above is coincidence.
+```
+
+Which is the honest answer. A class that fires sixty times a game
+cannot settle a table: when every block carries a different value for
+two bytes, any pairing of them is bijective and proves nothing. The
+field order survives that (it is corroborated across replays and by
+the 16.19 payload matching it byte for byte), the table does not.
+
+### Two tables from the same patch are unrelated
+
+Worth stating because it rules out a shortcut. With a full table for
+`PKT_S2C_FaceDirection_s` (256 entries) and most of one for
+`PKT_S2C_UpdateDeathTimer_s` (107), the two were compared over their
+107 shared inputs: not identical, and no constant XOR, no constant
+offset, no input shift explains more than 3 of the 107. They are
+independent permutations.
+
+So a table recovered on one class says nothing about any other, and a
+table recovered on 16.9 says nothing about 16.19. Every class has to
+be opened on its own evidence. Only the *shape* — field order, byte
+order, where the varint sits — carries across.
+
 ### What this does and does not generalise to
 
 It generalises to any class whose plaintext can be pinned from
@@ -226,6 +281,29 @@ It does **not** give a general decoder. Each class has its own table,
 and a class with ten varying bytes and no external handle on their
 values stays shut. Nothing here reads the game's code; this is file
 analysis, and the tables come out of the file.
+
+**Where positions have got to.** On 16.19 the death class's
+coordinates are *located* but not *read*. The payload map shows them
+plainly — three consecutive little-endian floats, each with an
+exponent byte taking ten values, exactly matching the 16.9 layout:
+
+```
+  [ 8..12]  float   mantissa, mantissa, mantissa, exponent (10 values)
+  [12..16]  float   same shape
+  [16..20]  float   same shape, narrower -- the height
+  [31..35]  float   5b 5b mantissa exponent   <- the death timer, and
+                                                 5b is this class's T(0x00)
+  [35]      killer varint
+```
+
+Reading them needs the table at the mantissa bytes, which is roughly
+200 more entries, and the constraints available are weak: an exponent
+byte is pinned by the map's bounds, but a mantissa byte is uniform and
+only constrained by the pair `(x, z)` having to be somewhere a
+champion can stand. With 1,955 deaths that is an under-determined
+constraint problem, not a lookup. A movement class, with millions of
+blocks and positions that have to move continuously, is the better
+target; it is not done.
 
 ## 4. Netids proposed by fingerprint
 

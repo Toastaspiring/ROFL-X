@@ -74,6 +74,15 @@ pub enum Command {
         /// which class carries a given name.
         #[arg(long)]
         find: Option<String>,
+
+        /// With `--netid`, work out that class's payload byte by byte:
+        /// which object field each payload byte carries, in what order
+        /// the class writes its fields and in which byte order, and the
+        /// substitution table that turns one into the other. This is
+        /// what says where to look on a patch whose payloads cannot be
+        /// decoded (docs/EXPLORE.md).
+        #[arg(long)]
+        layout: bool,
     },
     /// Print a replay's transport-layer summary and the end-of-game
     /// scoreboard Riot stores in its metadata. Needs no patch archive, so
@@ -203,7 +212,8 @@ pub fn run(cli: Cli) -> Result<()> {
             limit,
             jsonl,
             find,
-        } => decode(&replay, &patch_dir, netid, limit, jsonl, find),
+            layout,
+        } => decode(&replay, &patch_dir, netid, limit, jsonl, find, layout),
         Command::Inspect { replay, histogram } => inspect(&replay, histogram),
         Command::Summary {
             replay,
@@ -328,6 +338,7 @@ fn file(_replay: &Path, _output: &Path, _patch_dir: &Path, _threads: Option<usiz
 }
 
 #[cfg(feature = "emulator")]
+#[allow(clippy::too_many_arguments)]
 fn decode(
     replay_path: &Path,
     patch_dir: &Path,
@@ -335,8 +346,10 @@ fn decode(
     limit: usize,
     jsonl: Option<PathBuf>,
     find: Option<String>,
+    layout: bool,
 ) -> Result<()> {
     use crate::emulator::{DecodeStatus, PacketDecoder, PatchArchive};
+    use crate::layout::Sample;
     use std::collections::HashMap;
     use std::io::Write;
 
@@ -356,6 +369,7 @@ fn decode(
         None => None,
     };
     let mut per_netid: BTreeMap<u16, HashMap<DecodeStatus, usize>> = BTreeMap::new();
+    let mut samples: Vec<Sample> = Vec::new();
     let mut found: BTreeMap<u16, usize> = BTreeMap::new();
     let mut total = 0usize;
     let started = std::time::Instant::now();
@@ -392,6 +406,9 @@ fn decode(
                     }
                 }
             }
+            if layout && pkt.status == DecodeStatus::Clean {
+                samples.push(Sample::of(block.payload, &pkt));
+            }
             if let Some(w) = out.as_mut() {
                 let words: serde_json::Map<String, serde_json::Value> = pkt
                     .written_words(0x200)
@@ -416,6 +433,12 @@ fn decode(
         }
     }
     let secs = started.elapsed().as_secs_f64();
+    if layout {
+        match only.and_then(|netid| crate::layout::recover(netid, &samples)) {
+            Some(l) => print_layout(&l, archive.class_of(l.netid)),
+            None => eprintln!("--layout needs --netid and enough clean blocks of it"),
+        }
+    }
     for (netid, n) in &found {
         println!("found in netid {netid} ({}) x{n}", archive.class_of(*netid).unwrap_or("-"));
     }
@@ -970,6 +993,49 @@ fn fields(
     )))
 }
 
+#[cfg(feature = "emulator")]
+fn print_layout(l: &crate::layout::Layout, class: Option<&str>) {
+    use crate::layout::Carries;
+
+    println!(
+        "
+netid {} {} -- {} blocks of the commonest payload length, {} bytes",
+        l.netid,
+        class.unwrap_or("(no class name)"),
+        l.blocks,
+        l.payload_len,
+    );
+    println!("fields in the order the class writes them:");
+    for (off, order, n) in l.field_order() {
+        println!("  +0x{off:03x}  {n} bytes, {order}");
+    }
+    println!("payload byte by byte:");
+    for (i, c) in l.bytes.iter().enumerate() {
+        let what = match c {
+            Carries::Field(off, j) => format!("+0x{off:03x} byte {j}"),
+            Carries::Ambiguous(v) => format!("{} candidates (field barely varies)", v.len()),
+            Carries::Unknown => "not in the object".into(),
+        };
+        println!("  [{:>2}] (end {:>3})  {what}", i, i as i64 - l.payload_len as i64);
+    }
+    println!(
+        "substitution table: {} of 256 entries from {} positions, {} conflicts",
+        l.table.len(),
+        l.table_from_positions,
+        l.table_conflicts
+    );
+    if !l.disagreeing_positions.is_empty() {
+        println!(
+            "  it contradicts positions {:?}, whose fields take too few values to be pinned",
+            l.disagreeing_positions
+        );
+    }
+    if !l.settled() {
+        println!("  NOT SETTLED: with {} blocks some of the layout above is", l.blocks);
+        println!("  coincidence. A class this rare needs more blocks to pin down.");
+    }
+}
+
 #[cfg(not(feature = "emulator"))]
 fn decode(
     _replay: &Path,
@@ -978,6 +1044,7 @@ fn decode(
     _limit: usize,
     _jsonl: Option<PathBuf>,
     _find: Option<String>,
+    _layout: bool,
 ) -> Result<()> {
     Err(RoflError::Io(std::io::Error::other(
         "decode requires the `emulator` feature",

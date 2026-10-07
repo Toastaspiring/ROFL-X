@@ -19,6 +19,7 @@ src/
 │   ├── mod.rs               GamePacket enum; interpret(class, obj); recognise(obj) for unnamed shapes
 │   └── handlers/            one file per class (additive, as proposed below)
 ├── fields.rs                measured field layout of every class (docs/FIELDS.md)
+├── layout.rs                one class's payload byte by byte + its substitution table
 ├── game.rs                  parallel whole-replay decode, roster, events, positions, self-check
 ├── summary.rs               file-only analysis: statsJson + transport profile, no archive
 ├── explore.rs               file-only, deeper: champions, timelines, netid identification

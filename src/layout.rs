@@ -49,19 +49,109 @@ const MIN_BLOCKS: usize = 16;
 const MIN_VARIETY: usize = 16;
 
 /// One block's two sides: the payload as it sits in the file, and the
-/// plaintext object words the deserializer produced from it.
+/// plaintext the deserializer produced from it — the object words, and
+/// the largest buffer it allocated, if any.
 pub struct Sample {
     pub payload: Vec<u8>,
     pub words: Vec<(u64, u32)>,
+    /// The biggest heap block the deserializer allocated other than the
+    /// object itself. A class that carries a list writes it there, and
+    /// none of it shows up in the object words.
+    pub buffer: Vec<u8>,
 }
 
 impl Sample {
     pub fn of(payload: &[u8], pkt: &DecodedPacket) -> Sample {
+        let buffer = pkt
+            .memory
+            .allocations()
+            .iter()
+            .filter(|(addr, size)| *addr != pkt.object && *size > 0)
+            .max_by_key(|(_, size)| *size)
+            .and_then(|(addr, size)| pkt.memory.bytes(*addr, *size as usize))
+            .unwrap_or_default()
+            .to_vec();
         Sample {
             payload: payload.to_vec(),
             words: pkt.written_words(OBJECT_LIMIT),
+            buffer,
         }
     }
+}
+
+/// How a class's allocated buffer sits inside its payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferFit {
+    /// True when the payload carries the buffer back to front.
+    pub reversed: bool,
+    /// Payload bytes before the buffer's data starts; for a reversed
+    /// fit the buffer's first byte is the payload's last.
+    pub header: usize,
+    pub blocks: usize,
+    pub table: BTreeMap<u8, u8>,
+    pub conflicts: usize,
+}
+
+/// Work out whether a class's payload is just its buffer run through
+/// the substitution, and recover the table if it is.
+///
+/// Worth trying because a class that carries a list puts none of it in
+/// the object, so the field-by-field pass above sees nothing at all.
+/// Two arrangements are tried. Forwards, the buffer's first byte is the
+/// first byte after a fixed-length header. Reversed, the buffer's first
+/// byte is the payload's *last* — which is what the waypoint class
+/// does, and which no amount of staring at offsets from the front would
+/// have shown.
+///
+/// A fit is only accepted if one table explains every byte of every
+/// block with no contradiction, which a wrong arrangement never does.
+pub fn recover_buffer(samples: &[Sample]) -> Option<BufferFit> {
+    let usable: Vec<&Sample> = samples
+        .iter()
+        .filter(|s| !s.buffer.is_empty() && s.payload.len() > s.buffer.len())
+        .collect();
+    if usable.len() < MIN_BLOCKS {
+        return None;
+    }
+    let mut best: Option<BufferFit> = None;
+    for reversed in [true, false] {
+        // Forwards needs a header length; reversed is anchored to the end.
+        let headers: Vec<usize> = if reversed { vec![0] } else { (0..=8).collect() };
+        for header in headers {
+            let mut table: BTreeMap<u8, u8> = BTreeMap::new();
+            let mut conflicts = 0usize;
+            let mut blocks = 0usize;
+            for s in &usable {
+                if !reversed && s.payload.len() < header + s.buffer.len() {
+                    continue;
+                }
+                blocks += 1;
+                for (j, plain) in s.buffer.iter().enumerate() {
+                    let i = if reversed {
+                        s.payload.len() - 1 - j
+                    } else {
+                        header + j
+                    };
+                    let cipher = s.payload[i];
+                    match table.get(plain) {
+                        Some(have) if *have != cipher => conflicts += 1,
+                        Some(_) => {}
+                        None => {
+                            table.insert(*plain, cipher);
+                        }
+                    }
+                }
+            }
+            let fit = BufferFit { reversed, header, blocks, table, conflicts };
+            if fit.conflicts == 0
+                && fit.blocks >= MIN_BLOCKS
+                && best.as_ref().map_or(true, |b| b.table.len() < fit.table.len())
+            {
+                best = Some(fit);
+            }
+        }
+    }
+    best
 }
 
 /// What one payload byte was found to carry.
@@ -332,6 +422,54 @@ impl Layout {
 mod tests {
     use super::*;
 
+    #[test]
+    fn finds_a_reversed_buffer_and_its_table() {
+        let t = |b: u8| b ^ 0x3C;
+        let samples: Vec<Sample> = (0..40u32)
+            .map(|i| {
+                let buffer: Vec<u8> = (0..12u8).map(|k| k.wrapping_mul(7).wrapping_add(i as u8)).collect();
+                let mut payload = vec![0xAA, 0xBB, 0xCC];
+                payload.extend(buffer.iter().rev().map(|b| t(*b)));
+                Sample { payload, words: Vec::new(), buffer }
+            })
+            .collect();
+        let fit = recover_buffer(&samples).unwrap();
+        assert!(fit.reversed);
+        assert_eq!(fit.conflicts, 0);
+        for (plain, cipher) in &fit.table {
+            assert_eq!(*cipher, t(*plain));
+        }
+    }
+
+    #[test]
+    fn finds_a_forward_buffer_behind_a_header() {
+        let t = |b: u8| b.wrapping_add(17);
+        let samples: Vec<Sample> = (0..40u32)
+            .map(|i| {
+                let buffer: Vec<u8> = (0..12u8).map(|k| k.wrapping_mul(5).wrapping_add(i as u8)).collect();
+                let mut payload = vec![0u8; 4];
+                payload.extend(buffer.iter().map(|b| t(*b)));
+                Sample { payload, words: Vec::new(), buffer }
+            })
+            .collect();
+        let fit = recover_buffer(&samples).unwrap();
+        assert!(!fit.reversed);
+        assert_eq!(fit.header, 4);
+        assert_eq!(fit.conflicts, 0);
+    }
+
+    #[test]
+    fn no_fit_when_the_payload_is_unrelated() {
+        let samples: Vec<Sample> = (0..40u32)
+            .map(|i| Sample {
+                payload: vec![i as u8; 20],
+                words: Vec::new(),
+                buffer: (0..12u8).map(|k| k.wrapping_mul(3).wrapping_add(i as u8)).collect(),
+            })
+            .collect();
+        assert!(recover_buffer(&samples).is_none());
+    }
+
     /// Four bytes that vary independently. Bytes that are each an
     /// injective function of one counter would all track each other,
     /// which real fields do not.
@@ -350,7 +488,7 @@ mod tests {
     fn sample(v: u32, table: impl Fn(u8) -> u8) -> Sample {
         let mut payload = vec![table(0xAA)];
         payload.extend(v.to_le_bytes().map(&table));
-        Sample { payload, words: vec![(0x10, v)] }
+        Sample { payload, words: vec![(0x10, v)], buffer: Vec::new() }
     }
 
     #[test]
@@ -384,7 +522,7 @@ mod tests {
                 let v = value(i);
                 let mut payload = vec![t(0xAA)];
                 payload.extend(v.to_be_bytes().map(t));
-                Sample { payload, words: vec![(0x10, v)] }
+                Sample { payload, words: vec![(0x10, v)], buffer: Vec::new() }
             })
             .collect();
         let l = recover(7, &samples).unwrap();

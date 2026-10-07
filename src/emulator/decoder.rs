@@ -98,6 +98,15 @@ impl PlainMemory {
         self.allocs.iter().find(|(a, _)| *a == addr).map(|(_, n)| *n)
     }
 
+    /// Every heap block the *deserializer* asked for, (address, size),
+    /// in order. The decode's own scaffolding is left out, so a class
+    /// that carries a list leaves exactly that list here, and comparing
+    /// it against the raw payload gives the class's substitution table
+    /// outright.
+    pub fn allocations(&self) -> &[(u64, u64)] {
+        &self.allocs
+    }
+
     /// Whether the deserializer stored a plaintext value at `addr`.
     pub fn written(&self, addr: u64) -> bool {
         addr.checked_sub(self.base)
@@ -347,6 +356,10 @@ impl PacketDecoder {
         m.write(buf, &stream)?;
         m.write(cur, &buf.to_le_bytes())?;
 
+        // Everything allocated from here on is the deserializer's own:
+        // the scaffolding above (the factory's out-pointer, the stream
+        // buffer, the cursor) is ours and says nothing about the class.
+        let scaffolding = m.allocations().len();
         m.set_capture(true);
         let r = m.call(deser, &[obj, cur, buf + stream.len() as u64]);
         m.set_capture(false);
@@ -371,7 +384,7 @@ impl PacketDecoder {
                 base: HEAP_BASE,
                 bytes,
                 written,
-                allocs: m.allocations().to_vec(),
+                allocs: m.allocations()[scaffolding.min(m.allocations().len())..].to_vec(),
             },
         })
     }

@@ -203,8 +203,12 @@ rofl-x decode -r EUW1-1234567890.rofl --netid 201 --layout
 `--layout` reports which object field each payload byte carries, the
 order and byte order the class writes its fields in, and the
 substitution table that turns one into the other — measured against
-the deserializer's own output, not guessed. It is what says where to
-look on a patch whose payloads cannot be decoded
+the deserializer's own output, not guessed. For a class that carries a
+list in an allocated buffer rather than in object fields, it also
+works out how that buffer sits inside the payload; the waypoint class
+turns out to write it **backwards**, and with that the table comes out
+complete, 256 of 256 entries with no conflict. It is what says where
+to look on a patch whose payloads cannot be decoded
 ([docs/EXPLORE.md](docs/EXPLORE.md)).
 
 Build a format-2 archive from an unpacked `League of Legends.exe` of the
@@ -337,11 +341,12 @@ dumped object and checking the fields against something independent
   substitution table, measured on a decodable patch. Recovers all 256
   entries of `PKT_S2C_FaceDirection_s` with no conflict.
 - [ ] **Positions and move orders on a packed patch.** The waypoint
-  class is identified on 16.19 (netid 1267) but not read. It is the
-  right target: 118,885 blocks, paths that must be continuous in time,
-  and deltas whose plaintext distribution is known in advance, so the
-  substitution can be solved against a check that either holds or does
-  not. See [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
+  class is identified on 16.19 (netid 1267), its wire format is
+  settled (the payload is its entry buffer written backwards), two
+  table entries are known and every coordinate's position in the
+  packet is known. What remains is the search for the other 254, which
+  the existing waypoint parser checks for free: a wrong table fails to
+  parse the first block. See [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
 - [x] Richer file-only output (`rofl-x explore`,
   [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
   alone, a per-champion per-minute timeline, netids proved against

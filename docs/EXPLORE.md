@@ -230,6 +230,77 @@ supposedly unreadable:
    88.2s  R Amumu          killed  B Jinx
 ```
 
+### The waypoint class writes its payload backwards
+
+The movement class carries a list, and a list does not go in the
+packet object — it goes in a buffer the deserializer allocates. So the
+field-by-field pass finds **nothing**: every payload byte of netid 916
+reads "not in the object".
+
+Comparing the payload against that buffer directly fails too, at every
+header length, with tens of thousands of contradictions. The reason
+turns out to be visible in one measurement. Two blocks whose entry
+buffers are byte-identical have payloads that differ *only in the
+first three bytes*:
+
+```
+buffer 0200b200004000f04b440bf339f2
+sync 6176   payload e3140c 79d2686a3959ceaadbd6dbdb55dbd4
+sync 6310   payload cb568c 79d2686a3959ceaadbd6dbdb55dbd4
+```
+
+The header carries a counter, and everything after it is a
+deterministic function of the entry data — so there *is* a
+substitution, and the alignment was simply wrong. Solving the
+alignment the same way the field pass does, by asking which payload
+byte tracks which buffer byte across every block, gives the answer:
+
+```
+  payload[ 5] <- buffer[13]
+  payload[ 6] <- buffer[12]
+  ...
+  payload[17] <- buffer[ 1]
+```
+
+**The payload carries the buffer back to front**, anchored to the
+payload's end rather than its start. Nothing about staring at offsets
+from the front would have shown that. With the reversal, one table
+explains **256 of 256 bytes over 6,000 blocks with zero conflicts**,
+and `T(0x00)` comes out as `0xdb` — which is exactly the byte that
+frequency analysis said covered 20.3 % of the class's payload.
+
+`decode --layout` now tries this arrangement whenever a class
+allocates a buffer, so none of the above has to be done by hand again.
+
+### What it gives on 16.19
+
+The reversal means the *first* entry's header sits at the *end* of the
+payload, at fixed offsets, whatever the rest of the packet does. The
+entry begins `flags(2) unit(4) speed(4)`, and a unit net id's top byte
+is `0x40` for every unit in the game. So:
+
+| payload position | the model says | measured on 118,885 blocks |
+|-----------------:|----------------|----------------------------|
+| −1 | flags low byte: waypoint count and a flag | 16 distinct values |
+| −2 | flags high byte, 0 or 2 | `0x42` on 99 % |
+| −3 | unit id byte 0 | 247 distinct |
+| −4 | unit id byte 1, 0 for ids under 0x100 | `0x42` on 99 % |
+| −5 | unit id byte 2, always 0 here | **`0x42` on 100 %** |
+| −6 | unit id byte 3, **always `0x40`** | **`0x29` on 100 %** |
+| −10 | speed's exponent byte | one value on 90 % |
+
+So on 16.19's movement class, `T(0x40) = 0x29` and `T(0x00) = 0x42`,
+the latter agreed on three ways over — the frequency profile, position
+−5, and position −4.
+
+That is two entries of the 256 needed, and the position of every
+coordinate in the packet. It is not positions yet. What is left is a
+constraint solve: the entry stream has to parse to exactly its length,
+the waypoint counts in the flags have to agree with the bytes
+consumed, and every coordinate has to land on the map — and that check
+either holds for a candidate table or it does not. The parser for it
+already exists, in `packet::handlers::waypoints`.
+
 ### Where the shape comes from: `decode --layout`
 
 Everything above needed to know *where* a field sits and *how* it is
@@ -306,12 +377,10 @@ The **waypoint class** is netid 1267, which is where movement and
 therefore move orders live. It is 3.21 % of all blocks, it matches
 16.9's waypoint class with the largest margin of any pair in the set,
 its payload runs 18–352 bytes against 16.9's 18–367, and its byte
-concentration is 23.8 % against 16.9's 20.3 % — the signature of a
-class whose payload is mostly small signed deltas. What that
-concentration also says is that its commonest byte, `0x42`, is almost
-certainly this class's `T(0x00)`, the same role `0xdb` plays on 16.9.
-*Almost certainly* is doing work in that sentence: it is an inference
-from a frequency, not a measurement, and nothing is built on it.
+concentration is 23.8 % against 16.9's 20.3 %. Its wire format is
+known, two entries of its table are known, and the position of every
+coordinate in the packet is known — all of which is above. What is
+missing is the rest of the table.
 
 The **death class's** coordinates are *located* but not *read*. The payload map shows them
 plainly — three consecutive little-endian floats, each with an
@@ -334,13 +403,14 @@ somewhere a champion can stand. With 1,955 deaths that is an
 under-determined constraint problem, not a lookup.
 
 The waypoint class is the better target for exactly the reason the
-death class is a poor one. It has 118,885 blocks in half the replays
-rather than 1,955, its paths have to be continuous in time rather than
-merely plausible, and its deltas are small signed numbers whose
-plaintext distribution is known in advance. That is a real
-constraint-solving problem with a built-in check — decoded paths
-either stay on the map and join up, or they do not. It is not done,
-and it is the next thing worth doing.
+death class is a poor one, and it is now much further along. Its wire
+format is settled, it has 118,885 blocks rather than 1,955, and the
+check on a candidate table is brutal: the entry stream has to parse to
+exactly its own length, the waypoint counts in the flags have to agree
+with the bytes consumed, and every coordinate has to land on the map.
+A wrong table fails that on the first block. The parser is already
+written — `packet::handlers::waypoints` — so what remains is the
+search, not the format.
 
 ## 4. Netids identified by when they fire
 

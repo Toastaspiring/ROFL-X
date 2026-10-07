@@ -69,6 +69,13 @@ pub enum Command {
         #[arg(long)]
         jsonl: Option<PathBuf>,
 
+        /// With `--jsonl`, also write the plaintext bytes of every heap
+        /// block the deserializer allocated. A class that copies its
+        /// payload into a buffer puts the whole thing in one of these,
+        /// so this is how its substitution table comes out.
+        #[arg(long)]
+        heap: bool,
+
         /// Report blocks whose decoded plaintext (object and everything it
         /// allocated) contains this ASCII text. Research aid for finding
         /// which class carries a given name.
@@ -211,9 +218,10 @@ pub fn run(cli: Cli) -> Result<()> {
             netid,
             limit,
             jsonl,
+            heap,
             find,
             layout,
-        } => decode(&replay, &patch_dir, netid, limit, jsonl, find, layout),
+        } => decode(&replay, &patch_dir, netid, limit, jsonl, heap, find, layout),
         Command::Inspect { replay, histogram } => inspect(&replay, histogram),
         Command::Summary {
             replay,
@@ -345,6 +353,7 @@ fn decode(
     only: Option<u16>,
     limit: usize,
     jsonl: Option<PathBuf>,
+    heap: bool,
     find: Option<String>,
     layout: bool,
 ) -> Result<()> {
@@ -415,7 +424,7 @@ fn decode(
                     .into_iter()
                     .map(|(off, v)| (format!("0x{off:03x}"), format!("0x{v:08x}").into()))
                     .collect();
-                let line = serde_json::json!({
+                let mut line = serde_json::json!({
                     "t": block.timestamp,
                     "netid": block.packet_id,
                     "class": archive.class_of(block.packet_id),
@@ -424,6 +433,23 @@ fn decode(
                     "payload": hex(block.payload),
                     "words": words,
                 });
+                if heap {
+                    let blocks: Vec<serde_json::Value> = pkt
+                        .memory
+                        .allocations()
+                        .iter()
+                        .filter(|(addr, size)| *addr != pkt.object && *size > 0)
+                        .filter_map(|(addr, size)| {
+                            let bytes = pkt.memory.bytes(*addr, *size as usize)?;
+                            Some(serde_json::json!({
+                                "addr": format!("0x{addr:x}"),
+                                "size": size,
+                                "bytes": hex(bytes),
+                            }))
+                        })
+                        .collect();
+                    line["heap"] = serde_json::Value::Array(blocks);
+                }
                 writeln!(w, "{line}")?;
             }
             total += 1;
@@ -434,8 +460,9 @@ fn decode(
     }
     let secs = started.elapsed().as_secs_f64();
     if layout {
+        let fit = crate::layout::recover_buffer(&samples);
         match only.and_then(|netid| crate::layout::recover(netid, &samples)) {
-            Some(l) => print_layout(&l, archive.class_of(l.netid)),
+            Some(l) => print_layout(&l, fit.as_ref(), archive.class_of(l.netid)),
             None => eprintln!("--layout needs --netid and enough clean blocks of it"),
         }
     }
@@ -1045,7 +1072,11 @@ fn fields(
 }
 
 #[cfg(feature = "emulator")]
-fn print_layout(l: &crate::layout::Layout, class: Option<&str>) {
+fn print_layout(
+    l: &crate::layout::Layout,
+    fit: Option<&crate::layout::BufferFit>,
+    class: Option<&str>,
+) {
     use crate::layout::Carries;
 
     println!(
@@ -1068,6 +1099,22 @@ netid {} {} -- {} blocks of the commonest payload length, {} bytes",
             Carries::Unknown => "not in the object".into(),
         };
         println!("  [{:>2}] (end {:>3})  {what}", i, i as i64 - l.payload_len as i64);
+    }
+    if let Some(fit) = fit {
+        println!(
+            "payload is the class's allocated buffer, {}, behind a {} header:",
+            if fit.reversed { "back to front" } else { "in order" },
+            if fit.reversed { "variable".to_string() } else { format!("{}-byte", fit.header) },
+        );
+        println!(
+            "  {} of 256 table entries over {} blocks, {} conflicts",
+            fit.table.len(),
+            fit.blocks,
+            fit.conflicts
+        );
+        if let Some(c) = fit.table.get(&0) {
+            println!("  T(0x00) = 0x{c:02x}");
+        }
     }
     println!(
         "substitution table: {} of 256 entries from {} positions, {} conflicts",
@@ -1094,6 +1141,7 @@ fn decode(
     _only: Option<u16>,
     _limit: usize,
     _jsonl: Option<PathBuf>,
+    _heap: bool,
     _find: Option<String>,
     _layout: bool,
 ) -> Result<()> {

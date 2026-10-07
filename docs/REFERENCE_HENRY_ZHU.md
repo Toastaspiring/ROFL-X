@@ -161,9 +161,10 @@ struct doesn't expose**.
 
 ### 5. Packet catalog, Henry Zhu's named types
 
-These are opcodes / packet classes the post describes. We should seed our
-`docs/PACKETS.md` with entries for each, even as `OBSERVED-ONLY` for the
-ones we can't yet replicate.
+These are opcodes / packet classes the post describes. **Done**: all 22
+are mapped onto 16.9 in [PACKETS.md](PACKETS.md) § Henry Zhu's classes
+on 16.9 — 11 typed, 3 named, the rest unnamed because object creation
+and replication do not go through handler registration.
 
 | Packet class             | Status in post     | Notes                                                |
 |--------------------------|--------------------|------------------------------------------------------|
@@ -179,8 +180,12 @@ ones we can't yet replicate.
 
 The only opcode number the post hands us directly is `0x2385` for damage.
 Mowokuma's config provides numeric netids for ward spawn (e.g. `272`) and
-movement, Henry Zhu's names vs. Mowokuma's netids **have not been
-cross-referenced yet**. A clear mapping would be:
+movement. **Resolved**: the full cross-reference is in
+[PACKETS.md](PACKETS.md) § Henry Zhu's classes on 16.9. His
+`CreateEntity` is our `SpawnMinion` shape (netid 214 on 16.9, and yes,
+ward spawn is one kind of entity creation); the movement packet he does
+not name separately is our `WaypointGroup` (916), which is also
+Mowokuma's `mov_decrypt`. The reasoning at the time of writing was:
 
 - Henry Zhu's `CreateEntity` ≟ Mowokuma's `ward_spawn_decrypt.netid`?
   Plausible: ward spawn is one kind of entity creation.
@@ -191,7 +196,8 @@ cross-referenced yet**. A clear mapping would be:
 - Mowokuma's `mov_decrypt.netid` may correspond to a packet Henry Zhu
   lumps under `UpdateState` or handles via a different channel. Unknown.
 
-Resolving this mapping is a Phase 4 task (packet-catalog expansion).
+That reasoning held up. Netids are per-patch, so the mapping is
+maintained per patch rather than once.
 
 ### 6. Specific RVAs and constants observed
 
@@ -220,7 +226,7 @@ pipeline.
 
 For ROFL-X this sets a sanity target: we should be within 2–5× of Mowokuma's
 speed on the same replay, and our output size should be comparable (probably
-smaller by default; larger with `--full`).
+smaller by default). (As built there is no `--full` flag.)
 
 ### 8. Coordinate convention
 
@@ -266,8 +272,9 @@ the format, not actionable for us, but they double as insights into the
 format's design intent:
 
 - ~2.8% of packets are near-duplicates (e.g. many `LeaveFromFog` at the same
-  timestamp for the same id). Our `audit` subcommand should probably
-  surface this as a statistic.
+  timestamp for the same id). `rofl-x explore` surfaces this kind of
+  thing: per netid it reports how concentrated the traffic is and how
+  many distinct entities it ever names.
 - IDs and hashes could use LEB128 instead of fixed-width. They currently
   don't.
 - Similar packet types could be merged; they currently aren't, which is
@@ -307,8 +314,9 @@ format's design intent:
 
 3. **Catalog seed list:** every packet class Henry Zhu names, plus
    Mowokuma's two numeric netids, gets an initial catalog entry. Status
-   defaults to `OBSERVED-ONLY` until we can independently reproduce the
-   decode in our harness.
+   starts at **UNNAMED** and is promoted to **NAMED** when the binary
+   gives a class name, and to **TYPED** when a handler reads the fields
+   and something independent confirms them.
 
 4. **Parity story is now two-sided:**
    - Against Mowokuma: byte-for-byte JSON diff on the two packet types she

@@ -101,8 +101,8 @@ streams observed so far:
 
 | tag    | name              | contents                                         |
 |--------|-------------------|--------------------------------------------------|
-| `0x01` | `GameChunkStream` | delta updates to game state, one record per "tick bundle" |
-| `0x02` | `KeyframeStream`  | periodic full-state snapshots                    |
+| `0x01` | `GameChunk`       | delta updates to game state, one record per "tick bundle" |
+| `0x02` | `Keyframe`        | periodic full-state snapshots                    |
 | `0x03` | `StartKeyframe`   | singleton initial snapshot (chunk index 0)       |
 | `0x04` | `StartSentinel`   | singleton 17-byte opaque transition marker       |
 
@@ -215,14 +215,20 @@ The list above is for orientation, not schema.
 ### `Player`
 
 One of the ten human participants in the match. Distinct from
-`Champion`: a `Player` controls a `Champion` entity. Fields: `riot_id`
-(game name + tag line), `puuid`, `team` (`Blue` / `Red`), `role` (`Top`,
-`Jungle`, `Mid`, `Adc`, `Support`), `champion_name` (e.g. `"Sett"`).
+`Champion`: a `Player` controls a `Champion` entity. As built
+(`src/rofl/metadata.rs`): `riot_id_game_name`, `puuid`, `skin` (the
+champion, e.g. `"Sett"`), `team` (`Blue` / `Red`), `role` (`Top`,
+`Jungle`, `Mid`, `Adc`, `Support`) and `win`. Only the game-name half
+of the Riot ID is read; the tag line is left alone.
 
-Inferred from the metadata JSON's `statsJson` array. Role inference needs
-revisiting: Mowokuma's array-index fallback (`["Top","Jungle",...][i % 5]`)
-is fragile; there's likely an `INDIVIDUAL_POSITION` or `TEAM_POSITION`
-key in `statsJson[i]` we should use instead.
+Inferred from the metadata JSON's `statsJson` array. **Resolved**: role
+comes from `INDIVIDUAL_POSITION` where the entry has it, falling back
+to Mowokuma's array-index order otherwise.
+
+A champion's *net id* is a separate matter, and is not in the metadata
+at all: on a patch ROFL-X can decode it comes from the decoded packets
+(`game.rs`, `Roster::infer`), and on a patch it cannot, from the shape
+of the traffic ([EXPLORE.md](EXPLORE.md) § 1).
 
 ### `GameState`
 
@@ -312,7 +318,9 @@ every minion death as a first-class event would blow up the output JSON.
 ROFL-X's default should be to emit `GameEvent`s only for player-agentic
 things (champion kills, ward lifecycles, objective takedowns, item
 purchases) and keep minion/monster death as internal state unless the
-caller opts in with `--full`.
+caller opts in. (As built there is no such flag: `rofl-x file`
+writes the typed events it has, and the per-netid and per-entity
+counts live in `rofl-x summary` and `rofl-x explore` instead.)
 
 ### Ward lifecycle (concrete example)
 
@@ -348,10 +356,12 @@ Two notes:
   different `name`. This is a general pattern in the game's packet design:
   one opcode can carry many distinct *semantic* events distinguished by a
   string field. Our catalog should express this, not collapse it.
-- Coordinate-matching is the only linking mechanism Mowokuma has. It would
-  be more robust to match by entity id, if the destruction packet carries
-  one. Worth probing in Phase 4 when we have emulator access to this
-  opcode on patch 16.8.
+- Coordinate-matching is the only linking mechanism Mowokuma has.
+  **Resolved on 16.9**: the spawn packet does carry the unit net id
+  (`packet/handlers/spawn.rs`), and the corpse carries the owner, so
+  ROFL-X matches the owner's nearest live ward rather than an exact
+  position — the corpse can land up to ~100 units from where the ward
+  was placed, which is why exact matching loses wards.
 
 ### Player position lifecycle
 
@@ -416,7 +426,8 @@ This is the commitment between layers, restated compactly:
 | Output serialiser| `Metadata`, `GameState`, events  | JSON                               |
 
 Everywhere above, **unknown opcodes never crash the parser**. They log,
-they count (for the audit subcommand), they get passed through as
+they count (reported by `rofl-x inspect` and `rofl-x summary`;
+there is no `audit` subcommand), they get passed through as
 `Block { opcode, payload_bytes, timestamp }` records so the output can
 include a "raw blocks we couldn't decode" bucket if the caller asks for it.
 

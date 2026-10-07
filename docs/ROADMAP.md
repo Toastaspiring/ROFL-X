@@ -57,16 +57,22 @@ Sub-steps:
 4. Implement `emulator/unicorn.rs` as a port of her `stub_emulator.rs`,
    with the same heap/stack layout, the same allocator shellcode patch,
    and the same function-stub logic.
-5. Implement `packet/handlers/ward_spawn.rs` and `packet/handlers/movement.rs`
-   (the latter carrying her `PathPacket::parse` verbatim for now).
-6. Implement `output/schema_v1.rs` producing the exact JSON shape her
-   README documents (`metadata`, `players_state`, `wards`).
+5. Implement the two handlers her decoders feed. (As built:
+   `packet/handlers/spawn.rs` and `packet/handlers/waypoints.rs`; her
+   `PathPacket::parse` lives verbatim in `emulator/packet.rs`.)
+6. Produce the exact JSON shape her README documents (`metadata`,
+   `players_state`, `wards`). (As built: `replay_info.rs`; there is no
+   separate `output/` module, see
+   [MODULE_LAYOUT.md](MODULE_LAYOUT.md).)
 7. Acquire her release binary plus one patch-matched `.patch` archive,
    parse the same replay with both tools, and diff the outputs.
 
 Stop point: a green byte-for-byte diff against her binary on at least
-one shared replay, plus a `cargo test` run with the golden-JSON, opcode-
-coverage, and proptest targets all passing.
+one shared replay, plus a green `cargo test`. (As built, the test
+suite is `tests/transport_smoke.rs` and `tests/decode_replays.rs` over
+a whole replay folder, plus the library's unit tests; the golden-JSON,
+opcode-coverage and proptest targets proposed here were never needed
+once whole replays were checked against statsJson.)
 
 Outcome: content parity reached on patch 15.5 (metadata + wards
 byte-identical, 99.07 % of individual player entries match). Full
@@ -76,9 +82,10 @@ run-to-run on her side (0.1 % self-similarity across her own runs).
 Ours is deterministic via `BTreeMap`. Commits: `fa2e059`, `deb7bf0`,
 `40108b0`, `8581732`.
 
-Phase 3c deliverable: `rofl-x extract-patch` subcommand + RE
-methodology doc (`docs/RE_PATCH.md`) for producing a `.patch` archive
-on a new League version. Superseded by Phase 4b's
+Phase 3c deliverable: a documented way to produce a `.patch` archive
+on a new League version (`docs/RE_PATCH.md`). Shipped as
+`scripts/build_patch.py` rather than the `rofl-x extract-patch`
+subcommand proposed here. Superseded by Phase 4b's
 `scripts/build_patch.py`, which needs no manual RVA work.
 
 ---
@@ -103,8 +110,9 @@ Discipline for each new packet type, in this order:
    fixture to the expected typed struct.
 
 Never the reverse. No handler without a fixture; no fixture without a
-catalog entry; no catalog entry without an honest status word
-(`DOCUMENTED`, `PARTIAL`, `OBSERVED-ONLY`, `UNKNOWN`).
+catalog entry; no catalog entry without an honest status word. (As built the vocabulary
+settled on three: **TYPED**, **NAMED**, **UNNAMED**; see
+[PACKETS.md](PACKETS.md).)
 
 Priority order for expansion: the high-frequency opcodes from
 sample_a's global histogram (top of [SAMPLE_A_WALKTHROUGH.md](SAMPLE_A_WALKTHROUGH.md) § Global
@@ -112,7 +120,7 @@ opcode coverage), then Henry Zhu's named packet classes from
 [REFERENCE_HENRY_ZHU.md](REFERENCE_HENRY_ZHU.md) § 5.
 
 Stop point: one full pass of the top-40 opcodes, each either
-`DOCUMENTED` or `UNKNOWN`-with-evidence, and `docs/COMPATIBILITY.md`
+documented or unknown-with-evidence, and `docs/COMPATIBILITY.md`
 filled in for patch 16.8.
 
 Status as of commit `64ff98d`: catalog scaffolded in `docs/PACKETS.md`
@@ -152,8 +160,10 @@ and documented in [RE_PATCH.md](RE_PATCH.md) § History.
 
 ## Phase 5, validation against Henry Zhu's public dataset, INITIAL PASS DONE
 
-Henry Zhu released 1.4M+ decoded replays on Hugging Face
-([dataset](https://huggingface.co/datasets/maknee/league-of-legends-decoded-replay-packets)).
+Henry Zhu released decoded replays on Hugging Face in two drops of
+roughly 700,000 each, 1.4M in total
+([dataset](https://huggingface.co/datasets/maknee/league-of-legends-decoded-replay-packets);
+sizes in [DATASETS.md](DATASETS.md)).
 The decoded data is not our output format and is from patch 12.x, but
 it is the largest public body of ROFL-semantic data and is worth
 treating as a reference corpus. This phase uses it to stress-test our
@@ -171,7 +181,7 @@ Sub-steps:
    - Field-type and value-range distributions, especially for coordinate
      and id fields.
 3. **Diff against our catalog**. For every packet class Zhu has that we
-   don't, add a `docs/PACKETS.md` entry as `OBSERVED-ONLY` with a
+   don't, add a `docs/PACKETS.md` entry as **UNNAMED** with a
    reference to the Zhu-dataset frequency. For every opcode we have
    that seems semantically equivalent to one of his names, annotate
    the mapping in `docs/COMPATIBILITY.md` so downstream consumers can
@@ -192,8 +202,7 @@ Sub-steps:
    record whether we decode it, which patches we decode it on, and
    how his field names map to ours.
 
-Caveat: patch 12.x is 4+ years older than our current reference patch
-(16.8). Opcode numbers will not match; packet class names and
+Caveat: patch 12.x is years older than our reference patch (16.9). Opcode numbers will not match; packet class names and
 semantics almost certainly will. Use his data for schema and semantics,
 not for opcode-number mapping.
 
@@ -203,7 +212,7 @@ Deliverables:
 - `scripts/zhu_dataset_stats.py` (and any helper scripts for fetching).
 - `tests/zhu_schema_compat.rs`.
 - New catalog entries for every Zhu packet class not already present,
-  annotated as `OBSERVED-ONLY` with a Zhu-reference.
+  annotated **UNNAMED** with a Zhu-reference.
 - Updated `docs/COMPATIBILITY.md` with a Zhu-cross-reference section.
 
 Stop point: schema-compatibility test green on a representative sample;
@@ -236,8 +245,8 @@ Initial pass delivered (commit `f791fd9`):
 Still outstanding:
 
 - `tests/zhu_schema_compat.rs` to assert our output can round-trip
-  every Zhu-class field. With Phase 4b, 9 of his 22 classes are typed
-  on 16.9 and 5 more are named ([PACKETS.md](PACKETS.md) § Henry Zhu's
+  every Zhu-class field. With Phase 4b, 11 of his 22 classes are typed
+  on 16.9 and 3 more are named ([PACKETS.md](PACKETS.md) § Henry Zhu's
   classes on 16.9).
 - Raw-replay byte-diff: Zhu's dataset ships decoded JSON only, not
   source `.rofl` files. Still an open question whether the raw files
@@ -268,6 +277,12 @@ Unblocked only by an unpacked binary of the patch arriving through
 legitimate means, at which point an archive builds in minutes and
 Phase 4b applies unchanged. Details:
 [COMPATIBILITY.md](COMPATIBILITY.md).
+
+What such a replay *does* give is Phase 7 below, through `rofl-x
+summary`, `rofl-x explore` and the measured field catalog
+([FIELDS.md](FIELDS.md), [EXPLORE.md](EXPLORE.md)) — considerably more
+than the transport layer and the scoreboard this phase was first
+written to expect.
 
 ---
 

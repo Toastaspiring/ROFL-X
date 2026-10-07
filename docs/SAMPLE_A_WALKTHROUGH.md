@@ -278,19 +278,22 @@ The fields ROFL-X cares about at minimum:
 | `SUMMONER_NAME`       | *missing*                         | retired key                     |
 
 **Implication for ROFL-X metadata layer:** Mowokuma reads `NAME`, which has
-been empty string for ~3 years. We should read `RIOT_ID_GAME_NAME`
-(+ `RIOT_ID_TAG_LINE` if present) and expose a `riot_id` field in our
-output, in addition to preserving `name: ""` for schema parity with
-Mowokuma's consumers.
+been empty string for ~3 years. **As built**: ROFL-X reads
+`RIOT_ID_GAME_NAME` into `riot_id_game_name` and keeps `name: ""` for
+schema parity with Mowokuma's consumers. `RIOT_ID_TAG_LINE` is not
+read — nothing needs it, and leaving it alone keeps one less identity
+field in memory. No subcommand writes a Riot ID by default:
+`rofl-x file` omits them entirely and `rofl-x summary` reduces them to
+their length unless `--include-identities` is passed.
 
-### Role inference, worth revisiting
+### Role inference, resolved
 
 Mowokuma: `position = ["Top","Jungle","Mid","Adc","Support"][i % 5]`. The
-ordering relies on `statsJson` being in canonical role order per team. We
-have not yet verified whether `statsJson` is ordered by role or by join
-order, nor how autofill / flex roles are represented. There may be an
-`INDIVIDUAL_POSITION` or `TEAM_POSITION` key in the object that's more
-authoritative, worth probing in Phase 2.
+ordering relies on `statsJson` being in canonical role order per team.
+**Resolved**: there is an `INDIVIDUAL_POSITION` key and it is
+authoritative, so ROFL-X reads that and keeps the array-index order
+only as a fallback for entries that lack it
+([ROFL_FORMAT.md](ROFL_FORMAT.md) § statsJson keys).
 
 ---
 
@@ -336,8 +339,10 @@ initial-state keyframe: all entity setup in a single packet. Blocks header
 overhead = 15 bytes; 15 + 18158 = 18173 = `uncompressed_len`. Exactly
 accounted for.
 
-**Catalog seed:** opcode `0x0478` → `INITIAL_STATE_KEYFRAME`, status
-`OBSERVED-ONLY`, semantics unknown without emulator access.
+**Catalog seed:** opcode `0x0478` (1144), semantics unknown without
+emulator access. This particular seed never landed in the catalog —
+the netid is a 16.8 number and the catalog is keyed by Riot class name
+on patches we can decode ([PACKETS.md](PACKETS.md)).
 
 ---
 
@@ -371,8 +376,9 @@ Top 10 opcodes in this single chunk:
 | `0x0392` (914) | 75    |                                                   |
 | `0x00BE` (190) | 75    |                                                   |
 
-We cannot claim semantics for any of these without emulator-backed decoding.
-All enter the catalog as `OBSERVED-ONLY`.
+We cannot claim semantics for any of these without emulator-backed
+decoding. In today's vocabulary they are **UNNAMED**
+([PACKETS.md](PACKETS.md)).
 
 ---
 
@@ -472,8 +478,9 @@ table (`docs/COMPATIBILITY.md` per the brief).
   type discriminator as its name in Mowokuma's source implies.
 - **Total chunk count**: matches `lastGameChunkId + lastKeyFrameId` from the
   metadata (modulo the two singleton chunks).
-- **~250 distinct opcodes per replay** is typical. The catalog is a
-  250-row table, not a 5-row table.
+- **~250 distinct opcodes per replay** is typical; measured on 16.9 it
+  is 273. The catalog is a 273-row table, not a 5-row table
+  ([FIELDS.md](FIELDS.md) has one per class).
 
 ### Concerns and open questions for Phase 2
 
@@ -492,13 +499,13 @@ table (`docs/COMPATIBILITY.md` per the brief).
    Riot's live signing key is inside the client and we don't need
    write-side integrity. We just preserve it on round-trip.
 
-4. **Role inference from `statsJson`**: there's probably a
-   `TEAM_POSITION` or `INDIVIDUAL_POSITION` key we can use instead of
-   array-index fallback. Worth verifying before Phase 2.
+4. ~~**Role inference from `statsJson`**~~: answered —
+   `INDIVIDUAL_POSITION` exists and is what ROFL-X uses, with the
+   array-index order as fallback.
 
 5. **Patch-specific opcode table**: we'll need one per League patch. For
    patches we can't reverse, we ship `UNKNOWN` catalog entries only and
-   the audit subcommand shows coverage as "N known / M observed / K
+   the tooling shows coverage as "N known / M observed / K
    unknown". That's fine and honest.
 
 6. **Do we trust Mowokuma's zstd path?** Yes, validated on sample_a

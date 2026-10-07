@@ -198,9 +198,10 @@ If `compressed_len == 0`:
   | `0x03` | Initial keyframe singleton| 1 (chunk index 0) |
   | `0x04` | Start sentinel singleton  | 1 (chunk index 1) |
 
-- Rust-level representation: a `ChunkStream` enum with these four
-  variants, derived from `(chunk_id_2 >> 24) & 0xFF`. Low bytes are
-  currently a pass-through; if they ever become non-zero we'll revisit.
+- Rust-level representation: `StreamTag` (`src/rofl/stream.rs`) with
+  these four variants plus `Unknown(u8)` for anything else, derived
+  from `(chunk_id_2 >> 24) & 0xFF`. Low bytes are a pass-through; if
+  they ever become non-zero we'll revisit.
 
 ### `uncompressed_len`, `compressed_len`
 
@@ -259,12 +260,12 @@ The keys ROFL-X cares about:
 | `RIOT_ID_GAME_NAME`   | VERIFIED | Riot ID "game name" portion              |
 | `RIOT_ID_TAG_LINE`    | INFERRED (presence) | Riot ID "tag line" portion    |
 | `PUUID`               | VERIFIED | 36-char stable player identifier         |
-| `INDIVIDUAL_POSITION` | INFERRED, unverified | likely the authoritative role field; needs check |
-| `TEAM_POSITION`       | INFERRED, unverified | likely team's assigned role; needs check |
+| `INDIVIDUAL_POSITION` | VERIFIED | the authoritative role field; used |
+| `TEAM_POSITION`       | INFERRED, unused | team's assigned role |
 
 Role inference: Mowokuma uses `["Top","Jungle","Mid","Adc","Support"][i % 5]`.
-ROFL-X should prefer `INDIVIDUAL_POSITION` / `TEAM_POSITION` if present,
-falling back to array-index only as last resort.
+ROFL-X prefers `INDIVIDUAL_POSITION` where the entry has it and falls
+back to that array-index order otherwise (`src/rofl/metadata.rs`).
 
 ---
 
@@ -327,7 +328,7 @@ each chunk.
 
 For packets addressed to a game object, `param` holds that object's net
 id; the deserializers never read it from the payload (see
-[DECODING.md](DECODING.md) § Net id). Tag: **VERIFIED** on patch 16.9.
+[DECODING.md](DECODING.md) § 3). Tag: **VERIFIED** on patch 16.9.
 
 The one-byte delta is **signed**. Mowokuma's parser (and ROFL-X before
 October 2026) added it unsigned, which turns a `-1` step into `+255`:
@@ -422,7 +423,7 @@ deserializer hands back ([PACKETS.md](PACKETS.md)).
    opcodes log + count and pass through as raw.
 8. **Round-trip safety**: if we ever build a writer, the signature
    and any `UNKNOWN` header fields must be preserved exactly.
-9. **Honest reporting**: the audit subcommand must report opcodes seen
+9. **Honest reporting**: the tooling must report opcodes seen
    vs opcodes in catalog, making coverage gaps visible.
 
 ---
@@ -435,8 +436,8 @@ deserializer hands back ([PACKETS.md](PACKETS.md)).
   with? Patch? Game length? Always the same?
 - **`field_bytes_0x08`**: 6 bytes of unknown. Match id hash? Per-game
   nonce? Constant-within-patch?
-- **`INDIVIDUAL_POSITION`**: is it actually present in `statsJson[i]`?
-  If yes, what are its possible values?
+- ~~**`INDIVIDUAL_POSITION`**: is it actually present in
+  `statsJson[i]`?~~ Answered: yes, and it is what ROFL-X reads.
 - **Start sentinel chunk (`0x04` stream) body**: 17 opaque bytes. Same
   across replays on same patch? Different per replay? Same across
   patches?

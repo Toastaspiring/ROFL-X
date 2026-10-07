@@ -37,11 +37,19 @@ Differences from the proposal: the emulator is two concrete formats
 rather than a trait; `game/` and `output/` collapsed into `game.rs`,
 whose JSON keeps Mowokuma's top-level keys (`metadata`,
 `players_state`, `wards`) and adds siblings (`players`, `events`,
-`checks`, `decode`); handlers are dispatched by class name, not by a
-netid registry, since netids are a per-patch detail the archive
-resolves; fixtures are whole replays checked against statsJson.
+`vision`, `checks`, `decode`); handlers are dispatched by class name,
+not by a netid registry, since netids are a per-patch detail the
+archive resolves; the two handlers ported from Mowokuma are
+`spawn.rs` and `waypoints.rs`, not the `ward_spawn.rs` and
+`movement.rs` named below, and her `PathPacket::parse` sits in
+`emulator/packet.rs`; fixtures are whole replays checked against
+statsJson rather than byte slices; and there is no `--full` flag, with
+the per-netid and per-entity detail living in `summary.rs` and
+`explore.rs` instead.
 
-The original proposal follows.
+Everything from here on is the **original proposal, kept for the
+record**. Where it names a file or a flag that the tree above does not
+have, the tree above is right.
 
 ---
 

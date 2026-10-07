@@ -104,7 +104,7 @@ serialisation time.
 ## How the Zhu corpus feeds our roadmap
 
 - **Phase 4 catalog expansion**: every Zhu class not already in our
-  catalog becomes an `OBSERVED-ONLY` entry with his field list
+  catalog becomes an **UNNAMED** entry with his field list
   documented. Once we can decode the corresponding opcode on a current
   patch, it is promoted to `DOCUMENTED`.
 - **Phase 5 schema compatibility**: our output schema must be able to

@@ -124,9 +124,9 @@ Inside that JSON:
 
 **Role inference is positional, not data-driven**:
 `position = ["Top","Jungle","Mid","Adc","Support"][i % 5]`, this assumes
-the `statsJson` array is always in canonical role order. ROFL-X will need
-to revisit this if Riot ever changes `statsJson` ordering (or if roles are
-flexed).
+the `statsJson` array is always in canonical role order. **ROFL-X
+resolved this**: it reads `INDIVIDUAL_POSITION` where the entry has it
+and keeps her order as the fallback.
 
 **Winning team** is derived from `(TEAM, WIN)` on `statsJson[0]`.
 
@@ -460,8 +460,8 @@ new League patch is a reverse-engineering task, not a code task.
 4. **Role inference is positional.** `metadata.rs` assigns roles by array
    index `i % 5` against a hardcoded `["Top","Jungle","Mid","Adc","Support"]`.
    Any change to `statsJson` ordering or any flex-role lobby will mis-label
-   players. Our metadata layer should derive role from in-game data where
-   possible.
+   players. **Done**: our metadata layer reads `INDIVIDUAL_POSITION`,
+   with her order as the fallback.
 
 5. **Header parsing is self-described as brittle.** `skip_rofl_header_size`
    has `// FIXME: very bad` and a magic two-variant branch. Phase 1 step 3
@@ -488,9 +488,11 @@ new League patch is a reverse-engineering task, not a code task.
 7. **Chunk type `0x2` is dropped silently.** No comment says what it is.
    Probably keyframes. Worth documenting.
 
-8. **No `audit` / `dump` CLI commands.** The ROFL-X brief describes
-   subcommands (`audit`, `dump --chunk N`) that don't exist here. They're
-   new surface area, not a port.
+8. **No `audit` / `dump` CLI commands.** The ROFL-X brief described
+   subcommands (`audit`, `dump --chunk N`) that don't exist here.
+   Neither shipped under those names either: the equivalents are
+   `rofl-x inspect` and `rofl-x summary` for coverage, and
+   `rofl-x decode --jsonl` / `rofl-x explore --dump-netid` for dumps.
 
 9. **Windows-specific assumptions.** `base_addr = 0x7ff76afd0000` and the
    `.patch` file layout (PE sections) assume Windows x86-64 League builds.
@@ -529,6 +531,9 @@ new League patch is a reverse-engineering task, not a code task.
 
 ## Open questions for you before Phase 2
 
+All five were answered during Phases 1–4; the answers are noted under
+each. Kept as a record of what was uncertain at the time.
+
 1. **Licence:** do you want me to (a) open an issue on her repo asking for
     a licence, (b) assume read-reference only and reimplement from
     observation, or (c) adopt a default (MIT/Apache-2.0) for our code and
@@ -540,6 +545,10 @@ new League patch is a reverse-engineering task, not a code task.
     contribute patches? If the latter, we'll want a tool in Phase 3+ that
     automates section/RVA extraction from a League binary.
 
+   *Answered:* (c). Our code is Apache-2.0 and she confirmed in April
+    2026 that she is content to have her work ported and extended with
+    credit ([CREDITS.md](../CREDITS.md)).
+
 3. **Scope of emulator-dependent packets:** our catalog will split into
     "decodable in pure Rust" vs "requires per-patch emulator config". Are
     you OK with both classes existing? The alternative is to restrict the
@@ -547,11 +556,24 @@ new League patch is a reverse-engineering task, not a code task.
     ward spawns from day-one coverage (they're exactly the ones Mowokuma
     needs emulation for).
 
+   *Answered:* the latter, and the tool exists —
+    `scripts/build_patch.py` extracts sections and RVAs from a League
+    binary and writes a format-2 archive in minutes
+    ([RE_PATCH.md](RE_PATCH.md)).
+
 4. **Header characterisation priority:** Phase 1 step 3 (hex walkthrough of
     a real sample) will resolve the `// FIXME: very bad` header logic. Do
     you want me to pick a specific replay from your `replays/` folder or
     pick opportunistically (e.g. the shortest, or the oldest patch for
     which we have cleanest structure)?
+
+   *Answered:* a replay was picked and walked through byte by byte in
+    [SAMPLE_A_WALKTHROUGH.md](SAMPLE_A_WALKTHROUGH.md), which resolved
+    the header logic.
+
+   *Answered:* both classes exist, and the split turned out to matter
+    more than expected — see [EXPLORE.md](EXPLORE.md) for what a replay
+    yields when no emulator config is possible at all.
 
 5. **Mowokuma's binary for parity testing:** the brief calls for verifying
     byte-for-byte parity with her output on a shared replay. Her Releases
@@ -560,9 +582,18 @@ new League patch is a reverse-engineering task, not a code task.
     `.patch` zips. Do you want me to download and cache it, or is that
     something you'd rather do manually?
 
+   *Answered:* yes — her binary and a matching `.patch` were used, and
+    the 15.5 parity result is in [COMPATIBILITY.md](COMPATIBILITY.md):
+    metadata and wards byte-identical, 99.07 % of `players_state`
+    entries matching.
+
 ---
 
 ## Next
+
+*Historical: this section records where Phase 1 stopped. All three
+steps are long done — see [ROADMAP.md](ROADMAP.md) for where the
+project actually is.*
 
 Phase 1 step 1 is complete. The next steps are still:
 

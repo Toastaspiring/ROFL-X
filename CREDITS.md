@@ -33,9 +33,13 @@ figured out:
   with the ward-lifecycle reconstruction via coordinate-matched
   "Corpse" destruction packets.
 
-Direct ports of her work live under `src/emulator/` and
-`src/packet/handlers/`, with per-file headers that point back to the
-corresponding file in her repo.
+Direct ports of her work live under `src/emulator/`: `config.rs`,
+`packet.rs` and `unicorn.rs` each name the file of hers they came from,
+and her `PathPacket::parse` is in `packet.rs` verbatim. The handlers in
+`src/packet/handlers/` are not ports — they read objects the game's own
+deserializers produced, which is a different route to the same place —
+but they credit her wherever a layout or a correction of ours started
+from her work.
 
 Her upstream has no LICENSE file, which makes the default "all rights
 reserved". She has confirmed (as relayed by the project's current author

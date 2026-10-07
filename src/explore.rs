@@ -1096,6 +1096,51 @@ pub struct StatsMatch {
     pub spread: usize,
 }
 
+/// Sums of statsJson counters that a single packet class can plausibly
+/// fire once for.
+///
+/// A class is not always tied to one counter. The one that carries a
+/// champion's running kill / death / assist totals fires whenever any
+/// of the three changes, so its block count is their sum -- measured
+/// exactly, on every player of every 16.9 replay, against the class
+/// the decoder names `PKT_Update_HeroStats_KDA_s`. Without the sums a
+/// matcher on single fields cannot see it at all.
+///
+/// The list is deliberately short. Every extra combination is another
+/// chance for a coincidence to clear the test, so each one here has a
+/// reason to exist rather than being a product of enumeration.
+const DERIVED: &[(&str, &[&str])] = &[
+    // One packet per change to any of the three.
+    (
+        "CHAMPIONS_KILLED+NUM_DEATHS+ASSISTS",
+        &["CHAMPIONS_KILLED", "NUM_DEATHS", "ASSISTS"],
+    ),
+    // Lane and jungle creeps are both last hits.
+    (
+        "MINIONS_KILLED+NEUTRAL_MINIONS_KILLED",
+        &["MINIONS_KILLED", "NEUTRAL_MINIONS_KILLED"],
+    ),
+    // A ward placed and a ward killed are both ward lifecycle events.
+    ("WARD_PLACED+WARD_KILLED", &["WARD_PLACED", "WARD_KILLED"]),
+    // Turrets and inhibitors are both structures.
+    ("TURRETS_KILLED+BARRACKS_KILLED", &["TURRETS_KILLED", "BARRACKS_KILLED"]),
+];
+
+/// Add [`DERIVED`] sums to a replay's counters, where every term is
+/// present.
+pub fn add_derived(counters: &mut BTreeMap<String, Vec<i64>>) {
+    for (name, terms) in DERIVED {
+        let columns: Option<Vec<&Vec<i64>>> = terms.iter().map(|t| counters.get(*t)).collect();
+        let Some(columns) = columns else { continue };
+        let n = columns[0].len();
+        if columns.iter().any(|c| c.len() != n) {
+            continue;
+        }
+        let sum: Vec<i64> = (0..n).map(|i| columns.iter().map(|c| c[i]).sum()).collect();
+        counters.insert((*name).to_string(), sum);
+    }
+}
+
 /// Netids whose per-champion block count *is* one of Riot's end-of-game
 /// counters, in every replay.
 ///
@@ -1362,6 +1407,19 @@ mod tests {
         let m = match_patches(&target, &reference);
         assert_eq!(m[0].reference_netid, 91);
         assert_eq!(m[1].reference_netid, 90);
+    }
+
+    #[test]
+    fn derived_counters_are_added_only_when_every_term_is_there() {
+        let mut c = BTreeMap::from([
+            ("CHAMPIONS_KILLED".to_string(), vec![3, 1]),
+            ("NUM_DEATHS".to_string(), vec![2, 5]),
+            ("ASSISTS".to_string(), vec![4, 0]),
+        ]);
+        add_derived(&mut c);
+        assert_eq!(c["CHAMPIONS_KILLED+NUM_DEATHS+ASSISTS"], vec![9, 6]);
+        // CS needs both halves; only one is present, so no sum.
+        assert!(!c.contains_key("MINIONS_KILLED+NEUTRAL_MINIONS_KILLED"));
     }
 
     #[test]

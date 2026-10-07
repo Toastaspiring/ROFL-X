@@ -735,6 +735,7 @@ fn player_counters(replay: &Replay<'_>) -> BTreeMap<String, Vec<i64>> {
     }
     // A field some players are missing cannot be compared player by player.
     out.retain(|_, v| v.len() == stats.len());
+    crate::explore::add_derived(&mut out);
     out
 }
 

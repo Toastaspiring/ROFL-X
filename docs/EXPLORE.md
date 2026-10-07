@@ -63,20 +63,37 @@ to vary across the players for a match to count, since a column of
 zeroes matches any netid that never fires, and the identity has to
 survive every replay that could test it bar one.
 
+A class is not always tied to a single counter, so a few sums are
+tried as well. The one carrying a champion's running kill / death /
+assist totals fires whenever any of the three changes, so its block
+count is their sum; a matcher on single fields cannot see it at all.
+The list of sums is deliberately short — every extra combination is
+another chance for a coincidence to clear the test.
+
 On 16.9, where every answer is already known:
 
 | netid | counter | class it turned out to be | replays |
 |------:|---------|---------------------------|--------:|
 | 472 | `NUM_DEATHS` | `PKT_NPC_Hero_Die_s` | 5 / 5 |
 | 715 | `NUM_DEATHS` | `PKT_S2C_UpdateDeathTimer_s` | 5 / 5 |
+| 115 | `CHAMPIONS_KILLED + NUM_DEATHS + ASSISTS` | `PKT_Update_HeroStats_KDA_s` | 5 / 5 |
 | 64 | `LEVEL` − 1 | `PKT_NPC_LevelUp_s` | 3 / 4 |
 
-Three proposals, three correct. On 16.19, with no binary at all:
+Four proposals, four correct. On 16.19, with no binary at all:
 
 | netid | counter | replays | what else is known about it |
 |------:|---------|--------:|------------------------------|
 | 1080 | `NUM_DEATHS` | 19 / 19 | payload 16–37 bytes, only ever names the ten champions |
+| 590 | `CHAMPIONS_KILLED + NUM_DEATHS + ASSISTS` | 19 / 19 | the running score. Every one of its 7,764 blocks lands at the same instant as a kill from the feed in § 3 — two classes, identified separately, agreeing |
 | 601 | `NUM_DEATHS` | 3 / 3 on a 6-replay run, not on all 20 | payload exactly 5 bytes, champions only, 1,962 blocks against 1,080's 1,955 |
+
+Netid 590's **values** are a different matter. Its payload grows from
+two bytes to five as the counters grow, and no byte of it tracks which
+counter moved, so the class packs its three numbers in bits rather
+than bytes. Byte-wise substitution still describes the payload, but
+the fields no longer line up with bytes, so the technique that read
+the killer does not apply. The identification stands; the numbers are
+not out yet.
 
 **Netid 1080 on 16.19 is the champion-death packet.** Two independent
 things say so: it fires exactly as many times per champion as that

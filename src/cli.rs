@@ -651,11 +651,13 @@ fn explore(
 /// finds it, and what checks it afterwards.
 fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
     use crate::explore::{
-        blocks_of, framing, kills, solve_netid_field, DeathBlocks, FieldInput,
+        blocks_of, champion_blocks, event_locked, framing, kills, solve_netid_field, DeathBlocks,
+        FieldInput, Timeline,
     };
 
     let mut inputs: Vec<FieldInput> = Vec::new();
     let mut games: Vec<(DeathBlocks, Vec<u32>)> = Vec::new();
+    let mut timelines: Vec<Timeline> = Vec::new();
     for path in replays {
         let bytes = std::fs::read(path)?;
         let replay = Replay::parse(&bytes)?;
@@ -663,6 +665,12 @@ fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
         let Some(run) = f.champion_run(replay.metadata.players.len()) else {
             continue;
         };
+        timelines.push(Timeline {
+            blocks: champion_blocks(&replay, &run)?,
+            deaths: vec![Vec::new(); run.len()],
+            kills: vec![Vec::new(); run.len()],
+            length_s: replay.metadata.game_length_ms as f32 / 1000.0,
+        });
         let rows = blocks_of(&replay, netid)?;
         let counter = player_counters(&replay);
         let Some(k) = counter.get("CHAMPIONS_KILLED") else {
@@ -682,8 +690,16 @@ fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
     let mut timeline = 0usize;
     let mut unnamed = 0usize;
     let mut sample = Vec::new();
-    for (rows, run) in &games {
+    for (i, (rows, run)) in games.iter().enumerate() {
         let ks = kills(rows, &field, run);
+        if let Some(tl) = timelines.get_mut(i) {
+            for k in &ks {
+                tl.deaths[k.victim].push(k.t);
+                if let Some(killer) = k.killer {
+                    tl.kills[killer].push(k.t);
+                }
+            }
+        }
         timeline += ks.len();
         unnamed += ks.iter().filter(|k| k.killer.is_none()).count();
         if sample.is_empty() {
@@ -701,6 +717,20 @@ fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
         }
     }
 
+    let locked: Vec<Value> = event_locked(&timelines)
+        .into_iter()
+        .map(|l| {
+            serde_json::json!({
+                "netid": l.netid,
+                "fires_on": l.event,
+                "champion_blocks": l.blocks,
+                "on_the_event": l.near,
+                "share": (l.share * 1000.0).round() / 1000.0,
+                "times_likelier_than_chance": l.lift.round(),
+            })
+        })
+        .collect();
+
     Ok(Some(serde_json::json!({
         "netid": field.netid,
         "bytes_after_the_field": field.tail,
@@ -716,6 +746,10 @@ fn solve_killer(replays: &[PathBuf], netid: u16) -> Result<Option<Value>> {
         "deaths": timeline,
         "deaths_with_no_champion_killer": unnamed,
         "first_kills": sample,
+        "classes_locked_to_an_event": {
+            "method": "classes whose blocks about a champion only ever land when                        that champion dies, or gets a kill, measured against how                        often chance would put them there",
+            "netids": locked,
+        },
     })))
 }
 
@@ -844,6 +878,22 @@ fn print_explore(out: &Value) {
                 k["deaths"],
                 k["deaths_with_no_champion_killer"],
             );
+        }
+    }
+    if let Some(k) = out.get("kill_timeline") {
+        let rows = k["classes_locked_to_an_event"]["netids"].as_array();
+        for m in rows.into_iter().flatten() {
+            println!(
+                "  netid {:>5} fires on {:<17} {} of {} champion blocks ({}x chance)",
+                m["netid"],
+                m["fires_on"].as_str().unwrap_or("?"),
+                m["on_the_event"],
+                m["champion_blocks"],
+                m["times_likelier_than_chance"],
+            );
+        }
+        if rows.is_some_and(|r| !r.is_empty()) {
+            println!();
         }
     }
     if let Some(i) = out.get("identified_by_statsjson") {

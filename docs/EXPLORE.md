@@ -322,7 +322,50 @@ constraint problem, not a lookup. A movement class, with millions of
 blocks and positions that have to move continuously, is the better
 target; it is not done.
 
-## 4. Netids proposed by fingerprint
+## 4. Netids identified by when they fire
+
+Once there is a kill feed, it labels the rest. For every champion we
+know when they died and when they got a kill, so any *other* class
+that only ever talks about a champion at those moments is about that
+event. This needs no payload from the class being identified — only
+when it fires and about whom.
+
+The comparison is against chance, not against zero: the windows around
+a champion's deaths cover some share of the game, so a class ticking
+steadily lands in them occasionally by accident. What is reported is
+how many times more often than that it actually does.
+
+On 16.9, as a control, it finds four and all four are right:
+
+| netid | fires on | blocks | vs chance | what it is |
+|------:|----------|-------:|----------:|------------|
+| 472 | their own death | 328 / 328 | 107× | `PKT_NPC_Hero_Die_s` — the death itself |
+| 715 | their own death | 328 / 328 | 107× | `PKT_S2C_UpdateDeathTimer_s` |
+| 277 | their own death | 331 / 350 | 102× | `PKT_S2C_HideOwnerEmotes_s` — emotes are hidden when you die |
+| 115 | any kill in the game | 1,057 / 1,057 | 15× | `PKT_Update_HeroStats_KDA_s` — the score |
+
+No false positives, and netid 277 is one nobody would have thought to
+look for. On 16.19:
+
+| netid | fires on | blocks | vs chance | |
+|------:|----------|-------:|----------:|-|
+| 1080 | their own death | 1,955 / 1,955 | 53× | the death class, already known |
+| 601 | their own death | 1,955 / 1,962 | 53× | **third** line of evidence that this is the death timer |
+| 918 | their own death | 1,925 / 2,058 | 50× | **new.** Nothing else had found it |
+| 590 | any kill in the game | 7,764 / 7,764 | 6× | the score class, already proved |
+
+Netid **601** is now settled by three independent routes: a payload of
+exactly 5 bytes addressed only to champions, which is the death
+timer's shape on 16.9; its per-champion block count matching
+`NUM_DEATHS`; and now firing only when its champion dies.
+
+Netid **918** is new, and its profile matches 16.9's
+`PKT_S2C_HideOwnerEmotes_s` closely — 2,058 champion blocks against
+1,955 deaths, where 16.9 had 350 against 328, the same slight excess.
+That last step is an analogy between two patches, not a measurement,
+so it is a candidate name on a confirmed on-death class.
+
+## 5. Netids proposed by fingerprint
 
 Riot renumbers netids every patch but rarely rewrites a class, so what
 a class looks like from outside its payload mostly survives: how often
@@ -373,8 +416,8 @@ class in three others. A real ten-patch gap also moves the classes
 themselves. About one in twenty of the confident calls is wrong even
 under ideal conditions, and nobody knows which one.
 
-Where § 2 and § 4 agree — netid 601 — the answer is not a hypothesis
-any more.
+Where these agree — netid 601, found by § 2, § 4 and § 5 — the answer
+is not a hypothesis any more.
 
 ## What this does not do
 
@@ -382,9 +425,10 @@ any more.
   something outside the file pins down — the visibility pair, 37.9 % of
   traffic, and the killer field of the death class. Positions, damage
   numbers, item ids and spell casts are not reachable today.
-- **No class is named with certainty by fingerprint alone.** Only § 2
-  produces proof, and only for classes that happen to correspond to a
-  counter Riot kept.
+- **No class is named with certainty by fingerprint alone.** § 2 and
+  § 4 produce proof, and only for classes that correspond to a counter
+  Riot kept or to an event the kill feed knows about. § 5 produces
+  candidates.
 - **Nothing touches the game.** No binary is unpacked, no process is
   read. That is the constraint this whole page is written under.
 

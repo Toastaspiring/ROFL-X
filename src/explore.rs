@@ -1053,6 +1053,164 @@ pub fn blocks_of(replay: &Replay<'_>, netid: u16) -> Result<DeathBlocks> {
     Ok(out)
 }
 
+/// Every block addressed to a champion: netid, which champion, when.
+pub type ChampionBlocks = Vec<(u16, usize, f32)>;
+
+/// One replay's timeline, for [`event_locked`].
+pub struct Timeline {
+    pub blocks: ChampionBlocks,
+    /// Per champion, the times they died.
+    pub deaths: Vec<Vec<f32>>,
+    /// Per champion, the times they got a kill.
+    pub kills: Vec<Vec<f32>>,
+    pub length_s: f32,
+}
+
+/// Collect every block whose `param` is one of the champions.
+pub fn champion_blocks(replay: &Replay<'_>, champions: &[u32]) -> Result<ChampionBlocks> {
+    let index: HashMap<u32, usize> =
+        champions.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let mut out = Vec::new();
+    for chunk in replay.chunks() {
+        let chunk = chunk?;
+        if chunk.stream_tag != StreamTag::GameChunk {
+            continue;
+        }
+        let Ok(body) = decompress_chunk(&chunk) else {
+            continue;
+        };
+        for block in BlockIterator::new(&body) {
+            let Ok(block) = block else { break };
+            if let Some(i) = index.get(&block.param) {
+                out.push((block.packet_id, *i, block.timestamp));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// A class whose traffic about a champion happens when something
+/// specific happens to that champion.
+#[derive(Debug, Clone)]
+pub struct EventLocked {
+    pub netid: u16,
+    /// "their own death" or "a kill they got".
+    pub event: &'static str,
+    pub blocks: u64,
+    pub near: u64,
+    pub share: f64,
+    /// How much likelier than chance. A class that fires steadily all
+    /// game lands near an event sometimes; one that is *about* the
+    /// event lands there every time, and the ratio says which.
+    pub lift: f64,
+}
+
+/// Find the classes locked to deaths and to kills.
+///
+/// The kill feed (§ 3 of `docs/EXPLORE.md`) gives, for every champion,
+/// when they died and when they got a kill. Any other class that only
+/// ever talks about a champion at those moments is about that event —
+/// a death timer, a grey screen, a score update. This needs no payload
+/// from the class being identified: only when it fires, and about whom.
+///
+/// The comparison is against chance, not against zero. The windows
+/// around a champion's deaths cover some fraction of the game, so a
+/// class firing steadily will land in them that often by accident;
+/// `lift` is how many times more than that it actually does.
+pub fn event_locked(games: &[Timeline]) -> Vec<EventLocked> {
+    let mut out = Vec::new();
+    for (event, pick) in [
+        ("their own death", 0usize),
+        ("a kill they got", 1usize),
+        ("any kill in the game", 2usize),
+    ] {
+        let mut blocks: HashMap<u16, u64> = HashMap::new();
+        let mut near: HashMap<u16, u64> = HashMap::new();
+        let mut expected: HashMap<u16, f64> = HashMap::new();
+        for g in games {
+            // Everything a kill touches: the victim, the killer, and
+            // everyone who assisted. A class that reacts to the kill
+            // rather than to one role in it fires for all of them, so
+            // it only shows up against the whole game's kills.
+            let all: Vec<f32> = {
+                let mut v: Vec<f32> = g.deaths.iter().flatten().copied().collect();
+                v.sort_by(f32::total_cmp);
+                v
+            };
+            let per_champion: Vec<&Vec<f32>> = match pick {
+                0 => g.deaths.iter().collect(),
+                1 => g.kills.iter().collect(),
+                _ => (0..g.deaths.len()).map(|_| &all).collect(),
+            };
+            // Share of the game each champion's windows cover.
+            let cover: Vec<f64> = per_champion
+                .iter()
+                .map(|ts| window_cover(ts) / f64::from(g.length_s.max(1.0)))
+                .collect();
+            for (netid, champion, t) in &g.blocks {
+                let Some(times) = per_champion.get(*champion) else {
+                    continue;
+                };
+                *blocks.entry(*netid).or_default() += 1;
+                *expected.entry(*netid).or_default() += cover[*champion];
+                if times.iter().any(|d| (d - t).abs() <= EVENT_WINDOW) {
+                    *near.entry(*netid).or_default() += 1;
+                }
+            }
+        }
+        for (netid, n) in &blocks {
+            let hit = near.get(netid).copied().unwrap_or(0);
+            let share = hit as f64 / *n as f64;
+            let base = expected.get(netid).copied().unwrap_or(0.0) / *n as f64;
+            let lift = if base > 0.0 { share / base } else { 0.0 };
+            if *n >= MIN_LOCKED_BLOCKS && share >= LOCKED_SHARE && lift >= LOCKED_LIFT {
+                out.push(EventLocked {
+                    netid: *netid,
+                    event,
+                    blocks: *n,
+                    near: hit,
+                    share,
+                    lift,
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| b.lift.total_cmp(&a.lift).then(b.blocks.cmp(&a.blocks)));
+    out
+}
+
+/// Seconds either side of an event a block is counted as part of it.
+const EVENT_WINDOW: f32 = 1.0;
+/// Champion-addressed blocks a class needs before this means anything.
+const MIN_LOCKED_BLOCKS: u64 = 100;
+/// Share of them that must land on an event.
+const LOCKED_SHARE: f64 = 0.90;
+/// And how many times likelier than chance that has to be.
+const LOCKED_LIFT: f64 = 4.0;
+
+/// Seconds covered by the windows around `times`, overlaps counted once.
+fn window_cover(times: &[f32]) -> f64 {
+    let mut spans: Vec<(f32, f32)> =
+        times.iter().map(|t| (t - EVENT_WINDOW, t + EVENT_WINDOW)).collect();
+    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut total = 0.0f64;
+    let mut cur: Option<(f32, f32)> = None;
+    for (a, b) in spans {
+        match cur {
+            Some((s, e)) if a <= e => cur = Some((s, e.max(b))),
+            Some((s, e)) => {
+                total += f64::from(e - s);
+                cur = Some((a, b));
+            }
+            None => cur = Some((a, b)),
+        }
+    }
+    if let Some((s, e)) = cur {
+        total += f64::from(e - s);
+    }
+    total
+}
+
 /// Blocks per champion for every netid, in roster order.
 ///
 /// This is the quantity that can be checked against Riot's own
@@ -1407,6 +1565,38 @@ mod tests {
         let m = match_patches(&target, &reference);
         assert_eq!(m[0].reference_netid, 91);
         assert_eq!(m[1].reference_netid, 90);
+    }
+
+    #[test]
+    fn overlapping_windows_are_counted_once() {
+        // Two events 10 s apart: two separate 2 s windows.
+        assert!((window_cover(&[10.0, 20.0]) - 4.0).abs() < 1e-6);
+        // Two events 1 s apart: the windows merge into 3 s.
+        assert!((window_cover(&[10.0, 11.0]) - 3.0).abs() < 1e-6);
+        assert_eq!(window_cover(&[]), 0.0);
+    }
+
+    #[test]
+    fn a_class_that_only_fires_on_deaths_is_locked_to_them() {
+        let deaths = vec![vec![100.0f32, 200.0, 300.0]];
+        let kills = vec![vec![]];
+        let mut blocks: ChampionBlocks = Vec::new();
+        for _ in 0..40 {
+            for d in &deaths[0] {
+                blocks.push((7, 0, *d));       // fires on every death
+            }
+        }
+        // And one that just ticks all game.
+        for i in 0..120 {
+            blocks.push((8, 0, i as f32 * 5.0));
+        }
+        let got = event_locked(&[Timeline { blocks, deaths, kills, length_s: 600.0 }]);
+        // The ticking class is never reported; the death class is, and
+        // with one champion its deaths are also the game's only kills,
+        // so it shows up under both labels.
+        assert!(got.iter().all(|l| l.netid == 7));
+        assert!(got.iter().any(|l| l.event == "their own death"));
+        assert!(got.iter().all(|l| (l.share - 1.0).abs() < 1e-9));
     }
 
     #[test]

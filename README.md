@@ -336,11 +336,12 @@ dumped object and checking the fields against something independent
 - [x] `decode --layout`: a class's payload byte by byte and its
   substitution table, measured on a decodable patch. Recovers all 256
   entries of `PKT_S2C_FaceDirection_s` with no conflict.
-- [ ] More classes the same way. Best remaining handle: a position
-  class, where coordinates must lie on the map and move continuously
-  in time — a much tighter constraint on a substitution than a counter.
-  On 16.19 the death class's coordinates are located but not read;
-  see [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
+- [ ] **Positions and move orders on a packed patch.** The waypoint
+  class is identified on 16.19 (netid 1267) but not read. It is the
+  right target: 118,885 blocks, paths that must be continuous in time,
+  and deltas whose plaintext distribution is known in advance, so the
+  substitution can be solved against a check that either holds or does
+  not. See [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
 - [x] Richer file-only output (`rofl-x explore`,
   [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
   alone, a per-champion per-minute timeline, netids proved against

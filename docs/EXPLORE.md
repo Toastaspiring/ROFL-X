@@ -299,8 +299,21 @@ and a class with ten varying bytes and no external handle on their
 values stays shut. Nothing here reads the game's code; this is file
 analysis, and the tables come out of the file.
 
-**Where positions have got to.** On 16.19 the death class's
-coordinates are *located* but not *read*. The payload map shows them
+**Where positions have got to.** Two classes carry them and neither is
+read yet.
+
+The **waypoint class** is netid 1267, which is where movement and
+therefore move orders live. It is 3.21 % of all blocks, it matches
+16.9's waypoint class with the largest margin of any pair in the set,
+its payload runs 18–352 bytes against 16.9's 18–367, and its byte
+concentration is 23.8 % against 16.9's 20.3 % — the signature of a
+class whose payload is mostly small signed deltas. What that
+concentration also says is that its commonest byte, `0x42`, is almost
+certainly this class's `T(0x00)`, the same role `0xdb` plays on 16.9.
+*Almost certainly* is doing work in that sentence: it is an inference
+from a frequency, not a measurement, and nothing is built on it.
+
+The **death class's** coordinates are *located* but not *read*. The payload map shows them
 plainly — three consecutive little-endian floats, each with an
 exponent byte taking ten values, exactly matching the 16.9 layout:
 
@@ -313,14 +326,21 @@ exponent byte taking ten values, exactly matching the 16.9 layout:
   [35]      killer varint
 ```
 
-Reading them needs the table at the mantissa bytes, which is roughly
-200 more entries, and the constraints available are weak: an exponent
-byte is pinned by the map's bounds, but a mantissa byte is uniform and
-only constrained by the pair `(x, z)` having to be somewhere a
-champion can stand. With 1,955 deaths that is an under-determined
-constraint problem, not a lookup. A movement class, with millions of
-blocks and positions that have to move continuously, is the better
-target; it is not done.
+Reading either needs the table at the mantissa bytes, which is
+roughly 200 more entries, and the constraints available are weak: an
+exponent byte is pinned by the map's bounds, but a mantissa byte is
+uniform and only constrained by the pair `(x, z)` having to be
+somewhere a champion can stand. With 1,955 deaths that is an
+under-determined constraint problem, not a lookup.
+
+The waypoint class is the better target for exactly the reason the
+death class is a poor one. It has 118,885 blocks in half the replays
+rather than 1,955, its paths have to be continuous in time rather than
+merely plausible, and its deltas are small signed numbers whose
+plaintext distribution is known in advance. That is a real
+constraint-solving problem with a built-in check — decoded paths
+either stay on the map and join up, or they do not. It is not done,
+and it is the next thing worth doing.
 
 ## 4. Netids identified by when they fire
 
@@ -378,25 +398,45 @@ name for each netid.
 emits is the shape of its fields: 2 bytes on every block is one small
 field; 5/6/7/10/11 is a fixed head with a short optional tail.
 
+**How concentrated its bytes are does the next most.** A class that
+delta-codes paths spends most of its payload on small signed numbers
+that are usually the same one, so a single byte value covers a fifth
+of everything it ever sends. A class carrying floats and hashes
+spreads out. Measured, on payload bytes alone:
+
+| class | commonest byte | commonest eight |
+|-------|---------------:|----------------:|
+| 16.9 netid 916, the waypoint class | 20.3 % | 43.0 % |
+| 16.19 netid 1267 | 23.8 % | 49.0 % |
+| 16.19 netid 1080, deaths | 6.0 % | 24.2 % |
+| 16.19 netid 590, the score | 16.4 % | 47.9 % |
+
 How good is it? Split the 16.9 replays in two, fingerprint each half
 from different games, and match — the answer is known, so the error
 rate is measurable:
 
 | gate (score, margin) | calls | right | precision |
 |----------------------|------:|------:|----------:|
-| any | 176 | 134 | 76.1 % |
-| ≥ 0.70, ≥ 0.05 | 132 | 114 | 86.4 % |
-| ≥ 0.85, ≥ 0.10 | 90 | 85 | 94.4 % |
-| **≥ 0.85, ≥ 0.15** | **72** | **69** | **95.8 %** |
-| ≥ 0.95, ≥ 0.15 | 42 | 40 | 95.2 % |
+| any | 196 | 154 | 78.6 % |
+| ≥ 0.70, ≥ 0.05 | 142 | 128 | 90.1 % |
+| ≥ 0.85, ≥ 0.10 | 91 | 86 | 94.5 % |
+| **≥ 0.85, ≥ 0.15** | **68** | **65** | **95.6 %** |
+| ≥ 0.95, ≥ 0.15 | 41 | 39 | 95.1 % |
 
 The margin over the runner-up is what carries the signal; the score
 barely moves precision. The shipped gate is the fourth row, and only
 matches that clear it are reported.
 
-Against 16.9, the twenty 16.19 replays produce **66 confident matches
-out of 273 netids, 41 of them to a named class.** The ones worth
-believing, because something independent agrees:
+Adding byte concentration to the score was worth it on the measure
+that matters most and not on all of them: netids recovered across the
+whole self-test went from 154 to **165** of 254 and the traffic
+recovered from 74.8 % to **75.5 %**, with precision unchanged, but the
+gate now admits 68 calls where it admitted 72. More of the mapping is
+right; slightly less of it is reported as certain.
+
+Against 16.9, the twenty 16.19 replays produce **63 confident matches
+out of 273 netids, 62.3 % of blocks.** The ones worth believing,
+because something independent agrees:
 
 | 16.19 netid | share | payload | proposed class | why it holds up |
 |------------:|------:|---------|----------------|-----------------|
@@ -408,6 +448,7 @@ believing, because something independent agrees:
 | 1255 | 0.00 % | 9–33 | `PKT_NPC_Die_Broadcast_s` | identical length range, score 0.993 |
 | 601 | 0.01 % | 5 | `PKT_S2C_UpdateDeathTimer_s` | and statsJson agrees (§ 2) |
 | 72 | 0.01 % | 9/13 | `PKT_HeroReincarnateAlive_s` | respawns, right order of magnitude |
+| 1267 | 3.21 % | 18–352 | the **waypoint class** — movement, where positions and move orders live | three ways: the strongest margin in the whole set (0.41), a payload range of 18–352 against 16.9's 18–367, and the byte concentration above |
 
 **These are hypotheses.** The 95.8 % figure is a ceiling, not an
 expectation: the self-test renumbers nothing and changes no class, it

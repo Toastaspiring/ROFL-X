@@ -97,6 +97,9 @@ struct NetId {
     /// Blocks per entity, for the champions only: the full table would
     /// be thousands of entries per netid and nothing reads it.
     per_param: HashMap<u32, u64>,
+    /// How often each byte value occurs anywhere in this class's
+    /// payloads.
+    byte_counts: Vec<u64>,
     lengths: BTreeMap<usize, u64>,
     first: f32,
     last: f32,
@@ -145,6 +148,12 @@ pub fn framing(replay: &Replay<'_>) -> Result<Framing> {
             n.last = t;
             n.params.insert(block.param);
             *n.per_param.entry(block.param).or_default() += 1;
+            if n.byte_counts.is_empty() {
+                n.byte_counts = vec![0; 256];
+            }
+            for b in block.payload {
+                n.byte_counts[*b as usize] += 1;
+            }
             if n.lengths.len() < LENGTH_CAP || n.lengths.contains_key(&block.payload.len()) {
                 *n.lengths.entry(block.payload.len()).or_default() += 1;
             }
@@ -222,10 +231,13 @@ impl Framing {
             .map(|(netid, n)| {
                 let entities = n.params.iter().filter(|p| **p >= ENTITY_ID_BASE).count();
                 let champion = n.params.iter().filter(|p| champions.contains(p)).count();
+                let (top1, top8) = byte_concentration(&n.byte_counts);
                 Fingerprint {
                     netid: *netid,
                     blocks: n.blocks,
                     share: n.blocks as f64 / total,
+                    top1,
+                    top8,
                     length: Length::of(n),
                     global_share: n.global as f64 / n.blocks.max(1) as f64,
                     entities,
@@ -288,6 +300,18 @@ pub struct Fingerprint {
     pub netid: u16,
     pub blocks: u64,
     pub share: f64,
+    /// Share of all this class's payload bytes taken by its single
+    /// commonest byte value, and by its commonest eight.
+    ///
+    /// This says how a class encodes, not what it means. A class that
+    /// delta-codes paths spends most of its payload on small signed
+    /// numbers that are usually the same one, so a single byte value
+    /// covers a fifth of everything it ever sends; a class carrying
+    /// floats and hashes spreads out. Measured: the waypoint class is
+    /// 20.3 % on 16.9 and its 16.19 counterpart 23.8 %, against 6.0 %
+    /// for the death class.
+    pub top1: f64,
+    pub top8: f64,
     pub length: Length,
     /// Share of blocks whose `param` is not an entity: the class is
     /// addressed to the game rather than to a unit.
@@ -384,6 +408,8 @@ pub fn explore(replay: &Replay<'_>) -> Result<Value> {
                 "blocks": p.blocks,
                 "share": (p.share * 10_000.0).round() / 10_000.0,
                 "payload_bytes": p.length.label(),
+                "commonest_byte_share": (p.top1 * 1000.0).round() / 1000.0,
+                "commonest_8_bytes_share": (p.top8 * 1000.0).round() / 1000.0,
                 "addresses": if p.global_share > 0.5 { "the game" } else { "a unit" },
                 "distinct_entities": p.entities,
                 "first_s": (f64::from(p.first) * 10.0).round() / 10.0,
@@ -521,13 +547,29 @@ fn similarity(a: &Fingerprint, b: &Fingerprint) -> f64 {
     let addressing = 1.0 - (a.global_share - b.global_share).abs();
     let entities = 1.0 - ratio_gap(a.entities as f64, b.entities as f64);
     let shape = f64::from(a.shape == b.shape);
-    0.40 * length
-        + 0.05 * kind
-        + 0.20 * share
-        + 0.15 * champions
-        + 0.10 * addressing
-        + 0.05 * entities
-        + 0.05 * shape
+    let bytes = 1.0 - ((a.top1 - b.top1).abs() + (a.top8 - b.top8).abs()) / 2.0;
+    0.34 * length
+        + 0.04 * kind
+        + 0.17 * share
+        + 0.13 * champions
+        + 0.09 * addressing
+        + 0.04 * entities
+        + 0.04 * shape
+        + 0.15 * bytes
+}
+
+/// Share of payload bytes taken by the commonest value, and by the
+/// commonest eight.
+fn byte_concentration(counts: &[u64]) -> (f64, f64) {
+    let total: u64 = counts.iter().sum();
+    if total == 0 {
+        return (0.0, 0.0);
+    }
+    let mut sorted: Vec<u64> = counts.to_vec();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+    let top1 = sorted[0] as f64 / total as f64;
+    let top8 = sorted.iter().take(8).sum::<u64>() as f64 / total as f64;
+    (top1, top8)
 }
 
 /// Overlap of two sets of payload lengths, in [0, 1].
@@ -1475,6 +1517,8 @@ pub fn pool(all: &[Framing], players: usize) -> Vec<Fingerprint> {
                     let mix = |a: f64, b: f64| (a * w + b * v) / (w + v).max(1.0);
                     have.global_share = mix(have.global_share, p.global_share);
                     have.champion_share = mix(have.champion_share, p.champion_share);
+                    have.top1 = mix(have.top1, p.top1);
+                    have.top8 = mix(have.top8, p.top8);
                     have.entities = have.entities.max(p.entities);
                     have.first = have.first.min(p.first);
                     have.last = have.last.max(p.last);
@@ -1519,6 +1563,8 @@ mod tests {
             global_share: 0.0,
             entities: 100,
             champion_share: 0.1,
+            top1: 0.2,
+            top8: 0.5,
             first: 0.0,
             last: 1000.0,
             shape: "steady",
@@ -1536,7 +1582,22 @@ mod tests {
     fn a_different_fixed_length_costs_the_length_weight() {
         let a = fp(1, 100, 0.4, Length::Fixed(2));
         let b = fp(2, 100, 0.4, Length::Fixed(9));
-        assert!((similarity(&a, &b) - 0.6).abs() < 1e-9);
+        assert!((similarity(&a, &b) - 0.66).abs() < 1e-9);
+    }
+
+    #[test]
+    fn byte_concentration_reads_the_histogram() {
+        let mut counts = vec![0u64; 256];
+        counts[0x42] = 50;
+        for c in counts.iter_mut().take(9).skip(1) {
+            *c = 5;
+        }
+        counts[200] = 10;
+        let (top1, top8) = byte_concentration(&counts);
+        assert!((top1 - 0.5).abs() < 1e-9);
+        // 50, then 10, then six of the eight fives: 90 of 100 bytes.
+        assert!((top8 - 0.90).abs() < 1e-9);
+        assert_eq!(byte_concentration(&vec![0; 256]), (0.0, 0.0));
     }
 
     #[test]

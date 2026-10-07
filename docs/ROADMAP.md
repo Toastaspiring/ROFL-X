@@ -134,9 +134,10 @@ checks every block. Riot's class names come back from the binary's
 [DECODING.md](DECODING.md).
 
 Delivered on 16.9 (five replays): every one of 7,927,123 blocks decoded
-clean; 315 netids named; 14 classes typed (deaths, respawns, K/D/A,
-levels, damage, spell casts, the four item answers, NPC and building deaths,
-movement paths, unit spawns including wards); `scripts/build_patch.py`
+clean; 315 netids named; 16 classes typed (deaths, respawns, K/D/A,
+levels, damage, spell casts, the four item answers, NPC and building
+deaths, team visibility both ways, movement paths, unit spawns
+including wards); `scripts/build_patch.py`
 builds the archive from the binary in minutes. The discipline above
 still holds in spirit, with one change: fixtures are whole replays
 checked against statsJson (`tests/decode_replays.rs`) rather than
@@ -248,16 +249,67 @@ A stronger reference than any external dataset sits in every replay:
 statsJson, Riot's end-of-game numbers per player. `rofl-x file`
 rebuilds them from decoded packets and compares: K/D/A, kills and
 assists from kill events, level, all seven final item slots, damage to
-champions, wards placed. 300 / 300 checks pass on the five 16.9
-replays; `tests/decode_replays.rs` keeps it that way.
+champions, wards placed, and team visibility. 350 / 350 checks pass on
+the five 16.9 replays; `tests/decode_replays.rs` keeps it that way, and
+also asserts that the file-only path reaches the same answer as the
+decoder where both can be run.
 
 ---
 
-## Phase 6, current patches, BLOCKED
+## Phase 6, emulated decoding on current patches, BLOCKED AND STAYING SO
 
 From some patch after 16.9 the shipped binary keeps its code encrypted
 on disk (16.19: `.riot0/.riot1/.riot2` sections, `.text` entropy 7.997).
-Format-2 archives need the code; getting it would mean defeating Riot's
-protection, which this project does not do. Current-patch replays get
-transport parsing and the statsJson scoreboard only. Details and what
-would unblock it: [COMPATIBILITY.md](COMPATIBILITY.md).
+Format-2 archives need that code; getting it would mean defeating
+Riot's protection, which this project does not do. `build_patch.py`
+detects a packed binary and refuses it.
+
+Unblocked only by an unpacked binary of the patch arriving through
+legitimate means, at which point an archive builds in minutes and
+Phase 4b applies unchanged. Details:
+[COMPATIBILITY.md](COMPATIBILITY.md).
+
+---
+
+## Phase 7, reading a packed patch from the file alone, IN PROGRESS
+
+Phase 6 being shut does not make the replay unreadable; it makes the
+*game* unavailable. The replay is still a file, its framing was never
+obscured, and it ships with Riot's own end-of-game record inside it.
+Phase 7 is how far that goes. Everything here is measured on the twenty
+16.19 replays, with the five 16.9 ones used as a control wherever a
+method can be checked against a known answer.
+[EXPLORE.md](EXPLORE.md) is the full account.
+
+**Done.**
+
+- Champion entity ids from the shape of the traffic alone; right in 5
+  of 5 on the control patch, where the decoder knows independently.
+- A per-champion, per-minute activity timeline for the whole game.
+- Netids identified by **proof**: a per-champion block count equal to
+  one of Riot's counters, or to a short sum of them. Four on the
+  control patch, all correct; the champion-death class and the running
+  score on 16.19, each in 19 of 19 replays.
+- Netids identified by **when they fire**, with the kill feed as the
+  label. Four on the control patch, all correct and one of them a
+  class nobody would have gone looking for; two on 16.19.
+- Netids **proposed** by behavioural match against a decodable patch,
+  with the gate calibrated by splitting the control patch's replays
+  and measuring how often the answer comes back: 63 of 273 netids on
+  16.19, at a measured precision around 96 % under conditions kinder
+  than a real patch gap.
+- **Three payload fields read with no binary at all**, by recovering a
+  class's byte substitution from plaintext pinned from outside: the
+  visibility pair's team byte and the death class's killer field. Out
+  of them come a vision timeline and a kill feed.
+- `decode --layout`, which recovers a class's payload layout and
+  substitution table against the deserializer's own output on a patch
+  that has one — including the discovery that the waypoint class
+  writes its buffer backwards.
+
+**Stop point.** Positions. The movement class is identified and its
+wire format settled, but reading coordinates needs most of its
+256-entry table, and that is a constraint search rather than a lookup.
+The next boundary is reached either when that search succeeds against
+the waypoint parser's own check, or when it is shown not to converge on
+the data available.

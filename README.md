@@ -11,6 +11,13 @@ is actually in the file. Our goal is a parser that covers as much as the
 community's reverse-engineering knowledge allows, and a catalog that honestly
 records the rest as unnamed so it's obvious what we haven't figured out yet.
 
+It works two ways, and the second matters more as time goes on. Where an
+unpacked client binary of the patch exists, the game's own deserializers
+decode the payloads. Where it does not — every patch since 16.9 ships its
+code encrypted — the replay is still a file on your disk, and a surprising
+amount of it reads without the game's help at all
+([docs/EXPLORE.md](docs/EXPLORE.md)).
+
 ---
 
 ## Credit where it's very much due
@@ -89,34 +96,66 @@ work.
 
 ## Status
 
-On patch **16.9**, ROFL-X decodes every packet of a replay through the
-game's own code: the game's netid factory builds each packet object and
-its own deserializer reads the payload, inside a Unicorn VM
-([docs/DECODING.md](docs/DECODING.md)). On the five 16.9 replays we hold:
+### With the game's own code (patch 16.9)
 
-- **7,927,123 / 7,927,123 blocks decode clean** (the deserializer
-  returned true and consumed exactly the payload).
-- **315 netids carry Riot's own class name**, recovered from the
-  binary's handler registrations (75.9 % of all blocks).
-- **14 classes are typed**: champion deaths with killer and assists,
-  respawns, K/D/A, levels, damage, spell casts, item buys / removals /
-  swaps / uses, NPC and building deaths, movement paths, unit spawns
-  (wards).
+Where an unpacked `League of Legends.exe` of the patch exists, ROFL-X
+decodes every packet through the game itself: its netid factory builds
+each packet object and its own deserializer reads the payload, inside a
+Unicorn VM ([docs/DECODING.md](docs/DECODING.md)). On the five 16.9
+replays we hold:
+
+- **7,927,123 / 7,927,123 blocks decode clean** — the deserializer
+  returned true and consumed exactly the payload.
+- **Riot's own class name for 151 of the 273 netids a replay uses**,
+  75.9 % of all blocks, recovered from the binary's handler
+  registrations. The binary registers 315 in total.
+- **Every class's field layout measured**, all 273 of them, in
+  [docs/FIELDS.md](docs/FIELDS.md): per 4-byte word, whether it is a
+  net id, a coordinate, game time, an enum, a counter, or a pointer to
+  an array, and what the array's entries look like.
+- **16 classes typed** — fields named *and* independently checked:
+  champion deaths with killer and assists, respawns, K/D/A, levels,
+  damage, spell casts, item buys / removals / swaps / uses, NPC and
+  building deaths, team visibility, movement paths, unit spawns. 47.0 %
+  of all blocks.
 - **Every per-player total rebuilt from those packets matches Riot's
-  own end-of-game stats in the same file**: K/D/A, level, all seven
-  final item slots, damage to champions, wards placed. 300 / 300.
+  own end-of-game record in the same file**: K/D/A, kill events, level,
+  all seven final item slots, damage to champions, wards placed, and
+  visibility. **350 / 350**.
 
 On **15.1 – 15.5**, Mowokuma's format-1 archives give positions and
 wards, at parity with her binary on 15.5.
 
-On **current patches (16.19)** packet-payload decoding is blocked: the
-shipped binary keeps its code encrypted on disk, and ROFL-X reads
-replays rather than touching the game (§ Non-goals). What the file
-gives directly still works on every patch, from the file alone, with no
-archive: `rofl-x summary` writes the full end-of-game scoreboard
-(statsJson, a few hundred fields per player) plus a transport activity
-profile (per-netid, per-entity and per-minute block counts). Only the
-obfuscated packet *payloads* stay closed.
+### Without it (patch 16.19, and every patch since)
+
+From some patch after 16.9 the shipped binary keeps its code encrypted
+on disk, so there is no deserializer to run, and ROFL-X reads replays
+rather than touching the game (§ Non-goals). The replay is a different
+matter: it is a file, and most of it was never obscured. On the twenty
+16.19 replays we hold, with **no binary at all**
+([docs/EXPLORE.md](docs/EXPLORE.md)):
+
+- **The full end-of-game scoreboard**, a few hundred fields per player,
+  and a transport activity profile — `rofl-x summary`.
+- **Which entity is which champion**, from the shape of the traffic.
+  The same code on 16.9, where the decoder knows the answer
+  independently, gets it right in 5 replays out of 5.
+- **Three payload fields read outright**, because the obfuscation is a
+  per-class byte substitution and those classes' plaintext is pinned
+  from outside: the two visibility classes' team byte (37.9 % of all
+  blocks, 31,154 labelled champion blocks, 0 exceptions) and the death
+  class's killer field (199 of 200 player-games predicted right). Out
+  of them come a **per-champion vision timeline** and a **kill feed**.
+- **Netids identified by proof rather than guess**: 1080 is the
+  champion-death class and 590 the running score, each holding in 19 of
+  19 replays against Riot's own counters; 601 is the death timer,
+  settled three separate ways.
+- **63 of 273 netids matched to a 16.9 class by behaviour**, 62.3 % of
+  blocks — hypotheses, with a measured error rate.
+
+Still closed there: positions. The movement class is identified (netid
+1267) and its wire format is settled, but reading it needs the rest of
+its substitution table.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -200,6 +239,11 @@ rofl-x decode -r EUW1-1234567890.rofl --find YellowTrinket
 rofl-x decode -r EUW1-1234567890.rofl --netid 201 --layout
 ```
 
+Add `--heap` to a `--jsonl` run to get the plaintext bytes of every
+buffer the deserializer allocated, alongside the raw payload. That is
+what a class carrying a list puts its contents in, and none of it
+appears in the packet object.
+
 `--layout` reports which object field each payload byte carries, the
 order and byte order the class writes its fields in, and the
 substitution table that turns one into the other — measured against
@@ -254,7 +298,32 @@ verdict (clean, partial, rejected, fault), every class in the catalog
 carries an honest status (TYPED, NAMED, UNNAMED), and every typed field
 is checked against something independent, most of them against Riot's
 own end-of-game stats. `tests/decode_replays.rs` fails if a block stops
-decoding clean or a single self-check stops matching.
+decoding clean, if a single self-check stops matching, or if the
+file-only path stops agreeing with the decoded one.
+
+The same rule governs the work on patches with no binary, where there
+is no deserializer to vouch for anything. Everything claimed there is
+labelled by *how* it is known, and the three grades are not
+interchangeable:
+
+- **Measured.** An identity that has to hold ten players at a time in
+  game after game — a netid whose per-champion block count *is* one of
+  Riot's end-of-game counters, or a payload byte whose meaning is
+  forced by a rule of the game. These are reported as facts.
+- **Checked against a known answer.** Where a method can be run on a
+  patch we *can* decode, it is, and the error rate is published rather
+  than asserted. The netid matcher reports its own calibration table;
+  the file-only champion roster is compared against the decoder's.
+- **Hypothesis.** A behavioural match with a score and a margin. These
+  say so in the output and in the docs, with the measured precision of
+  the gate that admitted them, and nothing is built on top of one.
+
+Negative results are kept for the same reason. Per-class substitution
+tables turn out to be unrelated to each other, RTTI turns out to be
+stripped for packet classes, and the running-score class turns out to
+pack its numbers in bits rather than bytes — all three are written
+down with their measurements, because each one closes a line of attack
+that would otherwise look promising twice.
 
 ---
 
@@ -286,32 +355,83 @@ credited, which CREDITS.md does in detail.
 
 ## TODO
 
-Scoped and triaged, ordered by how much it adds to the decoded output.
+Scoped and triaged. The frontier is the first section: patches whose
+client ships packed, which from 16.10 onwards is all of them.
+
+### Patches with no binary (16.19 and later)
+
+Done:
+
+- [x] File-only analysis (`rofl-x summary`): the end-of-game scoreboard
+  and a transport activity profile, no game contact.
+- [x] `rofl-x explore`: champion entity ids from framing alone (right
+  in 5 of 5 on a patch where the decoder knows the answer), a
+  per-champion per-minute timeline, and a netid matcher with a
+  published calibration table.
+- [x] Identify netids by **proof**: a per-champion block count that
+  equals one of Riot's end-of-game counters, including short sums of
+  them. Gives 1080 as the champion-death class and 590 as the running
+  score, each in 19 of 19 replays.
+- [x] Identify netids by **when they fire**, using the kill feed as a
+  label. Four hits on the control patch, all correct, including one
+  nobody would have gone looking for; two on 16.19, one of them found
+  by nothing else.
+- [x] **Read a payload with no binary**, by recovering a class's byte
+  substitution from plaintext the file itself pins down. Done for the
+  visibility pair (37.9 % of blocks, 0 exceptions over 31,154 labelled
+  blocks) and the death class's killer field (199 of 200 player-games).
+- [x] `decode --layout`: a class's payload byte by byte and its
+  substitution table, measured against the deserializer's own output on
+  a patch that has one. Recovers all 256 entries of two classes with
+  no conflict, and works out that the waypoint class writes its buffer
+  backwards.
+
+Next:
+
+- [ ] **Positions and move orders.** The waypoint class is identified
+  (netid 1267), its wire format is settled, two table entries are
+  known and every coordinate's position in the packet is known. What
+  remains is the search for the other 254 — which the existing
+  waypoint parser checks for free, since a wrong table fails to parse
+  the first block ([docs/EXPLORE.md](docs/EXPLORE.md) § 3).
+- [ ] **The running score's numbers.** Netid 590 is identified but its
+  three counters are bit-packed rather than byte-aligned, so the
+  technique that read the killer does not reach it. Reading it would
+  give assists, which statsJson only gives as a total.
+- [ ] Fit the matcher's weights to a measured *cross-patch* error rate
+  instead of setting them by hand. Needs two patches with both a
+  decodable binary and replays; we have one.
+- [ ] A scoreboard CSV across a folder of replays.
+
+Blocked, and staying blocked:
+
+- [ ] Emulated decoding. From some patch after 16.9 the binary ships
+  packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Unblocked
+  only by an unpacked binary obtained legitimately — a format-2
+  archive then builds in minutes — and not by us going after Riot's
+  protection (§ Non-goals).
 
 ### More typed classes (16.9, no reverse engineering needed)
 
 Every class below already decodes clean; typing it means reading its
 dumped object and checking the fields against something independent
-([docs/PACKETS.md](docs/PACKETS.md) § Adding a class).
+([docs/PACKETS.md](docs/PACKETS.md) § Adding a class). All 273 have a
+measured field table in [docs/FIELDS.md](docs/FIELDS.md) to start from.
 
-- [ ] **Spell names for spell casts.** `PKT_NPC_CastSpellAns_s` is typed
-  but carries a 32-bit spell id, not a plain FNV-1a hash of the spell
-  name; probably a hash of a game-data path.
-- [ ] **CS and gold over time.** Not in a named class; candidates are the
-  unnamed per-champion sync (netid 806) and the replication class
-  (netid 446). Check against statsJson `MINIONS_KILLED`,
-  `NEUTRAL_MINIONS_KILLED`, `GOLD_EARNED`.
-- [x] **`PKT_S2C_On{Enter,Leave}TeamVisibility_s`** (39.5 % of all
-  blocks): typed, and the `vision` section says when each champion was
-  inside the enemy team's vision.
 - [ ] **`PKT_CHAR_SetCooldown_Broadcast_s`** (104),
   **`PKT_Basic_Attack_Pos_s`** (831) and its minion twin (876), and the
   busiest unnamed classes: 707 (5.0 %), 806 (3.3 %), 684 (3.1 %), 406
-  (2.3 %). [docs/FIELDS.md](docs/FIELDS.md) has a measured table for
-  each of them.
+  (2.3 %).
+- [ ] **CS and gold over time.** Not in a named class; candidates are
+  the unnamed per-champion sync (netid 806) and the replication class
+  (netid 446). Check against statsJson `MINIONS_KILLED`,
+  `NEUTRAL_MINIONS_KILLED`, `GOLD_EARNED`.
+- [ ] **Spell names for spell casts.** `PKT_NPC_CastSpellAns_s` is
+  typed but carries a 32-bit spell id, not a plain FNV-1a hash of the
+  spell name; probably a hash of a game-data path.
 - [ ] **Champion roster from the keyframe hero records** instead of
-  "net ids are contiguous in statsJson order" (verified on 16.9, but an
-  assumption).
+  "net ids are contiguous in statsJson order". Verified on 16.9 and
+  cross-checked by the file-only detector, but still an assumption.
 
 ### Parser and tooling
 
@@ -322,40 +442,6 @@ dumped object and checking the fields against something independent
 - [ ] **Format-2 archive for 15.x** from Mowokuma's section dumps (the
   15.5 factory is confirmed, [docs/RE_PATCH.md](docs/RE_PATCH.md)); the
   dumps lack the PE headers `build_patch.py` reads.
-
-### Current patches
-
-- [x] File-only analysis (`rofl-x summary`): scoreboard + transport
-  profile, no game contact. Works on 16.19.
-- [ ] Emulated decoding is blocked: from some patch after 16.9 the
-  binary is packed ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)).
-  Unblocked only by an unpacked binary obtained legitimately; a
-  format-2 archive then builds in minutes.
-- [x] Read a payload on a packed patch without the binary, by
-  recovering a class's byte substitution from plaintext the file itself
-  pins down ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). Done for the
-  visibility pair, 37.9 % of 16.19 blocks.
-- [x] The death class's killer field (netid 1080), from statsJson's
-  `CHAMPIONS_KILLED`: 199 of 200 player-games predicted right.
-- [x] `decode --layout`: a class's payload byte by byte and its
-  substitution table, measured on a decodable patch. Recovers all 256
-  entries of `PKT_S2C_FaceDirection_s` with no conflict.
-- [ ] **Positions and move orders on a packed patch.** The waypoint
-  class is identified on 16.19 (netid 1267), its wire format is
-  settled (the payload is its entry buffer written backwards), two
-  table entries are known and every coordinate's position in the
-  packet is known. What remains is the search for the other 254, which
-  the existing waypoint parser checks for free: a wrong table fails to
-  parse the first block. See [docs/EXPLORE.md](docs/EXPLORE.md) § 3.
-- [x] Richer file-only output (`rofl-x explore`,
-  [docs/EXPLORE.md](docs/EXPLORE.md)): champion entity ids from framing
-  alone, a per-champion per-minute timeline, netids proved against
-  statsJson counters, and netids proposed by matching their behaviour
-  against a decodable patch.
-- [ ] A scoreboard CSV across a folder of replays.
-- [ ] Fit the fingerprint weights to a measured cross-patch error rate
-  instead of setting them by hand. Needs two patches with both a
-  decodable binary and replays; we have one.
 
 ### Parity
 
@@ -378,3 +464,13 @@ dumped object and checking the fields against something independent
   functions.** The obfuscation changes per patch and Mowokuma/Zhu both
   independently concluded emulation is the right answer; we agree, and
   format 2 takes it to its conclusion: the game also picks the decoder.
+
+  One clarification, since the 16.19 work sits close to this line.
+  Where no binary exists to emulate, ROFL-X does recover a class's byte
+  substitution *from the replay*, using plaintext that something
+  outside the file pins down — Riot's own end-of-game numbers, or a
+  rule of the game. That is reading a file you own, with evidence the
+  file came with. It is not reimplementing Riot's code, it needs
+  nothing from the client, and it stops at the classes whose plaintext
+  is pinned; there is no attempt to recover the obfuscation itself, or
+  to produce something that would decode a live game.

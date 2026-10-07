@@ -153,6 +153,15 @@ summaries below are read off those tables.
    against something independent (statsJson, positions on the map, a
    related class). The profiler says "net id at +0x18"; only the check
    says *whose*.
+
+   For a class whose payload you also need to understand — because you
+   want to read it on a patch with no binary — `rofl-x decode --netid N
+   --layout` goes further: which payload byte carries which field, the
+   order and byte order the class writes its fields in, and the
+   substitution table between the two. For a class that carries a list
+   in an allocated buffer rather than in object fields, it works out
+   how that buffer sits inside the payload as well. See
+   [EXPLORE.md](EXPLORE.md) § 3 for what that is worth.
 3. Add `src/packet/handlers/<name>.rs` with the layout table and the
    check that verified it, a `pub mod` line in `handlers/mod.rs`, an arm
    in `packet::interpret` (or a recogniser in `packet::recognise`), and

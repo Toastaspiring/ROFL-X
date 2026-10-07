@@ -23,11 +23,11 @@ Columns:
 |--------|-----------|---------|--------|
 | 15.1 – 15.4 | green | format 1: Mowokuma `5-1` .. `5-4.patch` | positions + wards (her JSON). Parity untested |
 | 15.5   | green | format 1: Mowokuma `5-5.patch` | positions + wards. Parity with her binary: metadata and wards byte-identical; 99.07 % of player entries in `players_state` match (her own output drifts run to run, so full byte identity is not reachable) |
-| 16.7   | green (1 replay) | none: no binary of this patch kept | summary only |
-| 16.8   | green (sample_a) | none: no binary of this patch kept | summary only |
+| 16.7   | green (1 replay) | none: no binary of this patch kept | file-only (`summary`, `explore`) |
+| 16.8   | green (sample_a) | none: no binary of this patch kept | file-only (`summary`, `explore`) |
 | 16.9   | green (5 replays) | **format 2**, built by `scripts/build_patch.py` from `League of Legends.exe` 16.9.772.1032 | **every block decoded clean** (7,927,123 / 7,927,123); 315 classes named, 16 typed (47.0 % of blocks), every class's fields measured ([FIELDS.md](FIELDS.md)); events, positions, wards, items, vision; self-check 350 / 350 |
 | 16.10 – 16.18 | untested | unknown | the binary packing below appeared somewhere in this range |
-| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | no emulation. File-only ([EXPLORE.md](EXPLORE.md)): scoreboard, champion entity ids, per-champion timeline; the visibility pair's payload **read without the binary** (37.9 % of blocks, 31,154 labelled champion blocks, 0 exceptions) giving a vision timeline; netid 1080 proved to be the champion-death packet and its killer field read too (199 of 200 player-games predicted right), giving a kill feed; 66 of 273 netids matched to a 16.9 class by fingerprint |
+| 16.19  | green (20 replays) | **none possible**: the shipped binary is packed | no emulation. File-only ([EXPLORE.md](EXPLORE.md)): scoreboard, champion entity ids, per-champion timeline; the visibility pair's payload **read without the binary** (37.9 % of blocks, 31,154 labelled champion blocks, 0 exceptions) giving a vision timeline; netid 1080 proved to be the champion-death packet and its killer field read too (199 of 200 player-games predicted right), giving a kill feed; netid 590 proved to be the running score and 601 the death timer; the movement class identified (1267) with its wire format settled; 63 of 273 netids matched to a 16.9 class by behaviour, 62.3 % of blocks |
 
 ## The 16.19 binary is packed
 
@@ -64,7 +64,8 @@ the shape of the traffic (verified against the decoder's own roster on
 identity of netids whose per-champion block count *is* one of Riot's
 end-of-game counters, and proposes a class for the rest by matching
 their behaviour against 16.9. On the twenty 16.19 replays that yields
-one proved netid and 66 confident proposals out of 273.
+three netids proved outright, two more settled by when they fire, and
+63 confident proposals out of 273.
 
 It also reads one class's payload outright. The obfuscation is a
 per-class byte substitution, not a cipher — measurable on 16.9, where
@@ -89,9 +90,10 @@ decode needs that patch's binary.
 
 ## Known gaps
 
-1. **Current patches.** Payload decoding is blocked by the packing
-   above; see [EXPLORE.md](EXPLORE.md) for how far the file alone
-   goes.
+1. **Current patches.** Emulated decoding is blocked by the packing
+   above. The file alone goes a long way further than it used to —
+   three payload fields are read on 16.19 with no binary at all — but
+   positions are not among them yet. See [EXPLORE.md](EXPLORE.md).
 2. **Parity runs against Mowokuma on 15.1 – 15.4.** Cheap once a script
    runs both tools and diffs order-normalised JSON.
 3. **Game modes with more than two teams** (Arena). The format-2 team
@@ -109,3 +111,10 @@ decode needs that patch's binary.
    read `n/n`. `tests/decode_replays.rs` asserts the same over a whole
    replay folder.
 4. Add a row to the table above.
+
+For a patch with **no** binary, step 2 is impossible and the honest
+run is `rofl-x explore` instead. Give it the new patch's replays and
+`--reference` a patch that does have an archive, and `--self-test` so
+the netid matcher reports its own error rate before any of its
+proposals are believed. [EXPLORE.md](EXPLORE.md) is what that output
+means.

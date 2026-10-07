@@ -38,7 +38,7 @@ table.
 Results on the five 16.9 replays we hold: **7,927,123 blocks, every one
 of them a clean decode**, and the per-player totals rebuilt from the
 decoded packets match Riot's own end-of-game stats in the same file on
-**300 / 300** checks (see § How we know it is right).
+**350 / 350** checks (see § How we know it is right).
 
 ---
 
@@ -225,7 +225,9 @@ Three independent levels:
   encrypted on disk (new `.riot0`/`.riot1`/`.riot2` sections; entropy
   7.997 throughout `.text`). Getting at the code would mean defeating that
   protection, which ROFL-X will not do (README § Non-goals). See
-  [COMPATIBILITY.md](COMPATIBILITY.md).
+  [COMPATIBILITY.md](COMPATIBILITY.md). What a replay still yields on
+  such a patch, with no binary at all, is a separate piece of work:
+  [EXPLORE.md](EXPLORE.md).
 - **Unnamed classes stay unnamed** unless a shape recogniser covers them:
   they are decoded (clean) but not typed. Their fields are still
   measured, class by class, in [FIELDS.md](FIELDS.md).

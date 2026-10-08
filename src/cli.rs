@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -582,6 +582,8 @@ fn explore(
         None => None,
     };
 
+    let waypoints = solve_waypoints(replays)?;
+
     let mut out = serde_json::json!({
         "patch": patch,
         "replays": per_replay,
@@ -596,6 +598,7 @@ fn explore(
             "netids": identified,
         },
         "kill_timeline": killer,
+        "waypoint_table": waypoints,
     });
 
     if !reference.is_empty() {
@@ -667,6 +670,261 @@ fn explore(
         None => print_explore(&out),
     }
     Ok(())
+}
+
+/// Recover part of the movement class's substitution table.
+///
+/// The movement class is the one whose payload is its entry buffer
+/// written backwards, so the first entry's header sits at a fixed
+/// distance from the payload's *end* whatever the rest of the packet
+/// does: the unit net id at `[-3]`..`[-6]`, the speed at `[-7]`..`[-10]`,
+/// and for a single-waypoint entry the coordinates at `[-11]`..`[-14]`.
+/// The coordinate high bytes move slowly enough to lay the plaintext
+/// alphabet out in order ([`crate::explore::byte_chain`]).
+///
+/// Nothing here is hardcoded. The class is found by the shape of its
+/// payload, `T(0x00)` by the net id's always-zero byte, and the
+/// direction of the chain by the flags high byte, which the format
+/// allows to be only 0 or 2 — so whichever direction puts that byte's
+/// other value at plaintext 2 is the right one.
+fn solve_waypoints(replays: &[PathBuf]) -> Result<Option<Value>> {
+    use crate::explore::{blocks_of, byte_chain, framing, BytePair, Length, UnitTracks};
+
+    let Some(path) = replays.first() else { return Ok(None) };
+    let bytes = std::fs::read(path)?;
+    let replay = Replay::parse(&bytes)?;
+    let players = replay.metadata.players.len();
+
+    // Pick the class by the property the solver needs, not by the
+    // general shape of its payload — several classes carry a long
+    // variable payload addressed to the game, and only one of them is
+    // a batch of unit entries written backwards.
+    //
+    // That one has the first entry's net id at `[-3]`..`[-6]`, so
+    // `[-6]` is the id's top byte and is `0x40` for every unit in the
+    // game: through the substitution it has to be a single constant
+    // across every block. `[-5]` is the next byte up, zero for every
+    // id below 0x10000, so it is near-constant too. Nothing else looks
+    // like that.
+    let mut netid: Option<(u64, u16)> = None;
+    for f in framing(&replay)?.fingerprints(players) {
+        if f.blocks < WAYPOINT_MIN_BLOCKS
+            || f.global_share <= 0.5
+            || !matches!(f.length, Length::Variable(lo, _) if lo >= 14)
+        {
+            continue;
+        }
+        let mut top: HashMap<u8, u64> = HashMap::new();
+        let mut next: HashMap<u8, u64> = HashMap::new();
+        let mut seen = 0u64;
+        for (_, _, payload) in blocks_of(&replay, f.netid)? {
+            if payload.len() < 14 {
+                continue;
+            }
+            seen += 1;
+            *top.entry(payload[payload.len() - 6]).or_default() += 1;
+            *next.entry(payload[payload.len() - 5]).or_default() += 1;
+        }
+        let constant = top.len() == 1;
+        let near = next.values().max().copied().unwrap_or(0) * 100 >= seen.max(1) * 95;
+        if constant && near && netid.map_or(true, |(n, _)| f.blocks > n) {
+            netid = Some((f.blocks, f.netid));
+        }
+    }
+    let Some((_, netid)) = netid else { return Ok(None) };
+
+    // Walk every replay, keeping each unit's coordinate high bytes in
+    // time order. A unit is keyed by the cipher of its net id's low
+    // bytes: the id cannot be read yet, but the same unit gives the
+    // same bytes, which is all the grouping needs.
+    let mut blocks: Vec<(usize, f32, Vec<u8>)> = Vec::new();
+    let mut top_byte_counts: HashMap<u8, u64> = HashMap::new();
+    let mut zero_byte: HashMap<u8, u64> = HashMap::new();
+    let mut flags_hi: HashMap<u8, u64> = HashMap::new();
+    let mut flags_lo: HashMap<u8, u64> = HashMap::new();
+    for (i, path) in replays.iter().enumerate() {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        for (t, _, payload) in blocks_of(&replay, netid)? {
+            if payload.len() < 14 {
+                continue;
+            }
+            let at = |k: usize| payload[payload.len() - k];
+            *top_byte_counts.entry(at(6)).or_default() += 1;
+            *zero_byte.entry(at(5)).or_default() += 1;
+            *flags_hi.entry(at(2)).or_default() += 1;
+            *flags_lo.entry(at(1)).or_default() += 1;
+            blocks.push((i, t, payload));
+        }
+    }
+    // `T(0x00)` is the byte the net id's always-zero field carries;
+    // `T(0x40)` is the constant its top byte carries; `T(0x02)` is the
+    // flags high byte's other value, since the format allows only 0
+    // and 2 there.
+    let Some(anchor) = top_byte(&zero_byte) else { return Ok(None) };
+    let Some(net_id_top) = top_byte(&top_byte_counts) else { return Ok(None) };
+    let orient = second_byte(&flags_hi);
+
+    // Only an entry with a single waypoint puts its coordinates where
+    // we are reading. Any other shape puts something else there — a
+    // two-waypoint entry shifts them by its bitmap byte — and mixing
+    // them in walks the chain straight off the alphabet.
+    //
+    // Which flags value means one waypoint is not worth guessing at.
+    // Counting blocks picks the wrong one, because units are usually
+    // given a path rather than a point; taking the shortest payload
+    // picks the wrong one too, because one anomalous block is enough
+    // to poison a minimum. So every candidate is tried, and the two
+    // checks below decide. They are strict enough that nothing but the
+    // right answer survives them.
+    let mut candidates: Vec<(u8, u64)> = flags_lo
+        .iter()
+        .filter(|(_, n)| **n >= WAYPOINT_MIN_FLAG_BLOCKS)
+        .map(|(c, n)| (*c, *n))
+        .collect();
+    candidates.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    candidates.truncate(WAYPOINT_CANDIDATES);
+
+    let mut attempts: Vec<Value> = Vec::new();
+    let mut solved: Option<(u8, crate::explore::ByteChain)> = None;
+    for (one, _) in &candidates {
+        let mut tracks: UnitTracks = HashMap::new();
+        for (i, t, payload) in &blocks {
+            let at = |k: usize| payload[payload.len() - k];
+            if at(1) != *one {
+                continue;
+            }
+            tracks.entry((*i, at(3), at(4))).or_default().push((*t, at(12), at(14)));
+        }
+        let mut pairs: Vec<BytePair> = Vec::new();
+        for v in tracks.values_mut() {
+            v.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (a, b) in v.iter().zip(v.iter().skip(1)) {
+                if b.0 - a.0 <= WAYPOINT_GAP_S {
+                    pairs.push((a.1, b.1));
+                    pairs.push((a.2, b.2));
+                }
+            }
+        }
+        let mut best: Option<(crate::explore::ByteChain, usize)> = None;
+        for step in neighbours(&pairs, anchor) {
+            let chain = byte_chain(&pairs, anchor, step);
+            // Check 1: the flags *high* byte is only ever 0 or 2, so
+            // its other value has to be the chain's plaintext 2.
+            if !orient.is_some_and(|o| chain.table.get(&2) == Some(&o)) {
+                continue;
+            }
+            // Check 2, and the chain never sees a flags byte while it
+            // walks: the flags *low* byte is the waypoint count
+            // doubled, so the chain's small even plaintexts have to be
+            // values that byte actually takes, and its plaintext 1 —
+            // which would mean zero waypoints — must not be.
+            let agree = [2u8, 4, 6, 8, 10]
+                .iter()
+                .filter(|p| chain.table.get(p).is_some_and(|c| flags_lo.contains_key(c)))
+                .count();
+            let impossible = chain.table.get(&1).is_some_and(|c| flags_lo.contains_key(c));
+            if agree >= WAYPOINT_MIN_AGREE && !impossible {
+                best = Some((chain, agree));
+                break;
+            }
+        }
+        let best = best.map(|(chain, agree)| {
+            attempts.push(serde_json::json!({
+                "flags_byte": format!("0x{one:02x}"),
+                "pairs": pairs.len(),
+                "flags_values_agreeing": agree,
+                "passed": true,
+            }));
+            chain
+        });
+        if best.is_none() {
+            attempts.push(serde_json::json!({
+                "flags_byte": format!("0x{one:02x}"),
+                "pairs": pairs.len(),
+                "passed": false,
+            }));
+        }
+        if let Some(chain) = best {
+            solved = Some((*one, chain));
+            break;
+        }
+    }
+
+    let Some((one, chain)) = solved else {
+        return Ok(Some(serde_json::json!({
+            "netid": netid,
+            "solved": false,
+            "why": "no candidate entry shape produced a chain that survived both checks",
+            "anchor": format!("0x{anchor:02x}"),
+            "net_id_top_byte": format!("0x{net_id_top:02x}"),
+            "attempts": attempts,
+        })));
+    };
+    let oriented = true;
+
+    Ok(Some(serde_json::json!({
+        "netid": netid,
+        "solved": true,
+        "method": "the coordinate high byte of a single-waypoint entry moves by at \
+                   most one between consecutive packets for the same unit, so the \
+                   pairs seen changing lay the plaintext alphabet out in order",
+        "entries": chain.table.len(),
+        "observations": chain.observations,
+        "unchanged_share": (chain.unchanged * 1000.0).round() / 1000.0,
+        "anchor": format!("0x{anchor:02x}"),
+        "orient": orient.map(|o| format!("0x{o:02x}")),
+        "oriented_by_the_flags_byte": oriented,
+        "net_id_top_byte_separately_known": format!("0x{net_id_top:02x}"),
+        "note_on_0x40": "T(0x40) is known from the net id's top byte but is not in                          this table: a coordinate's high byte never takes that                          value, so the chain never reaches it",
+        "one_waypoint_flags_byte": format!("0x{one:02x}"),
+        "shapes_tried": attempts,
+        "table": chain.table.iter()
+            .map(|(p, c)| (format!("{p:02x}"), format!("{c:02x}")))
+            .collect::<BTreeMap<_, _>>(),
+        "limit": "a coordinate's low byte moves by most of its range between \
+                  packets, so no chain forms for it; positions come out to within \
+                  a high byte, about 512 map units, and no closer",
+    })))
+}
+
+/// Longest gap between two packets still treated as one step.
+const WAYPOINT_GAP_S: f32 = 3.0;
+/// Blocks a class needs before it is worth testing as the movement one.
+const WAYPOINT_MIN_BLOCKS: u64 = 1000;
+/// Blocks a flags value needs before it is worth trying as the
+/// single-waypoint shape.
+const WAYPOINT_MIN_FLAG_BLOCKS: u64 = 200;
+/// How many entry shapes to try before giving up.
+const WAYPOINT_CANDIDATES: usize = 6;
+/// Flags values the chain must agree about before it is believed.
+const WAYPOINT_MIN_AGREE: usize = 3;
+
+fn top_byte(counts: &HashMap<u8, u64>) -> Option<u8> {
+    counts.iter().max_by_key(|(_, n)| **n).map(|(b, _)| *b)
+}
+
+/// The second-commonest byte, which for a field that is only ever 0 or
+/// 2 is the cipher for 2.
+fn second_byte(counts: &HashMap<u8, u64>) -> Option<u8> {
+    let mut v: Vec<(&u8, &u64)> = counts.iter().collect();
+    v.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
+    v.get(1).map(|(b, _)| **b)
+}
+
+/// Bytes seen changing into `from`, strongest first.
+fn neighbours(pairs: &[(u8, u8)], from: u8) -> Vec<u8> {
+    let mut counts: HashMap<u8, u64> = HashMap::new();
+    for (a, b) in pairs {
+        if *a == from && b != a {
+            *counts.entry(*b).or_default() += 1;
+        } else if *b == from && a != b {
+            *counts.entry(*a).or_default() += 1;
+        }
+    }
+    let mut v: Vec<(u8, u64)> = counts.into_iter().collect();
+    v.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    v.into_iter().map(|(b, _)| b).take(4).collect()
 }
 
 /// Read the killer field of the champion-death class, then use it.
@@ -921,6 +1179,34 @@ fn print_explore(out: &Value) {
         }
         if rows.is_some_and(|r| !r.is_empty()) {
             println!();
+        }
+    }
+    if let Some(w) = out.get("waypoint_table") {
+        if w["solved"] == Value::Bool(true) {
+            println!(
+                "movement class netid {}: {} of 256 table entries recovered",
+                w["netid"], w["entries"]
+            );
+            println!(
+                "  from {} consecutive coordinate high bytes, {:.1} % unchanged",
+                w["observations"],
+                w["unchanged_share"].as_f64().unwrap_or(0.0) * 100.0,
+            );
+            println!(
+                "  anchored on T(0x00) = {}, oriented by the flags byte, and agreeing",
+                w["anchor"].as_str().unwrap_or("?")
+            );
+            println!(
+                "  about T(0x40) = {} without ever having looked at a net id
+",
+                w["net_id_top_byte"].as_str().unwrap_or("?")
+            );
+        } else if !w.is_null() {
+            println!(
+                "movement class netid {}: NOT SOLVED ({} entries walked, oriented {})
+",
+                w["netid"], w["entries_walked"], w["oriented_by_the_flags_byte"],
+            );
         }
     }
     if let Some(i) = out.get("identified_by_statsjson") {

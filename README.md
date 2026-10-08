@@ -152,10 +152,11 @@ matter: it is a file, and most of it was never obscured. On the twenty
   settled three separate ways.
 - **63 of 273 netids matched to a 16.9 class by behaviour**, 62.3 % of
   blocks — hypotheses, with a measured error rate.
-
-Still closed there: positions. The movement class is identified (netid
-1267) and its wire format is settled, but reading it needs the rest of
-its substitution table.
+- **Positions, coarsely.** 27 of the movement class's 256 table
+  entries, covering the whole playable map at the resolution of a
+  coordinate's high byte — so a unit's position reads to within about
+  512 units. Enough for a lane-level heatmap, not for a trajectory;
+  the low byte is the open problem.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -386,14 +387,19 @@ Done:
   no conflict, and works out that the waypoint class writes its buffer
   backwards.
 
+- [x] **Coarse positions.** 27 of the movement class's 256 table
+  entries, recovered from the coordinate high byte's slow drift and
+  checked against the flags byte. Covers the whole playable map to
+  within about 512 units ([docs/EXPLORE.md](docs/EXPLORE.md) § 3).
+
 Next:
 
-- [ ] **Positions and move orders.** The waypoint class is identified
-  (netid 1267), its wire format is settled, two table entries are
-  known and every coordinate's position in the packet is known. What
-  remains is the search for the other 254 — which the existing
-  waypoint parser checks for free, since a wrong table fails to parse
-  the first block ([docs/EXPLORE.md](docs/EXPLORE.md) § 3).
+- [ ] **Exact positions.** Needs the coordinate's low byte, which
+  moves by most of its range between packets, so the drift trick does
+  not reach it. Candidates: the one-byte signed deltas in
+  multi-waypoint entries, and pairs of consecutive absolute waypoints,
+  which bound the difference between two low bytes without naming
+  either.
 - [ ] **The running score's numbers.** Netid 590 is identified but its
   three counters are bit-packed rather than byte-aligned, so the
   technique that read the killer does not reach it. Reading it would

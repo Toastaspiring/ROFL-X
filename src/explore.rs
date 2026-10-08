@@ -590,6 +590,124 @@ fn ratio_gap(a: f64, b: f64) -> f64 {
     ((a / b).log10().abs()).min(1.0)
 }
 
+/// Recover part of a class's substitution table from a byte that moves
+/// slowly through the game.
+///
+/// The movement class carries each unit's position as two 16-bit
+/// values, and a unit crosses a 256-unit boundary rarely — measured on
+/// 16.19, the high byte of a champion's coordinate is unchanged between
+/// consecutive packets 92 % of the time. So when it *does* change it
+/// almost always changes by one, and the pairs of cipher bytes seen
+/// changing into one another lay the plaintext alphabet out in order.
+///
+/// Walking that chain from a known entry recovers its neighbours, then
+/// theirs. The anchor is `T(0x00)`, which the class gives up for free
+/// in three places (a coordinate's high byte when the unit is mid-map,
+/// and two always-zero bytes of the unit net id). The direction is
+/// fixed by `T(0x01)`, and checked against the flags byte, which the
+/// format allows to be only 0 or 2.
+///
+/// What this does *not* give is the low byte of a coordinate. A unit
+/// moves a few hundred units between packets, which is most of a low
+/// byte, so consecutive low bytes are not neighbours and no chain
+/// forms. Positions therefore come out to within a high byte — about
+/// 512 map units — and no closer.
+#[derive(Debug, Clone)]
+pub struct ByteChain {
+    /// Plaintext byte to payload byte, for the stretch of the alphabet
+    /// the chain reached.
+    pub table: BTreeMap<u8, u8>,
+    /// Consecutive pairs the walk was built from.
+    pub observations: u64,
+    /// Share of consecutive pairs where the byte did not change at all.
+    pub unchanged: f64,
+}
+
+/// One observation: the same slowly-moving byte at two consecutive
+/// moments, for the same unit.
+pub type BytePair = (u8, u8);
+
+/// A unit's slowly-moving bytes over time, keyed by replay and by the
+/// cipher of the unit's net id — which is enough to group a unit's own
+/// packets together without being able to read the id.
+pub type UnitTracks = HashMap<(usize, u8, u8), Vec<(f32, u8, u8)>>;
+
+/// Build the chain outward from `anchor`, whose plaintext is 0, with
+/// `step` as the cipher for plaintext 1.
+pub fn byte_chain(pairs: &[BytePair], anchor: u8, step: u8) -> ByteChain {
+    let mut adjacent: HashMap<u8, HashMap<u8, u64>> = HashMap::new();
+    let mut unchanged = 0u64;
+    for (a, b) in pairs {
+        if a == b {
+            unchanged += 1;
+            continue;
+        }
+        *adjacent.entry(*a).or_default().entry(*b).or_default() += 1;
+        *adjacent.entry(*b).or_default().entry(*a).or_default() += 1;
+    }
+    let mut table: BTreeMap<u8, u8> = BTreeMap::from([(0, anchor)]);
+    let mut taken: HashSet<u8> = HashSet::from([anchor]);
+
+    // Walk up from the anchor, then down, always taking the strongest
+    // neighbour we have not used. An edge seen only a handful of times
+    // is as likely to be a unit teleporting as a step of one.
+    for (first, up) in [(Some(step), true), (None, false)] {
+        let strong = |from: u8, to: u8| {
+            adjacent.get(&from).and_then(|m| m.get(&to)).copied().unwrap_or(0) >= CHAIN_MIN
+        };
+        let mut cur = match first {
+            // Even the caller's own direction hint has to be attested.
+            Some(c) if strong(anchor, c) => c,
+            Some(_) => continue,
+            None => {
+                let best = adjacent
+                    .get(&anchor)
+                    .into_iter()
+                    .flatten()
+                    .filter(|(c, n)| !taken.contains(*c) && **n >= CHAIN_MIN)
+                    .max_by_key(|(_, n)| **n);
+                match best {
+                    Some((c, _)) => *c,
+                    None => continue,
+                }
+            }
+        };
+        let mut prev = anchor;
+        let mut value: i32 = if up { 1 } else { -1 };
+        loop {
+            if !taken.insert(cur) {
+                break;
+            }
+            table.insert((value & 0xFF) as u8, cur);
+            let next = adjacent
+                .get(&cur)
+                .into_iter()
+                .flatten()
+                .filter(|(c, n)| **c != prev && !taken.contains(*c) && **n >= CHAIN_MIN)
+                .max_by_key(|(_, n)| **n)
+                .map(|(c, _)| *c);
+            match next {
+                Some(c) => {
+                    prev = cur;
+                    cur = c;
+                    value += if up { 1 } else { -1 };
+                }
+                None => break,
+            }
+        }
+    }
+    let total = pairs.len().max(1) as f64;
+    ByteChain {
+        table,
+        observations: pairs.len() as u64,
+        unchanged: unchanged as f64 / total,
+    }
+}
+
+/// Times a pair of cipher bytes must be seen changing into one another
+/// before the step is believed to be one.
+const CHAIN_MIN: u64 = 15;
+
 /// A class whose payload we can read on a patch we cannot decode.
 ///
 /// The payload encoding is not a cipher. Measured on 16.9, where both
@@ -1626,6 +1744,37 @@ mod tests {
         let m = match_patches(&target, &reference);
         assert_eq!(m[0].reference_netid, 91);
         assert_eq!(m[1].reference_netid, 90);
+    }
+
+    #[test]
+    fn a_chain_lays_out_the_alphabet_in_order() {
+        // A toy table, and a quantity that wanders by one step at a
+        // time without drifting away: a sawtooth over a small range,
+        // so every neighbouring pair is seen many times over.
+        let t = |b: u8| b.wrapping_mul(7).wrapping_add(0x11);
+        let mut pairs = Vec::new();
+        for _ in 0..40 {
+            for v in -12i32..12 {
+                pairs.push((t((v & 0xFF) as u8), t(((v + 1) & 0xFF) as u8)));
+            }
+            for v in (-12i32..12).rev() {
+                pairs.push((t(((v + 1) & 0xFF) as u8), t((v & 0xFF) as u8)));
+                pairs.push((t((v & 0xFF) as u8), t((v & 0xFF) as u8)));
+            }
+        }
+        let chain = byte_chain(&pairs, t(0), t(1));
+        assert!(chain.table.len() >= 24, "only got {}", chain.table.len());
+        for (plain, cipher) in &chain.table {
+            assert_eq!(*cipher, t(*plain), "wrong at 0x{plain:02x}");
+        }
+    }
+
+    #[test]
+    fn a_chain_refuses_to_walk_on_noise() {
+        // Every pair seen once: nothing clears the threshold.
+        let pairs: Vec<BytePair> = (0..200u32).map(|i| (i as u8, (i + 1) as u8)).collect();
+        let chain = byte_chain(&pairs, 0x42, 0x07);
+        assert_eq!(chain.table.len(), 1, "should have only the anchor");
     }
 
     #[test]

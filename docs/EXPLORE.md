@@ -370,8 +370,70 @@ and a class with ten varying bytes and no external handle on their
 values stays shut. Nothing here reads the game's code; this is file
 analysis, and the tables come out of the file.
 
-**Where positions have got to.** Two classes carry them and neither is
-read yet.
+### The movement class's table, partly recovered
+
+The payload being the entry buffer backwards puts a single-waypoint
+entry's coordinates at `[-11]`..`[-14]`, and that is where the class
+gives itself away. For blocks of that shape the coordinate **low**
+bytes take all 256 values, while the **high** bytes take 24 and 22 —
+which is the alphabet a map coordinate is allowed, since `x` on the
+map is `v * 2 + 7358` and `x` in [0, 15000] confines `v` to
+[-3679, 3821]. A speed mantissa in the same packet takes 255 values,
+for contrast.
+
+A high byte that narrow also moves slowly: measured over 320,428
+consecutive packets for the same unit, it is **unchanged 91.9 %** of
+the time. So when it does change it changes by one, and the pairs seen
+changing lay the plaintext alphabet out in order. Walking that chain
+from a known entry recovers its neighbours, then theirs.
+
+Nothing in it is assumed:
+
+- `T(0x00) = 0x42` is the byte the net id's always-zero field carries,
+  at `[-5]`, on 100 % of blocks.
+- The walk's **direction** comes from the flags high byte at `[-2]`,
+  which the format allows to be only 0 or 2. Whichever direction puts
+  that byte's other value on plaintext 2 is the right one.
+- Which entry shape to read is **not guessed**. Counting blocks picks
+  the wrong one, because units are usually given a path rather than a
+  point, so the commonest shape is two waypoints. Taking the shortest
+  payload picks the wrong one too, because one anomalous block poisons
+  a minimum. Every candidate shape is tried and the check below
+  decides; only `0xd1` survives it.
+
+The check is the flags **low** byte, which the chain never looks at
+while it walks. That byte is the waypoint count doubled, so the
+chain's small even plaintexts have to be values it actually takes, and
+plaintext 1 — zero waypoints — must not be. **Five of them agree, none
+clash.**
+
+What comes out is **27 of 256 entries**, spanning plaintexts `0xf3` to
+`0x0d`:
+
+```
+f3->5d f4->23 f5->20 f6->59 f7->52 f8->d8 f9->b7 fa->9d fb->91 fc->c5
+fd->63 fe->e6 ff->e0 00->42 01->07 02->d1 03->f8 04->94 05->d4 06->d9
+07->fe 08->2d 09->dc 0a->0d 0b->6d 0c->b5 0d->d7
+```
+
+That range covers `v` from minus 3328 to plus 3583, which is map
+coordinates from about 700 to 14500 — **the whole playable map, at the
+resolution of a high byte**. So a unit's position on patch 16.19 is
+now readable to within about 512 units: enough for a lane-level
+heatmap, not enough for a trajectory.
+
+The low byte is what stands between that and a real position, and it
+does not yield to the same trick: a unit moves a few hundred units
+between packets, which is most of a low byte, so consecutive low bytes
+are not neighbours and no chain forms. That is the open problem.
+
+`T(0x40) = 0x29` is known too, from the net id's top byte, but it is
+not in the table above and cannot be: a coordinate's high byte never
+takes the value `0x40`, so the chain never reaches it.
+
+**Where positions have got to.** Both classes that carry them are now
+partly read: the movement class to within a high byte, the death class
+not at all.
 
 The **waypoint class** is netid 1267, which is where movement and
 therefore move orders live. It is 3.21 % of all blocks, it matches

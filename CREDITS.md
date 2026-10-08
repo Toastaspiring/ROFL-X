@@ -34,12 +34,24 @@ figured out:
   "Corpse" destruction packets.
 
 Direct ports of her work live under `src/emulator/`: `config.rs`,
-`packet.rs` and `unicorn.rs` each name the file of hers they came from,
-and her `PathPacket::parse` is in `packet.rs` verbatim. The handlers in
-`src/packet/handlers/` are not ports — they read objects the game's own
-deserializers produced, which is a different route to the same place —
-but they credit her wherever a layout or a correction of ours started
-from her work.
+`packet.rs` and `unicorn.rs` each name the file of hers they came from
+in their own header, and her `PathPacket::parse` is in `packet.rs`
+verbatim.
+
+The handlers in `src/packet/handlers/` are **not** ports. They read
+objects the game's own deserializers produced, which is a different
+route to the same place. Two of them are nonetheless hers in substance
+and say so in their headers:
+
+- `waypoints.rs` is the class her `mov_decrypt` decoded, and uses her
+  `PathPacket` layout with two corrections measured on 16.9 (the
+  waypoint count is the low byte of the flags, and the one-byte
+  coordinate deltas are signed).
+- `spawn.rs` is the class her `ward_spawn_decrypt` decoded, and the
+  ward lifecycle in it — pair a placement with its `*Corpse` to get a
+  duration — is her idea. Our one change is the pairing rule: she
+  matches on an exact position, and on 16.9 the corpse can land ~100
+  units away, so we match the owner's nearest live ward instead.
 
 Her upstream has no LICENSE file, which makes the default "all rights
 reserved". She has confirmed (as relayed by the project's current author
@@ -63,8 +75,17 @@ ROFL-level reverse engineering that exists. Without it, our Phase 1
 reconnaissance would have spent weeks re-discovering material he had
 already documented:
 
-- The observation that there is no named cipher, only custom per-packet
-  table-lookup obfuscation.
+- The observation that there is no named cipher, only custom
+  per-packet table-lookup obfuscation. **This turned out to be exactly
+  right, and measurably so.** On a patch ROFL-X can decode, comparing
+  a class's raw payload against the plaintext its own deserializer
+  produced gives one 256-entry byte substitution per class, injective,
+  with zero contradictions over thousands of blocks — and the tables of
+  two different classes are unrelated to each other. That is what made
+  it possible to read three payload fields on patch 16.19, where no
+  binary exists to emulate at all
+  ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). His analysis is the reason
+  that was ever attempted.
 - The **decrypt-access-release** pattern: packet fields are decrypted
   on demand, used, re-encrypted, and the plaintext is zeroed before the
   destructor returns. This is anti-reverse-engineering design.
@@ -73,15 +94,23 @@ already documented:
   what a parser can and cannot observe.
 - The alternative emulator strategy of installing INT3 breakpoints and
   reading values directly out of CPU registers during execution.
-- Nine named packet classes with observed field layouts: `TakeDamagePacket`,
-  `BasicAttackAtTarget`, `CastSpell`, `CreateSummoner`, `CreateEntity`,
-  `UpdateState`, `Death`, `BecomeVisibleInFogOfWar`, `LeaveFromFog`.
-  Our catalog (Phase 4/5 work) starts from this list.
+- Nine named packet classes with observed field layouts:
+  `TakeDamagePacket`, `BasicAttackAtTarget`, `CastSpell`,
+  `CreateSummoner`, `CreateEntity`, `UpdateState`, `Death`,
+  `BecomeVisibleInFogOfWar`, `LeaveFromFog`. His datasets name 22 in
+  all; all 22 are now mapped onto patch 16.9 in
+  [docs/PACKETS.md](docs/PACKETS.md) § Henry Zhu's classes on 16.9 —
+  11 typed, 3 named, the rest unnamed because object creation and
+  replication do not go through handler registration.
 
 Most importantly, Henry Zhu **released the decoded output of 1.4M+
 replays publicly**. That is a generational-scale community gift; our
-Phase 5 validation work (see `docs/ROADMAP.md`) is entirely premised on
-being able to use his data as a reference corpus.
+Phase 5 validation work (see [docs/ROADMAP.md](docs/ROADMAP.md)) is
+premised on being able to use his data as a reference corpus. In the
+end the sharpest reference turned out to be one inside every replay —
+Riot's own end-of-game numbers — but his corpus is what the schema and
+the class names were checked against first, and it remains the only
+way to test against patches we hold no replays for.
 
 None of his code is ported into ROFL-X directly. His influence is in
 the documentation (see `docs/REFERENCE_HENRY_ZHU.md`), the domain model,
@@ -113,8 +142,10 @@ Rust ecosystem:
 - `serde` / `serde_json` for metadata and output JSON.
 - `zstd` for chunk decompression.
 - `thiserror` for the error enum.
-- `unicorn-engine` for the x86-64 emulator, same crate Mowokuma uses
-  upstream.
+- `unicorn-engine` (pinned to `2.1.1`) for the x86-64 emulator, the
+  same crate Mowokuma uses upstream. Optional, behind the default
+  `emulator` feature; without it the transport layer and the file-only
+  analysis still build.
 - `rayon` for one emulator per worker thread.
 - `zip` for `.patch` archives.
 

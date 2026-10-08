@@ -2,6 +2,13 @@
 //! markers, wards and ward corpses. No Riot class name is registered for
 //! it, so it is recognised by shape.
 //!
+//! This is the class Mowokuma decoded on 15.x as `ward_spawn_decrypt`
+//! (`WARD_SPAWN_OR_DESTROY`), and the ward lifecycle below is her idea:
+//! a placement and its `*Corpse` are the same ward, so pairing them
+//! gives a duration. Our one change is how they are paired — she
+//! matches on an exact position, and on 16.9 the corpse can land ~100
+//! units away, so we match the owner's nearest live ward instead.
+//!
 //! | offset | type        | field                                   |
 //! |--------|-------------|-----------------------------------------|
 //! | +0x0c  | u32         | new unit net id                         |

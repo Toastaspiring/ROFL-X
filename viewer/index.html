@@ -1,0 +1,440 @@
+<title>Rift Position Check</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the map holds the centre at any width; the readout sits beside it
+   on a wide screen and stacks under it on a phone. Committed dark, because
+   the Rift minimap is a dark image and a light ground would fight it. */
+:root {
+  color-scheme: dark;
+  --ground:   #0e1418;
+  --panel:    #151d22;
+  --line:     #233038;
+  --fg:       #dde5e8;
+  --dim:      #8b9ba3;
+  --order:    #4aa3e8;
+  --chaos:    #e8615c;
+  --unknown:  #b9a469;
+  --accent:   #f0b34a;
+  --good:     #6fcf8b;
+  --warn:     #e8b04a;
+  --bad:      #e8615c;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: Barlow, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--body);
+  display: flex;
+  flex-direction: column;
+}
+.wrap {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 18px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+header { display: flex; flex-direction: column; gap: 4px; }
+h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.sub { color: var(--dim); font-size: 0.92rem; max-width: 68ch; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+.mapcard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+.stage { position: relative; width: 100%; max-width: 640px; margin: 0 auto; aspect-ratio: 1; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; max-width: 100%; border-radius: 4px; }
+#fallback { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+  color: var(--dim); font-family: var(--mono); font-size: 0.78rem; text-align: center; padding: 1rem; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+button, select {
+  font-family: var(--body); font-size: 0.9rem; color: var(--fg);
+  background: #1d272d; border: 1px solid var(--line); border-radius: 4px;
+  padding: 0.38rem 0.7rem; cursor: pointer;
+}
+button:hover, select:hover { border-color: #35474f; }
+button[aria-pressed="true"] { background: var(--accent); color: #17202a; border-color: var(--accent); font-weight: 500; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#clock { font-family: var(--mono); font-size: 0.95rem; font-variant-numeric: tabular-nums; min-width: 5.2ch; color: var(--accent); }
+input[type="range"] { flex: 1 1 180px; min-width: 120px; accent-color: var(--accent); cursor: grab; }
+.seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+.seg button + button { border-left: 1px solid var(--line); }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.panel + .panel { margin-top: 16px; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 1.02rem; margin: 0 0 8px; letter-spacing: 0.02em; }
+.verdict { display: flex; gap: 8px; align-items: baseline; font-size: 0.86rem; margin-bottom: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; margin-top: 0.35em; }
+.note { color: var(--dim); font-size: 0.82rem; line-height: 1.45; }
+table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.76rem; }
+th, td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--dim); font-weight: 500; }
+tr.pick { background: #1e2a31; }
+tbody tr { cursor: pointer; }
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.scroller { overflow-x: auto; }
+footer { color: var(--dim); font-size: 0.78rem; line-height: 1.5; }
+code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Rift Position Check</h1>
+    <p class="sub">Champion tracks read out of a <code>.rofl</code> replay, drawn on the Summoner's
+      Rift minimap. 16.9 is the control: those positions were checked against the game's own
+      deserializer and matched exactly. 16.19 was read from the file with no game binary, so it is
+      the one under judgement — if its champions walk lanes, it works.</p>
+  </header>
+
+  <div class="cols">
+    <div class="mapcard">
+      <div class="stage">
+        <canvas id="map" width="640" height="640"></canvas>
+        <canvas id="ink" width="640" height="640"></canvas>
+        <div id="fallback">Minimap image unavailable — lanes drawn from the map's own geometry.</div>
+      </div>
+
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Patch">
+          <button id="p9" aria-pressed="false">16.9 control</button>
+          <button id="p19" aria-pressed="true">16.19 under test</button>
+        </div>
+        <div class="seg" role="group" aria-label="View">
+          <button id="vPlay" aria-pressed="false">Playback</button>
+          <button id="vAll" aria-pressed="true">All positions</button>
+        </div>
+        <button id="play">Play</button>
+        <span id="clock">0:00</span>
+        <input id="scrub" type="range" min="0" max="100" value="0" step="0.1" aria-label="Match time">
+        <select id="speed" aria-label="Speed">
+          <option value="1">1×</option>
+          <option value="4">4×</option>
+          <option value="12" selected>12×</option>
+          <option value="40">40×</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>What this says</h2>
+        <div id="verdict"></div>
+        <p class="note" id="accuracy"></p>
+      </div>
+
+      <div class="panel">
+        <h2>Units</h2>
+        <div class="scroller">
+          <table>
+            <thead><tr><th>unit</th><th>packets</th><th>fountain</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top:8px">Identity is inferred, not read: these are the ten
+          low-id units that walk all game. Team comes from which fountain each one visits.
+          <code>unit</code> is the obfuscated net id, which cannot be decoded yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Minimap from Riot's Data Dragon (<code>map11.png</code>, 16.20.1). Map coordinates
+    −120…14870 across, −120…14980 down. Drop a <code>rofl-x explore --dump-positions</code>
+    JSONL onto the page to view another dump.
+  </footer>
+</div>
+
+<script>
+const MAPMIN_X = -120, MAPMAX_X = 14870, MAPMIN_Z = -120, MAPMAX_Z = 14980;
+const SIZE = 640;
+const TEAM = { order: "#4aa3e8", chaos: "#e8615c", unknown: "#b9a469" };
+const TRAIL_S = 14;
+
+const base = document.getElementById("map");
+const ink = document.getElementById("ink");
+const bctx = base.getContext("2d");
+const ictx = ink.getContext("2d");
+const $ = (id) => document.getElementById(id);
+
+let data = null, patch = "patch_16_19", mode = "all", picked = null;
+let t = 0, playing = false, last = 0;
+
+const sx = (x) => (x - MAPMIN_X) / (MAPMAX_X - MAPMIN_X) * SIZE;
+const sy = (z) => SIZE - (z - MAPMIN_Z) / (MAPMAX_Z - MAPMIN_Z) * SIZE;
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/* The minimap is an image file beside the page. If it cannot be drawn, the
+   lanes are sketched from the map's own geometry so the check still works. */
+const MAP_SOURCES = [
+  "map11.png",                                                        // shipped beside the page
+  "https://ddragon.leagueoflegends.com/cdn/16.20.1/img/map/map11.png", // Riot's own CDN
+];
+function drawBase(i = 0) {
+  if (i >= MAP_SOURCES.length) { $("fallback").style.display = "flex"; sketchBase(); return; }
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => { bctx.clearRect(0, 0, SIZE, SIZE); bctx.drawImage(img, 0, 0, SIZE, SIZE); };
+  img.onerror = () => drawBase(i + 1);
+  img.src = MAP_SOURCES[i];
+}
+function sketchBase() {
+  bctx.fillStyle = "#16211d";
+  bctx.fillRect(0, 0, SIZE, SIZE);
+  bctx.strokeStyle = "#24332c";
+  bctx.lineWidth = 26;
+  bctx.lineCap = "round";
+  const pt = (x, z) => [sx(x), sy(z)];
+  const lanes = [
+    [[1200, 1200], [1200, 13000], [13200, 13400]],   // top
+    [[1200, 1200], [13200, 1300], [13400, 13400]],   // bottom
+    [[1500, 1500], [13200, 13200]],                  // mid
+  ];
+  for (const lane of lanes) {
+    bctx.beginPath();
+    lane.forEach(([x, z], i) => { const [a, b] = pt(x, z); i ? bctx.lineTo(a, b) : bctx.moveTo(a, b); });
+    bctx.stroke();
+  }
+  bctx.strokeStyle = "#2b4257";
+  bctx.lineWidth = 34;
+  bctx.beginPath();
+  const [rx, ry] = pt(1600, 13200), [qx, qy] = pt(13200, 1600);
+  bctx.moveTo(rx, ry); bctx.lineTo(qx, qy); bctx.stroke();
+}
+
+function units() { return data ? data[patch].units : {}; }
+function span() {
+  let hi = 1;
+  for (const u of Object.values(units())) {
+    const tr = u.track;
+    if (tr.length) hi = Math.max(hi, tr[tr.length - 1][0]);
+  }
+  return hi;
+}
+
+function at(track, time) {
+  // Last sample at or before `time`, and nothing if the unit has not
+  // appeared yet — a champion absent from the stream is absent, not frozen
+  // at its first position.
+  let lo = 0, hi = track.length - 1, found = -1;
+  if (!track.length || track[0][0] > time) return null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (track[mid][0] <= time) { found = mid; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  return found < 0 ? null : track[found];
+}
+
+function render() {
+  ictx.clearRect(0, 0, SIZE, SIZE);
+  const us = units();
+  if (mode === "all") {
+    for (const [key, u] of Object.entries(us)) {
+      if (picked && key !== picked) continue;
+      ictx.fillStyle = TEAM[u.team] || TEAM.unknown;
+      ictx.globalAlpha = picked ? 0.5 : 0.28;
+      for (const [, x, z] of u.track) ictx.fillRect(sx(x) - 1, sy(z) - 1, 2, 2);
+    }
+    ictx.globalAlpha = 1;
+    return;
+  }
+  for (const [key, u] of Object.entries(us)) {
+    const now = at(u.track, t);
+    if (!now) continue;
+    const colour = TEAM[u.team] || TEAM.unknown;
+    const dim = picked && key !== picked;
+
+    ictx.globalAlpha = dim ? 0.18 : 0.55;
+    ictx.strokeStyle = colour;
+    ictx.lineWidth = 1.6;
+    ictx.beginPath();
+    let started = false;
+    for (const [tt, x, z] of u.track) {
+      if (tt < t - TRAIL_S || tt > t) continue;
+      const a = sx(x), b = sy(z);
+      started ? ictx.lineTo(a, b) : (ictx.moveTo(a, b), started = true);
+    }
+    ictx.stroke();
+
+    const [, x, z, acc] = now;
+    const cx = sx(x), cy = sy(z);
+    if (acc > 0) {
+      // The stated error bar, to scale: a ring the true position lies within.
+      ictx.globalAlpha = dim ? 0.1 : 0.3;
+      ictx.strokeStyle = colour;
+      ictx.lineWidth = 1;
+      ictx.beginPath();
+      ictx.arc(cx, cy, acc / (MAPMAX_X - MAPMIN_X) * SIZE, 0, Math.PI * 2);
+      ictx.stroke();
+    }
+    ictx.globalAlpha = dim ? 0.3 : 1;
+    ictx.fillStyle = colour;
+    ictx.beginPath();
+    ictx.arc(cx, cy, dim ? 3 : 4.5, 0, Math.PI * 2);
+    ictx.fill();
+    ictx.strokeStyle = "#0b1114";
+    ictx.lineWidth = 1.2;
+    ictx.stroke();
+  }
+  ictx.globalAlpha = 1;
+}
+
+function sidebar() {
+  const d = data[patch];
+  const us = d.units;
+  const teams = Object.values(us).reduce((a, u) => (a[u.team] = (a[u.team] || 0) + 1, a), {});
+  const split = `${teams.order || 0} order / ${teams.chaos || 0} chaos`;
+  const even = (teams.order || 0) === 5 && (teams.chaos || 0) === 5;
+  const colour = even ? "var(--good)" : "var(--bad)";
+  const verdict = even
+    ? "Teams split five and five, which is what a real game must do."
+    : `Teams split ${split}. A real game is five and five, so the positions are
+       skewed: every unit is being placed near one fountain.`;
+  $("verdict").innerHTML =
+    `<div class="verdict"><span class="dot" style="background:${colour}"></span>
+       <span>${verdict}</span></div>
+     <div class="verdict"><span class="dot" style="background:var(--dim)"></span>
+       <span>${Object.keys(us).length} units, ${Object.values(us)
+         .reduce((a, u) => a + u.track.length, 0).toLocaleString()} samples at 1 Hz.</span></div>`;
+  $("accuracy").textContent = d.label + " — " + d.accuracy + ".";
+
+  $("rows").innerHTML = Object.entries(us)
+    .sort((a, b) => b[1].packets - a[1].packets)
+    .map(([k, u]) => `<tr data-k="${k}" class="${picked === k ? "pick" : ""}">
+      <td><span class="swatch" style="background:${TEAM[u.team] || TEAM.unknown}"></span>${k}</td>
+      <td>${u.packets.toLocaleString()}</td>
+      <td>${u.near_order}&thinsp;/&thinsp;${u.near_chaos}</td></tr>`).join("");
+  for (const tr of $("rows").children) {
+    tr.onclick = () => { picked = picked === tr.dataset.k ? null : tr.dataset.k; sidebar(); render(); };
+  }
+}
+
+function firstMoment() {
+  let lo = Infinity;
+  for (const u of Object.values(units())) if (u.track.length) lo = Math.min(lo, u.track[0][0]);
+  return Number.isFinite(lo) ? lo : 0;
+}
+
+function setPatch(p) {
+  patch = p;
+  $("p9").setAttribute("aria-pressed", String(p === "patch_16_9"));
+  $("p19").setAttribute("aria-pressed", String(p === "patch_16_19"));
+  picked = null;
+  t = firstMoment();
+  $("scrub").max = span();
+  $("scrub").value = t;
+  sidebar();
+  render();
+  $("clock").textContent = mmss(t);
+}
+function setMode(m) {
+  mode = m;
+  $("vPlay").setAttribute("aria-pressed", String(m === "play"));
+  $("vAll").setAttribute("aria-pressed", String(m === "all"));
+  render();
+}
+
+function frame(now) {
+  if (playing && mode === "play") {
+    const dt = (now - last) / 1000;
+    t = Math.min(span(), t + dt * Number($("speed").value));
+    $("scrub").value = t;
+    $("clock").textContent = mmss(t);
+    render();
+    if (t >= span()) { playing = false; $("play").textContent = "Play"; }
+  }
+  last = now;
+  requestAnimationFrame(frame);
+}
+
+$("play").onclick = () => {
+  if (mode !== "play") setMode("play");
+  playing = !playing;
+  $("play").textContent = playing ? "Pause" : "Play";
+};
+$("scrub").oninput = (e) => {
+  t = Number(e.target.value);
+  $("clock").textContent = mmss(t);
+  if (mode !== "play") setMode("play");
+  render();
+};
+$("p9").onclick = () => setPatch("patch_16_9");
+$("p19").onclick = () => setPatch("patch_16_19");
+$("vPlay").onclick = () => setMode("play");
+$("vAll").onclick = () => setMode("all");
+addEventListener("keydown", (e) => {
+  if (e.key === " ") { e.preventDefault(); $("play").click(); }
+  if (e.key === "ArrowRight") { t = Math.min(span(), t + 5); $("scrub").value = t; render(); }
+  if (e.key === "ArrowLeft") { t = Math.max(0, t - 5); $("scrub").value = t; render(); }
+});
+
+/* Any --dump-positions JSONL can be dropped in, so the page is useful on a
+   dump it was not built with. Champion identification repeats what the
+   dataset was prepared with: the ten low-id units that walk all game. */
+function fromJsonl(text) {
+  const by = {};
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let r; try { r = JSON.parse(line); } catch { continue; }
+    if (r.replay !== 0) continue;
+    (by[r.unit] ||= []).push([r.t, r.x, r.z, r.accuracy_map_units ?? 0]);
+  }
+  const anchor = Object.entries(
+    Object.keys(by).reduce((a, k) => (a[k.slice(2, 4)] = (a[k.slice(2, 4)] || 0) + 1, a), {})
+  ).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const near = (v, px, pz) => v.filter(([, x, z]) => Math.hypot(x - px, z - pz) < 2000).length;
+  const units = {};
+  Object.entries(by)
+    .filter(([k]) => k.slice(2, 4) === anchor)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 10)
+    .forEach(([k, v]) => {
+      v.sort((a, b) => a[0] - b[0]);
+      const no = near(v, 400, 400), nc = near(v, 14400, 14400);
+      let team = no > nc ? "order" : nc > no ? "chaos" : "unknown";
+      if (Math.min(no, nc) * 3 > Math.max(no, nc)) team = "unknown";
+      const thin = []; let prev = -99;
+      for (const s of v) if (s[0] - prev >= 1) { thin.push([Math.round(s[0] * 10) / 10, Math.round(s[1]), Math.round(s[2]), s[3]]); prev = s[0]; }
+      units[k] = { team, near_order: no, near_chaos: nc, packets: v.length, track: thin };
+    });
+  return units;
+}
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("drop", async (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer?.files?.[0];
+  if (!f) return;
+  const units = fromJsonl(await f.text());
+  if (!Object.keys(units).length) return;
+  data.dropped = { label: f.name, accuracy: "as the dump reports, per position", units };
+  setPatch("dropped");
+});
+
+drawBase();
+fetch("viewer_data.json")
+  .then((r) => r.json())
+  .then((d) => { data = d; setPatch("patch_16_19"); requestAnimationFrame(frame); })
+  .catch(() => {
+    data = { patch_16_19: { label: "no dataset shipped", accuracy: "drop a JSONL to view one", units: {} },
+             patch_16_9: { label: "no dataset shipped", accuracy: "drop a JSONL to view one", units: {} } };
+    setPatch("patch_16_19");
+    requestAnimationFrame(frame);
+  });
+</script>

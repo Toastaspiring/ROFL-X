@@ -161,6 +161,14 @@ matter: it is a file, and most of it was never obscured. On the twenty
   settled three separate ways.
 - **63 of 273 netids matched to a 16.9 class by behaviour**, 62.3 % of
   blocks — hypotheses, with a measured error rate.
+- **One class's obfuscation turns out to have structure.** The cast
+  class's substitution is `perm(plaintext) XOR 0xe6`, a permutation of
+  the eight bit positions — affine over GF(2) on all 256 entries, and
+  checked by decoding 11,898 held-out fields exactly. That makes its
+  table 16 bits rather than 256 free choices, so nine pairs determine
+  it (measured: 247 of 247 predicted). Five other classes, including
+  the movement class, fit nothing of the kind — so it is a per-class
+  property worth testing, not a way in to all of them.
 - **Spell casts located:** netid 474 is `PKT_NPC_CastSpellAns_s`. It
   tracks the cast counters (r = +0.827) and not activity
   (r = −0.019 against minions killed); its surplus over the counter

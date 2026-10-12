@@ -1385,6 +1385,30 @@ fn fields(
 }
 
 #[cfg(feature = "emulator")]
+/// Print a recovered substitution, rows of sixteen, plaintext
+/// ascending, `--` where an entry was not pinned.
+///
+/// The table *is* the result, so it is worth printing rather than only
+/// counting: it is what a reader compares against, and on a patch that
+/// cannot be decoded it is the thing being searched for.
+fn print_table(table: &BTreeMap<u8, u8>) {
+    if table.is_empty() {
+        return;
+    }
+    println!("  plaintext -> payload byte:");
+    for row in 0..16u16 {
+        let cells: Vec<String> = (0..16u16)
+            .map(|col| {
+                u8::try_from(row * 16 + col)
+                    .ok()
+                    .and_then(|p| table.get(&p))
+                    .map_or_else(|| "--".to_string(), |c| format!("{c:02x}"))
+            })
+            .collect();
+        println!("    {:02x}  {}", row * 16, cells.join(" "));
+    }
+}
+
 fn print_layout(
     l: &crate::layout::Layout,
     fit: Option<&crate::layout::BufferFit>,
@@ -1428,6 +1452,7 @@ netid {} {} -- {} blocks of the commonest payload length, {} bytes",
         if let Some(c) = fit.table.get(&0) {
             println!("  T(0x00) = 0x{c:02x}");
         }
+        print_table(&fit.table);
     }
     println!(
         "substitution table: {} of 256 entries from {} positions, {} conflicts",
@@ -1441,6 +1466,7 @@ netid {} {} -- {} blocks of the commonest payload length, {} bytes",
             l.disagreeing_positions
         );
     }
+    print_table(&l.table);
     if !l.settled() {
         println!("  NOT SETTLED: with {} blocks some of the layout above is", l.blocks);
         println!("  coincidence. A class this rare needs more blocks to pin down.");

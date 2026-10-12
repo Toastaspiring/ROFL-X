@@ -489,6 +489,71 @@ table recovered on 16.9 says nothing about 16.19. Every class has to
 be opened on its own evidence. Only the *shape* — field order, byte
 order, where the varint sits — carries across.
 
+### But a table is not always 256 free choices
+
+That comparison asked whether one table *predicts another*. A separate
+question is whether a table has internal structure, and for at least
+one class it does. `decode --layout` now prints the table it recovers,
+and the cast class's is this:
+
+```
+    00  e6 f6 66 76 a6 b6 26 36 e4 f4 64 74 a4 b4 24 34
+    10  e7 f7 67 77 a7 b7 27 37 e5 f5 65 75 a5 b5 25 35
+    ...
+```
+
+Take XOR differences from `T(0x00) = 0xe6` and each single bit of the
+plaintext maps to a single bit of the payload byte:
+
+| plaintext bit | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| payload bit | 4 | 7 | 6 | 1 | 0 | 3 | 2 | 5 |
+
+So `T(p) = perm(p) XOR 0xe6` — **affine over GF(2)**, and all 256
+entries agree with it. `scripts/table_structure.py` is the test.
+
+This is checked rather than admired, because an affine table out of a
+recovery procedure could be an artefact of the procedure. The layout
+pass only uses blocks of the commonest payload length, which leaves
+3,966 blocks of other lengths untouched; the class's three trailing
+4-byte fields sit at fixed offsets from the payload *end*, so they are
+readable in those blocks too. Decoding them with this table gives
+**11,898 of 11,898 fields exactly right**, none of which it was built
+from.
+
+**Why it matters.** An affine table is 16 bits of structure, not 256
+free choices:
+
+- nine pairs whose plaintext differences span the byte determine every
+  entry — measured: fitting from `T(0)` and the eight single-bit
+  plaintexts predicts **247 of 247** of the rest;
+- the whole family has only `8! * 256 = 10,321,920` members, small
+  enough to enumerate against whatever a packed patch does offer — a
+  range, an enum, a parse that has to come out exact.
+
+**It is not universal**, which is the other half of the finding. Of the
+six classes whose tables came out of 16.9, only the cast class is
+affine; the rest fit nothing:
+
+| netid | affine fit | best alternative shape |
+|------:|-----------:|------------------------|
+| 985 `PKT_NPC_CastSpellAns_s` | **256 / 256** | — |
+| 201 | 84 / 256 | |
+| 652 | 48 / 256 | |
+| 876 | 38 / 256 | |
+| 347 | 34 / 255 | |
+| 916 WaypointGroup | 10 / 256 | affine mod 256: 7, rotate: 6 |
+
+The movement class is the one we most want and the least structured of
+them: 2 fixed points, and no multiplier, rotation or bit-reversal
+explains more than 7 of its 256. That is why its low byte had to be
+searched for rather than solved, and it says the search was not
+missing an obvious trick.
+
+So the first question to ask of a class on a packed patch is not "what
+are its 256 entries" but "is it affine", which a handful of pairs
+answers.
+
 ### What this does and does not generalise to
 
 It generalises to any class whose plaintext can be pinned from

@@ -425,11 +425,63 @@ heatmap, not enough for a trajectory.
 The low byte is what stands between that and a real position, and it
 does not yield to the same trick: a unit moves a few hundred units
 between packets, which is most of a low byte, so consecutive low bytes
-are not neighbours and no chain forms. That is the open problem.
+are not neighbours and no chain forms. The next section measures that,
+and gets most of the way anyway.
 
 `T(0x40) = 0x29` is known too, from the net id's top byte, but it is
 not in the table above and cannot be: a coordinate's high byte never
 takes the value `0x40`, so the chain never reaches it.
+
+### The low byte, measured rather than argued
+
+Every claim here is reproduced by `scripts/lowbyte_probe.py`, run on
+16.9 — where the true table *is* known, so a method gets a score
+instead of an opinion. It reads 57,398 single-waypoint blocks over
+9,468 unit tracks.
+
+**There is no chain.** Over 67,804 consecutive-packet observations the
+step a coordinate takes is bimodal: **64.2 % exactly zero**, 33.2 %
+more than six, and only 2.6 % in between — of which ±1 is 15.1 %. The
+high byte chains only because crossing a 256 boundary *is* a ±1 step;
+the low byte has no such regime, and walking it one step at a time
+walks into noise.
+
+**Landmarks do not help either.** Positions do not pile up at spawn:
+the largest first-position cluster is 29 of those 9,468 tracks, and
+179 of the 256 low bytes turn up across the top 14 clusters.
+
+What does survive is **locality** — two consecutive low bytes under a
+shared high byte are within `speed * dt` of each other — and, better,
+the **size** of the step. Both were tried and both were scored:
+
+| method | exact | within 4 | within 16 | median | 90th |
+|---|---|---|---|---|---|
+| circular seriation, spectral | 29 | 64 | — | 15 | 40 |
+| the same, plus local search | — | 75 | — | 8 | — |
+| constant speed per unit | **31** | **127** | **239** | **5** | **15** |
+
+Of the exact entries, 27 are the chain's own anchors, held fixed; the
+search earns the rest. Seriation knows only that two bytes are close.
+The winner keeps the magnitudes: a unit travels at one speed, so
+between packets `dt` apart it covers `speed * dt`, one speed is fitted
+per unit by least squares, and the table searched for is the one that
+leaves each unit's own fits agreeing. Its cost falls from `4.294e+08`
+to `1.260e+08`, and it is still falling at the default iteration
+count.
+
+Two things make that result transfer. The error is **bounded**: the
+high byte is exact, so however wrong an entry is it cannot move a
+position by more than 256 of the map's 15,000 units. And the search
+**cost tracks the score** — the run that reached a lower cost scored
+better on every column — so on 16.19, where there is no table to check
+against, minimising the same cost is a measurable proxy rather than a
+hope.
+
+So positions on 16.19 are readable to a median of about 12 map units,
+nine times in ten within 30, and never worse than 256. What this is
+*not* is a decode: 225 of 256 entries are still approximate, so
+ROFL-X does not ship this table or emit positions from it. It is a
+measurement of how close the search has got.
 
 **Where positions have got to.** Both classes that carry them are now
 partly read: the movement class to within a high byte, the death class
@@ -601,8 +653,9 @@ far along that is, not a smaller ambition.
 - **Most payloads stay unread.** § 3 opens the classes whose plaintext
   something outside the file pins down — the visibility pair at 37.9 %
   of traffic, the killer field of the death class, and the movement
-  class to within a coordinate's high byte. Damage numbers, item ids,
-  spell casts and exact positions are not reachable today.
+  class to within a coordinate's high byte exactly and its low byte to
+  a measured median of 12 map units. Damage numbers, item ids, spell
+  casts and *exact* positions are not reachable today.
 - **No class is named with certainty by fingerprint alone.** § 2 and
   § 4 produce proof, and only for classes that correspond to a counter
   Riot kept or to an event the kill feed knows about. § 5 produces

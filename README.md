@@ -161,11 +161,14 @@ matter: it is a file, and most of it was never obscured. On the twenty
   settled three separate ways.
 - **63 of 273 netids matched to a 16.9 class by behaviour**, 62.3 % of
   blocks — hypotheses, with a measured error rate.
-- **Positions, coarsely.** 27 of the movement class's 256 table
-  entries, covering the whole playable map at the resolution of a
-  coordinate's high byte — so a unit's position reads to within about
-  512 units. Enough for a lane-level heatmap, not for a trajectory;
-  the low byte is the open problem.
+- **Positions, to a measured accuracy.** 27 of the movement class's
+  256 table entries are exact, recovered from the coordinate high
+  byte's slow drift, and they cover the whole playable map at that
+  byte's resolution. A constant-speed search then fills the low byte
+  in approximately: scored against 16.9, where the true table is
+  known, a median of about 12 map units, nine times in ten within 30,
+  and never worse than 256 — the high byte being exact bounds it.
+  Approximate is not decoded, so no positions are emitted from it yet.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -403,12 +406,17 @@ Done:
 
 Next:
 
-- [ ] **Exact positions.** Needs the coordinate's low byte, which
-  moves by most of its range between packets, so the drift trick does
-  not reach it. Candidates: the one-byte signed deltas in
-  multi-waypoint entries, and pairs of consecutive absolute waypoints,
-  which bound the difference between two low bytes without naming
-  either.
+- [ ] **Exact positions.** The coordinate's low byte is approximate
+  rather than unknown: it moves by most of its range between packets,
+  so the drift trick does not reach it, but making every unit travel
+  at one fitted speed does — a median of 12 map units on 16.9, scored
+  by `scripts/lowbyte_probe.py`, and the search cost tracks that score
+  closely enough to stand in for it on a patch with no table to check
+  against. What is missing is exactness: 225 of the 256 entries are
+  still off by something. Candidates: the one-byte signed deltas in
+  multi-waypoint entries, which would multiply the observations, and
+  pairs of consecutive absolute waypoints, which bound the difference
+  between two low bytes without naming either.
 - [ ] **The running score's numbers.** Netid 590 is identified but its
   three counters are bit-packed rather than byte-aligned, so the
   technique that read the killer does not reach it. Reading it would

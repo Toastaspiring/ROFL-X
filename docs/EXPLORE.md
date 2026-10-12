@@ -107,6 +107,89 @@ one per death. It is listed second because "almost" is not "exactly" —
 over twenty games it drifts by a few blocks, so the strict test drops
 it.
 
+### When equality is the wrong test: spell casts
+
+A death is one packet, so the strict test fits it. A cast is not: a
+held ability, a recast, a toggle, a transform or a steerable missile
+all send more than one, and how many more depends on the champion. The
+identity is perfectly real and the equality is simply false, so a
+matcher built on equality is blind to the entire class of events —
+which on the goal's terms is most of them.
+
+The weaker question is which netid *moves with* the cast counters, and
+the work is then in ruling out the two ways that answer could be
+worthless. `scripts/cast_class.py` does both, and refuses to report
+anything on a packed patch until it has picked the right class on one
+that decodes.
+
+**The activity confound.** A player who casts more also farms, fights
+and buys more, so any busy-player class correlates with any
+busy-player counter. On 16.19 netid 474 does not behave like that:
+
+| counter | r |
+|---------|--:|
+| `SPELL1..4_CAST + SUMMON_SPELL1..2_CAST` | **+0.827** |
+| `SPELL1..4_CAST` | +0.820 |
+| `ITEMS_PURCHASED` | +0.419 |
+| `CHAMPIONS_KILLED + NUM_DEATHS + ASSISTS` | +0.338 |
+| `TOTAL_TIME_SPENT_DEAD` | +0.185 |
+| `MINIONS_KILLED` | **−0.019** |
+| `PING` | −0.102 |
+
+Minions killed is the sharp one: farming is almost pure activity and
+has nothing to do with casting, and 474 ignores it completely.
+
+**The coincidence.** With a few hundred netids something will
+correlate, so the candidate has to satisfy a prediction a coincidence
+need not. If 474 is the cast class, its surplus over the counter is
+the extra packets a cast can generate — which means the surplus has to
+land on the champions whose abilities are held, recast, toggled or
+transformed, and not on the point-and-click ones. That is a claim
+about names. Measured over 20 games and 57 champions:
+
+| most surplus | | least surplus | |
+|---|--:|---|--:|
+| Pantheon | +206 % | Volibear | −0.2 % |
+| Graves | +177 % | Vel'Koz | −0.6 % |
+| Warwick | +105 % | Zeri | −1.2 % |
+| Yuumi | +90 % | Cassiopeia | −2.1 % |
+| Xin Zhao | +86 % | Jhin | −2.4 % |
+| Galio | +80 % | Malphite | −7.3 % |
+| Lulu | +74 % | Miss Fortune | −8.7 % |
+| Gnar | +67 % | Annie | −9.1 % |
+
+Pantheon, whose every ability is held or channelled, at the top;
+Annie, the point-and-click archetype, at the bottom. Nothing about
+"busy player" orders a list that way.
+
+**And the method picks the right class where that can be checked.** Run
+on 16.9, the same ranking puts the real cast class first:
+
+| netid | r | blocks per cast | class |
+|------:|--:|---:|-------|
+| 985 | +0.764 | 1.20 | **`PKT_NPC_CastSpellAns_s`** |
+| 644 | +0.660 | 0.07 | `PKT_NPC_UpgradeSpellAns_s` |
+| 652 | +0.608 | 2.73 | `PKT_UnitApplyDamage_s` |
+
+**So netid 474 on 16.19 is `PKT_NPC_CastSpellAns_s`.** Three
+independent things say so: it tracks casts and not activity; its
+surplus falls on exactly the champions it should; and the fingerprint
+matcher of § 5, which never sees statsJson, proposes that same 16.9
+class for it. The packets-per-cast ratio agrees too — 1.20 on 16.9,
+1.15 on 16.19. The netid holds in both 16.19 builds scored separately
+(r = +0.791 over the ten games of `16.19.821.7343`, +0.848 over the
+nine of `16.19.823.0722`), and the two strict proofs above hold 10/10
+and 9/9 in those same splits, so the registry really is shared and
+pooling the builds is sound.
+
+What is *not* claimed: this is not the strict proof that names 1080.
+It is a correlation plus two checks it had to survive and one
+cross-patch validation, and the honest reading is that 474 carries
+casts, not that every one of its blocks is a cast. A few champions sit
+a few percent *below* the counter, which the identification does not
+explain. Reading the payload — which ability, at whom — needs 474's
+substitution table and is not done.
+
 ## 3. Reading a payload without the binary
 
 The obfuscation is not a cipher, and that can be measured rather than

@@ -92,9 +92,11 @@ decode needs that patch's binary.
 
 1. **Current patches.** Emulated decoding is blocked by the packing
    above. The file alone goes a long way further than it used to —
-   three payload fields are read on 16.19 with no binary at all, and a
-   position to a measured median of 12 map units — but that last one
-   is approximate, so it is not emitted. See [EXPLORE.md](EXPLORE.md).
+   three payload fields are read on 16.19 with no binary at all, the
+   spell-cast class is identified and validated against 16.9, and a
+   position comes out to a measured median of 12 map units — but that
+   last one is approximate, so it is not emitted. See
+   [EXPLORE.md](EXPLORE.md).
 2. **Parity runs against Mowokuma on 15.1 – 15.4.** Cheap once a script
    runs both tools and diffs order-normalised JSON.
 3. **Game modes with more than two teams** (Arena). The format-2 team

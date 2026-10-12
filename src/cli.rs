@@ -198,6 +198,13 @@ pub enum Command {
         #[arg(long, default_value = "netid.jsonl")]
         dump: PathBuf,
 
+        /// Write the raw material the statsJson proof works from: for
+        /// every replay, each netid's blocks per champion alongside
+        /// Riot's end-of-game counters. Data only, no claim attached —
+        /// it is for trying a pairing the exact match rejects.
+        #[arg(long)]
+        dump_counts: Option<PathBuf>,
+
         /// Output JSON path. Without it, a text report goes to stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -250,10 +257,18 @@ pub fn run(cli: Cli) -> Result<()> {
             self_test,
             dump_netid,
             dump,
+            dump_counts,
             output,
         } => match dump_netid {
             Some(netid) => self::dump_netid(&replays, netid, &dump),
-            None => explore(&replays, &reference, &patch_dir, self_test, output.as_deref()),
+            None => explore(
+                &replays,
+                &reference,
+                &patch_dir,
+                self_test,
+                dump_counts.as_deref(),
+                output.as_deref(),
+            ),
         },
     }
 }
@@ -527,6 +542,7 @@ fn explore(
     reference: &[PathBuf],
     patch_dir: &Path,
     self_test: bool,
+    dump_counts: Option<&Path>,
     output: Option<&Path>,
 ) -> Result<()> {
     use crate::explore::{
@@ -557,6 +573,17 @@ fn explore(
         }
         framings.push(f);
         per_replay.push(explore_one(&replay)?);
+    }
+
+    if let Some(path) = dump_counts {
+        let rows: Vec<Value> = stats_rows
+            .iter()
+            .map(|(counts, counters)| {
+                serde_json::json!({ "blocks_per_champion": counts, "counters": counters })
+            })
+            .collect();
+        std::fs::write(path, serde_json::to_vec(&rows)?)?;
+        eprintln!("wrote {} replays of counts to {}", rows.len(), path.display());
     }
 
     let deaths_netid = match_stats(&stats_rows)

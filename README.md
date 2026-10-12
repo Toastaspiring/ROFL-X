@@ -161,6 +161,13 @@ matter: it is a file, and most of it was never obscured. On the twenty
   settled three separate ways.
 - **63 of 273 netids matched to a 16.9 class by behaviour**, 62.3 % of
   blocks — hypotheses, with a measured error rate.
+- **Spell casts located:** netid 474 is `PKT_NPC_CastSpellAns_s`. It
+  tracks the cast counters (r = +0.827) and not activity
+  (r = −0.019 against minions killed); its surplus over the counter
+  falls on the champions whose abilities are held or recast (Pantheon
+  +206 %) and not on the point-and-click ones (Annie −9 %); and the
+  same analysis picks the real cast class first on 16.9. Located, not
+  decoded — reading which ability at whom needs its table.
 - **Positions, to a measured accuracy.** 27 of the movement class's
   256 table entries are exact, recovered from the coordinate high
   byte's slow drift, and they cover the whole playable map at that

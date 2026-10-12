@@ -1442,6 +1442,23 @@ const DERIVED: &[(&str, &[&str])] = &[
     ("WARD_PLACED+WARD_KILLED", &["WARD_PLACED", "WARD_KILLED"]),
     // Turrets and inhibitors are both structures.
     ("TURRETS_KILLED+BARRACKS_KILLED", &["TURRETS_KILLED", "BARRACKS_KILLED"]),
+    // A cast is a cast, whichever of the four abilities it was.
+    (
+        "SPELL1..4_CAST",
+        &["SPELL1_CAST", "SPELL2_CAST", "SPELL3_CAST", "SPELL4_CAST"],
+    ),
+    // Summoner spells may or may not go out the same way; try both.
+    (
+        "SPELL1..4_CAST+SUMMON_SPELL1..2_CAST",
+        &[
+            "SPELL1_CAST",
+            "SPELL2_CAST",
+            "SPELL3_CAST",
+            "SPELL4_CAST",
+            "SUMMON_SPELL1_CAST",
+            "SUMMON_SPELL2_CAST",
+        ],
+    ),
 ];
 
 /// Add [`DERIVED`] sums to a replay's counters, where every term is

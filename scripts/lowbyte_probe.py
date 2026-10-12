@@ -26,9 +26,12 @@ What it reports, and what each number means:
                      in coordinate units.  A method that walks the
                      alphabet one step at a time needs this to be
                      peaked at +/-1.  Measured on 16.9 it is not: it is
-                     bimodal, two thirds exactly zero and a third over
-                     six, with +/-1 a small minority of the rest.  That
-                     is the measurement that rules the chain out.
+                     bimodal, 37.8 % exactly zero against 55.2 % over
+                     six, with +/-1 only 16.2 % of the rest.  That is
+                     the measurement that rules the chain out.  (On the
+                     lone-waypoint subset it reads 64.2 % zero, since a
+                     one-waypoint packet is often a unit standing
+                     still.  The conclusion is the same either way.)
 
   band width         Among pairs close enough in time to be useful, how
                      far apart the two low bytes actually are.  This is
@@ -40,7 +43,7 @@ What it reports, and what each number means:
                      anchored on the high-byte chain.  Uses locality
                      only, and throws the step sizes away.  Reported
                      unrefined here; adding pairwise local search to it
-                     reached a median of 8, still behind the below.
+                     reached a median of 8, far behind the below.
 
   speed score        The best method so far, and it keeps the sizes: a
                      unit travels at its own fixed speed, so between two
@@ -53,6 +56,21 @@ is measured rather than argued.  The search cost tracks that score
 closely enough to stand in for it on a patch that has no true table --
 which is the only reason any of this transfers.  Anyone trying a new
 method should add it here and report the same numbers.
+
+Where it got to on 16.9, fed by the parser rather than by payload
+shape, at dt <= 1.5 s:
+
+    exact 53 of 256,  within 4: 207,  within 16: 256,
+    median error 2 plaintext steps,  90th percentile 5
+
+So every entry is within 16 and half are within 2, which is +/-4 map
+units on a map 15,000 across -- and because the high byte is exact, no
+entry however wrong can move a position by more than 256.  The cost
+stops falling at about 85,000 swaps, so what is left is the model's
+limit and not the search's: a table this accurate is still only 53
+entries *right*, and making it exact needs a constraint this objective
+does not have.  Three candidates for that are measured and rejected in
+docs/EXPLORE.md -- the path deltas give no exact arithmetic.
 """
 from __future__ import annotations
 
@@ -89,13 +107,100 @@ def true_table(path: str) -> dict[int, int]:
     return table
 
 
+def parse_entries(payload: bytes, header: int, known: dict[int, int]):
+    """Every entry in one payload's buffer, or None if it does not parse.
+
+    The payload is the entry buffer written backwards behind a header of
+    varints, so buffer index `j` is `payload[-1 - j]`, and the header
+    length is not known in advance -- the caller tries each.  Only the
+    structural bytes need reading: the flags' low byte for the waypoint
+    count, and the bitmap that says which later coordinates are
+    one-byte deltas.  Those are small numbers, so the high-byte chain
+    already names them, which is the whole reason this works without
+    the table.
+
+    Yields each entry's net id bytes (to group a unit's packets without
+    reading the id) and its first waypoint, which is where the unit is.
+    """
+    n = len(payload)
+    limit = n - header
+    if limit <= 0:
+        return None
+    at = lambda j: payload[n - 1 - j]
+    j, out = 0, []
+    while j < limit:
+        if j + 10 > limit:
+            return None
+        flags = known.get(at(j))
+        if flags is None or flags >> 1 == 0:
+            return None
+        count = flags >> 1
+        uid = bytes(at(j + 2 + k) for k in range(4))
+        j += 10 + (flags & 1)
+        if count > 1:
+            width = ((count - 2) >> 2) + 1
+            if j + width > limit:
+                return None
+            bitmap = [known.get(at(j + b)) for b in range(width)]
+            if any(b is None for b in bitmap):
+                return None
+            j += width
+            delta = lambda i: bitmap[i >> 3] & (1 << (i & 7)) != 0
+        else:
+            delta = lambda i: False
+        first = []
+        for i in range(count):
+            for axis in (0, 1):
+                if i and delta(2 * (i - 1) + axis):
+                    if j + 1 > limit:
+                        return None
+                    j += 1
+                else:
+                    if j + 2 > limit:
+                        return None
+                    if i == 0:
+                        first += [at(j), at(j + 1)]   # low cipher, high cipher
+                    j += 2
+        if len(first) != 4:
+            return None
+        out.append((uid, first))
+    return out if j == limit else None
+
+
+def parsed_tracks(path: str, inv: dict[int, int]):
+    """Positions per unit from *every* entry, not just lone waypoints.
+
+    The shape-based reader below sees only single-waypoint blocks, which
+    is a quarter of the file.  Parsing the buffer instead reaches every
+    entry of every payload that parses, and each entry's first waypoint
+    is a position -- about seven times as many, over twice as many
+    units.  That difference is most of the accuracy in the table.
+    """
+    known = {c: p for c, p in inv.items() if p <= CHAIN_LO or p >= CHAIN_HI}
+    tracks = collections.defaultdict(list)
+    parsed = 0
+    for line in open(path, encoding="utf-8"):
+        r = json.loads(line)
+        pay = bytes.fromhex(r["payload"])
+        hits = [e for e in (parse_entries(pay, h, known) for h in range(1, 13)) if e]
+        if len(hits) != 1:          # ambiguous header length: take nothing
+            continue
+        parsed += 1
+        for uid, (lo_x, hi_x, lo_z, hi_z) in hits[0]:
+            tracks[(r.get("replay"), uid)].append((r["t"], hi_x, lo_x, hi_z, lo_z))
+    for v in tracks.values():
+        v.sort()
+    return tracks, parsed
+
+
 def unit_tracks(path: str, inv: dict[int, int]):
     """Single-waypoint blocks per unit, in time order.
 
-    Only an entry with one waypoint puts its coordinates where we read
-    them; any other shape shifts them by a bitmap byte.  Units are keyed
-    by the cipher of their net id, which groups a unit's own packets
-    together without being able to read the id.
+    Only an entry with one waypoint puts its coordinates at a fixed
+    offset from the payload end; any other shape shifts them by a
+    bitmap byte.  Kept as a fallback for when the buffer will not
+    parse.  Units are keyed by the cipher of their net id, which groups
+    a unit's own packets together without being able to read the id.
     """
     tracks = collections.defaultdict(list)
     for line in open(path, encoding="utf-8"):
@@ -252,6 +357,9 @@ def report_speed(tracks, inv, dt_max: float, iters: int) -> None:
     for key, v in tracks.items():
         for a, b in zip(v, v[1:]):
             dt = b[0] - a[0]
+            # A tighter window is a tighter bound on how far the unit
+            # can have gone, and the band measured above is narrowest
+            # at the short gaps, so this is deliberately not 3 s.
             if not (0 < dt <= dt_max):
                 continue
             for ha, la, hb, lb in ((a[1], a[2], b[1], b[2]), (a[3], a[4], b[3], b[4])):
@@ -266,30 +374,32 @@ def report_speed(tracks, inv, dt_max: float, iters: int) -> None:
         print("\nconstant speed: too few observations; skipped")
         return
 
+    nu = len(units)
     U = np.array([r[0] for r in recs])
     DTA = np.array([r[1] for r in recs])
     STEP = np.array([r[2] for r in recs])
     LA = np.array([r[3] for r in recs])
     LB = np.array([r[4] for r in recs])
+    TT = DTA * DTA
 
-    rows: dict[int, list[int]] = collections.defaultdict(list)
-    touch: dict[int, set[int]] = collections.defaultdict(set)
-    for i, u in enumerate(U):
-        rows[u].append(i)
-        touch[int(LA[i])].add(u)
-        touch[int(LB[i])].add(u)
-    by_unit = {u: np.array(ix) for u, ix in rows.items()}
+    def cost(table) -> float:
+        """Residual left after fitting one speed per unit, summed.
 
-    def unit_cost(table, ix) -> float:
-        """Residual left after fitting this unit's one speed."""
-        d = np.abs(STEP[ix] + table[LB[ix]] - table[LA[ix]])
-        t = DTA[ix]
+        The fit is a sum per unit, which `bincount` does for all of them
+        in one pass -- a loop over units costs more per swap than the
+        extra observations are worth.
+        """
+        d = np.abs(STEP + table[LB] - table[LA])
         moving = d > 0
-        if moving.sum() < 2:
-            return float(np.dot(d, d))
-        s = np.dot(d[moving], t[moving]) / max(np.dot(t[moving], t[moving]), 1e-9)
-        res = d - s * t
-        return float(np.dot(res, res))
+        um = U[moving]
+        num = np.bincount(um, weights=d[moving] * DTA[moving], minlength=nu)
+        den = np.bincount(um, weights=TT[moving], minlength=nu)
+        cnt = np.bincount(um, minlength=nu)
+        # A unit with fewer than two moving pairs cannot fit a speed at
+        # all; its cost is then just how far it moved, which s = 0 gives.
+        s = np.where((cnt >= 2) & (den > 0), num / np.maximum(den, 1e-9), 0.0)
+        res = d - s[U] * DTA
+        return float(res @ res)
 
     # Anchors are held; every other entry starts shuffled, so the search
     # has to earn each one it gets right.
@@ -303,23 +413,17 @@ def report_speed(tracks, inv, dt_max: float, iters: int) -> None:
     for c, v in zip(free, vals):
         table[c] = v
 
-    cache = {u: unit_cost(table, ix) for u, ix in by_unit.items()}
-    cur = start = sum(cache.values())
+    cur = start = cost(table)
     best_table, best = table.copy(), cur
     for it in range(iters):
         temp = 0.6 * (0.002 / 0.6) ** (it / iters)
         i, j = rng.choice(len(free), 2, replace=False)
         a, b = free[i], free[j]
-        hit = touch[a] | touch[b]
-        if not hit:
-            continue
-        before = sum(cache[u] for u in hit)
         table[a], table[b] = table[b], table[a]
-        after = {u: unit_cost(table, by_unit[u]) for u in hit}
-        delta = sum(after.values()) - before
+        new = cost(table)
+        delta = new - cur
         if delta < 0 or rng.random() < np.exp(-delta / max(temp * cur / len(recs), 1e-12)):
-            cache.update(after)
-            cur += delta
+            cur = new
             if cur < best:
                 best, best_table = cur, table.copy()
         else:
@@ -351,9 +455,10 @@ def main() -> int:
     ap.add_argument("--blocks", help="explore --dump-netid dump of the movement class")
     ap.add_argument("--true", help="true table as written by --true-from")
     ap.add_argument("--dt", type=float, default=1.5, help="pair time limit for seriation")
-    ap.add_argument("--iters", type=int, default=400_000,
-                    help="swaps the constant-speed search gets; its cost is "
-                         "still falling at the default, so raise it to do better")
+    ap.add_argument("--iters", type=int, default=120_000,
+                    help="swaps the constant-speed search gets; the cost "
+                         "stops falling around 85,000, so more than the "
+                         "default buys nothing")
     args = ap.parse_args()
 
     if args.true_from:
@@ -366,13 +471,23 @@ def main() -> int:
 
     table = {int(k, 16): int(v, 16) for k, v in json.load(open(args.true)).items()}
     inv = {c: p for p, c in table.items()}
-    tracks = unit_tracks(args.blocks, inv)
-    print(f"{sum(len(v) for v in tracks.values())} single-waypoint blocks, "
-          f"{len(tracks)} unit tracks\n")
+    tracks, parsed = parsed_tracks(args.blocks, inv)
+    if tracks:
+        print(f"{parsed} payloads parsed, "
+              f"{sum(len(v) for v in tracks.values())} positions over "
+              f"{len(tracks)} unit tracks")
+    else:
+        # Nothing parsed, so fall back to the shape-based reader and say
+        # so -- the numbers below are then off a quarter of the data.
+        tracks = unit_tracks(args.blocks, inv)
+        print(f"buffer would not parse; falling back to "
+              f"{sum(len(v) for v in tracks.values())} single-waypoint "
+              f"blocks over {len(tracks)} tracks")
+    print()
     report_steps(tracks, inv)
     report_band(tracks, inv)
     report_seriation(tracks, inv, args.dt)
-    report_speed(tracks, inv, 3.0, args.iters)
+    report_speed(tracks, inv, args.dt, args.iters)
     return 0
 
 

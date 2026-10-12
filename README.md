@@ -178,9 +178,12 @@ matter: it is a file, and most of it was never obscured. On the twenty
   byte's slow drift, and they cover the whole playable map at that
   byte's resolution. A constant-speed search then fills the low byte
   in approximately: scored against 16.9, where the true table is
-  known, a median of about 12 map units, nine times in ten within 30,
-  and never worse than 256 — the high byte being exact bounds it.
-  Approximate is not decoded, so no positions are emitted from it yet.
+  known, a **median of 4 map units**, nine times in ten within 10,
+  and never worse than 32 — every one of the 256 entries lands within
+  16 steps of right, and the high byte being exact bounds the rest. A
+  champion hitbox is about 65 units, so that is trajectory accuracy.
+  Accurate is still not exact — 53 of 256 entries are actually right —
+  so no positions are emitted from it yet.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -414,18 +417,21 @@ Done:
 - [x] **Coarse positions.** 27 of the movement class's 256 table
   entries, recovered from the coordinate high byte's slow drift and
   checked against the flags byte. Covers the whole playable map to
-  within about 512 units ([docs/EXPLORE.md](docs/EXPLORE.md) § 3).
+  within about 512 units on its own; the low byte below closes most
+  of the rest ([docs/EXPLORE.md](docs/EXPLORE.md) § 3).
 
 Next:
 
 - [ ] **Exact positions.** The coordinate's low byte is approximate
   rather than unknown: it moves by most of its range between packets,
   so the drift trick does not reach it, but making every unit travel
-  at one fitted speed does — a median of 12 map units on 16.9, scored
-  by `scripts/lowbyte_probe.py`, and the search cost tracks that score
-  closely enough to stand in for it on a patch with no table to check
-  against. What is missing is exactness: 225 of the 256 entries are
-  still off by something. The obvious next idea is measured and does
+  at one fitted speed does — a median of **4 map units** on 16.9 with
+  every entry within 16 steps, scored by `scripts/lowbyte_probe.py`,
+  and the search cost tracks that score closely enough to stand in for
+  it on a patch with no table to check against. What is missing is
+  exactness: 203 entries are close but wrong, and the cost stops
+  falling, so that gap is the objective's limit rather than the
+  search's. The obvious next idea is measured and does
   **not** work — the path deltas give a path's shape exactly but yield
   no exact constraint on the table, three separate ways
   ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). What is left is stronger

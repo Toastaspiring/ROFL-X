@@ -551,9 +551,9 @@ fd->63 fe->e6 ff->e0 00->42 01->07 02->d1 03->f8 04->94 05->d4 06->d9
 
 That range covers `v` from minus 3328 to plus 3583, which is map
 coordinates from about 700 to 14500 — **the whole playable map, at the
-resolution of a high byte**. So a unit's position on patch 16.19 is
-now readable to within about 512 units: enough for a lane-level
-heatmap, not enough for a trajectory.
+resolution of a high byte**. On its own that puts a unit's position
+within about 512 units: a lane-level heatmap, not a trajectory. The
+low byte, below, closes most of the rest.
 
 The low byte is what stands between that and a real position, and it
 does not yield to the same trick: a unit moves a few hundred units
@@ -569,19 +569,28 @@ takes the value `0x40`, so the chain never reaches it.
 
 Every claim here is reproduced by `scripts/lowbyte_probe.py`, run on
 16.9 — where the true table *is* known, so a method gets a score
-instead of an opinion. It reads 57,398 single-waypoint blocks over
-9,468 unit tracks.
+instead of an opinion. It parses the entry buffer using the chain's
+anchors alone, which reaches **418,473 positions over 19,995 unit
+tracks**.
 
-**There is no chain.** Over 67,804 consecutive-packet observations the
-step a coordinate takes is bimodal: **64.2 % exactly zero**, 33.2 %
-more than six, and only 2.6 % in between — of which ±1 is 15.1 %. The
+**There is no chain.** Over 707,848 consecutive-packet observations the
+step a coordinate takes is bimodal: **37.8 % exactly zero**, 55.2 %
+more than six, and only 7.0 % in between — of which ±1 is 16.2 %. The
 high byte chains only because crossing a 256 boundary *is* a ±1 step;
 the low byte has no such regime, and walking it one step at a time
 walks into noise.
 
+On the quarter of the data that lone-waypoint selection sees, the same
+measurement reads 64.2 % zero and 33.2 % over six: a unit told to hold
+still is over-represented there, because a packet carrying one
+waypoint often *is* a unit standing still. The split moves but the
+conclusion does not, and it moves the right way — parsing every entry
+finds *more* long steps, not fewer.
+
 **Landmarks do not help either.** Positions do not pile up at spawn:
-the largest first-position cluster is 29 of those 9,468 tracks, and
-179 of the 256 low bytes turn up across the top 14 clusters.
+the largest first-position cluster is 29 of 9,468 lone-waypoint
+tracks, and 179 of the 256 low bytes turn up across the top 14
+clusters.
 
 What does survive is **locality** — two consecutive low bytes under a
 shared high byte are within `speed * dt` of each other — and, better,
@@ -591,30 +600,49 @@ the **size** of the step. Both were tried and both were scored:
 |---|---|---|---|---|---|
 | circular seriation, spectral | 29 | 64 | — | 15 | 40 |
 | the same, plus local search | — | 75 | — | 8 | — |
-| constant speed per unit | **31** | **127** | **239** | **5** | **15** |
+| constant speed, lone waypoints only | 31 | 127 | 239 | 5 | 15 |
+| constant speed, **parser-fed** | **53** | **207** | **256** | **2** | **5** |
+
+The first three rows are on the lone-waypoint selection. Seriation
+does not improve when given the parsed set — it drops to a median of
+16 — because locality is all it uses and the extra observations are
+mostly *long* steps, which tell it nothing. The same observations make
+the speed objective better, since a long step with a known `dt` is
+exactly what pins a speed.
 
 Of the exact entries, 27 are the chain's own anchors, held fixed; the
 search earns the rest. Seriation knows only that two bytes are close.
 The winner keeps the magnitudes: a unit travels at one speed, so
 between packets `dt` apart it covers `speed * dt`, one speed is fitted
 per unit by least squares, and the table searched for is the one that
-leaves each unit's own fits agreeing. Its cost falls from `4.294e+08`
-to `1.260e+08`, and it is still falling at the default iteration
-count.
+leaves each unit's own fits agreeing.
 
-Two things make that result transfer. The error is **bounded**: the
+The last row is the same objective with more to chew on. Selecting
+blocks by payload *shape* finds only single-waypoint entries — 57,398
+of them over 9,468 units. Parsing the buffer instead reaches every
+entry of every payload that parses, and each entry's first waypoint is
+a position: **418,473 positions over 19,995 units**, seven times the
+observations and twice the units. That, not a better search, is where
+the accuracy came from.
+
+Two things make the result transfer. The error is **bounded**: the
 high byte is exact, so however wrong an entry is it cannot move a
 position by more than 256 of the map's 15,000 units. And the search
-**cost tracks the score** — the run that reached a lower cost scored
-better on every column — so on 16.19, where there is no table to check
-against, minimising the same cost is a measurable proxy rather than a
-hope.
+**cost tracks the score** — every run that reached a lower cost scored
+better — so on 16.19, where there is no table to check against,
+minimising the same cost is a measurable proxy rather than a hope.
 
-So positions on 16.19 are readable to a median of about 12 map units,
-nine times in ten within 30, and never worse than 256. What this is
-*not* is a decode: 225 of 256 entries are still approximate, so
-ROFL-X does not ship this table or emit positions from it. It is a
-measurement of how close the search has got.
+So a position reads to a **median of 4 map units, nine times in ten
+within 10, and never worse than 32** — every one of the 256 entries is
+within 16 steps of right. A champion's hitbox is about 65 units, so
+that is trajectory accuracy, not lane-level.
+
+What it still is *not* is a decode. The table is accurate and **not
+exact**: 53 of 256 entries are actually right, and the cost stops
+falling at about 85,000 swaps, so the gap is this objective's limit
+rather than the search's. Getting to exact needs a constraint it does
+not have — and the three obvious candidates for one are measured and
+rejected below.
 
 ### What the path deltas do not give
 
@@ -829,8 +857,8 @@ far along that is, not a smaller ambition.
   something outside the file pins down — the visibility pair at 37.9 %
   of traffic, the killer field of the death class, and the movement
   class to within a coordinate's high byte exactly and its low byte to
-  a measured median of 12 map units. Damage numbers, item ids, spell
-  casts and *exact* positions are not reachable today.
+  a measured median of 4 map units. Damage numbers, item ids, which
+  ability a cast was, and *exact* positions are not reachable today.
 - **No class is named with certainty by fingerprint alone.** § 2 and
   § 4 produce proof, and only for classes that correspond to a counter
   Riot kept or to an event the kill feed knows about. § 5 produces

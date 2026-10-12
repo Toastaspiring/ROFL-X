@@ -94,8 +94,8 @@ decode needs that patch's binary.
    above. The file alone goes a long way further than it used to —
    three payload fields are read on 16.19 with no binary at all, the
    spell-cast class is identified and validated against 16.9, and a
-   position comes out to a measured median of 12 map units — but that
-   last one is approximate, so it is not emitted. See
+   position comes out to a measured median of 4 map units — but that
+   last one is accurate rather than exact, so it is not emitted. See
    [EXPLORE.md](EXPLORE.md).
 2. **Parity runs against Mowokuma on 15.1 – 15.4.** Cheap once a script
    runs both tools and diffs order-normalised JSON.

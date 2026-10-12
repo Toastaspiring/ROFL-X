@@ -321,10 +321,21 @@ method can be checked against a known answer.
   substitution table against the deserializer's own output on a patch
   that has one — including the discovery that the waypoint class
   writes its buffer backwards.
+- Netids identified by **correlation with a counter the exact test
+  cannot use**, with the confound ruled out and the method validated
+  against the control patch first: spell casts, item purchase, item
+  removal and ward placement. A cast is not one packet, so no equality
+  test can ever find it; see [EXPLORE.md](EXPLORE.md) § 2.
+- **Positions to a measured accuracy**, median 4 map units with every
+  table entry within 16 steps of right, scored against the control
+  patch by `scripts/lowbyte_probe.py`.
 
-**Stop point.** Positions. The movement class is identified and its
-wire format settled, but reading coordinates needs most of its
-256-entry table, and that is a constraint search rather than a lookup.
-The next boundary is reached either when that search succeeds against
-the waypoint parser's own check, or when it is shown not to converge on
-the data available.
+**Stop point.** *Exact* positions. The search converges — its cost
+stops falling, and the table it lands on is accurate enough for
+trajectories — but accurate is not exact: 53 of 256 entries are
+actually right, so the waypoint parser's own check still fails and no
+positions are emitted. The constraint that would close it is not the
+path deltas, which are measured and give no exact arithmetic three
+separate ways. The next boundary is reached when some other constraint
+makes the table exact, or when the remaining error is shown to be
+irreducible from the file alone.

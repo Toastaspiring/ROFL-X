@@ -592,18 +592,25 @@ under ideal conditions, and nobody knows which one.
 Where these agree — netid 601, found by § 2, § 4 and § 5 — the answer
 is not a hypothesis any more.
 
-## What this does not do
+## What this does not do *yet*
+
+The goal for a packed patch is the same as for one we can decode: the
+whole file, every action in it (README § the goal). This page is how
+far along that is, not a smaller ambition.
 
 - **Most payloads stay unread.** § 3 opens the classes whose plaintext
-  something outside the file pins down — the visibility pair, 37.9 % of
-  traffic, and the killer field of the death class. Positions, damage
-  numbers, item ids and spell casts are not reachable today.
+  something outside the file pins down — the visibility pair at 37.9 %
+  of traffic, the killer field of the death class, and the movement
+  class to within a coordinate's high byte. Damage numbers, item ids,
+  spell casts and exact positions are not reachable today.
 - **No class is named with certainty by fingerprint alone.** § 2 and
   § 4 produce proof, and only for classes that correspond to a counter
   Riot kept or to an event the kill feed knows about. § 5 produces
-  candidates.
+  candidates, with a measured error rate.
 - **Nothing touches the game.** No binary is unpacked, no process is
-  read. That is the constraint this whole page is written under.
+  read, and nothing here is any use against a live match. That is a
+  constraint on method and it is permanent; the rest of this list is
+  just work not done.
 
 ## What would make this much stronger
 

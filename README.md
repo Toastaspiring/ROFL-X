@@ -7,9 +7,18 @@ that patch-to-patch regressions become detectable instead of silent.
 
 ROFL-X exists because Riot publishes no official documentation of the ROFL
 format, and every existing parser extracts a narrow slice of the data that
-is actually in the file. Our goal is a parser that covers as much as the
-community's reverse-engineering knowledge allows, and a catalog that honestly
-records the rest as unnamed so it's obvious what we haven't figured out yet.
+is actually in the file.
+
+**The goal is the whole file: a `.rofl` in, and JSON out describing
+everything that happened in the match** — every player's movement and
+move orders, spells cast, attacks, damage dealt, deaths and respawns,
+items bought and used, wards placed and killed, structures destroyed,
+every entity created and destroyed, and who could see what and when.
+Not a summary of the match: the actions it was made of.
+
+That is not finished, and the catalog says so rather than hiding it —
+every packet class carries an honest status, and the ones we cannot
+name yet are recorded as unnamed so the gaps are visible.
 
 It works two ways, and the second matters more as time goes on. Where an
 unpacked client binary of the patch exists, the game's own deserializers
@@ -466,17 +475,25 @@ measured field table in [docs/FIELDS.md](docs/FIELDS.md) to start from.
   starts to look like live-game decryption or client-side tamper, we stop
   and flag it. That includes unpacking the encrypted code of current
   League binaries or reading it out of the running game.
-- **We will not attempt to statically reimplement the packet decode
-  functions.** The obfuscation changes per patch and Mowokuma/Zhu both
-  independently concluded emulation is the right answer; we agree, and
-  format 2 takes it to its conclusion: the game also picks the decoder.
+- **We will not hand-reverse-engineer the obfuscation out of the
+  binary, patch by patch.** Where an unpacked client exists, emulating
+  it is simply better: Mowokuma and Zhu each concluded the same
+  independently, and format 2 takes it to its conclusion by letting the
+  game pick the decoder too. Re-deriving per-patch decode functions by
+  hand is work that the emulator does for free and more reliably.
 
-  One clarification, since the 16.19 work sits close to this line.
-  Where no binary exists to emulate, ROFL-X does recover a class's byte
-  substitution *from the replay*, using plaintext that something
-  outside the file pins down — Riot's own end-of-game numbers, or a
-  rule of the game. That is reading a file you own, with evidence the
-  file came with. It is not reimplementing Riot's code, it needs
-  nothing from the client, and it stops at the classes whose plaintext
-  is pinned; there is no attempt to recover the obfuscation itself, or
-  to produce something that would decode a live game.
+  This is **not** a limit on recovering a class's encoding *from a
+  replay*, which is a different thing and is squarely a goal. Where no
+  binary exists to emulate, that is the only route to the payloads, and
+  ROFL-X takes it: a class's byte substitution is recovered from the
+  file, using plaintext the file itself pins down — Riot's own
+  end-of-game numbers, or a rule of the game that fixes what a field
+  can mean. Three fields on patch 16.19 are read that way already
+  ([docs/EXPLORE.md](docs/EXPLORE.md) § 3), and the intent is to keep
+  going until the replay reads as completely as a decodable patch does.
+
+  The line that does hold is the one about the game, not about the
+  file: nothing here unpacks Riot's protection, reads the running
+  client, or is any use against a live match. A replay is a record of
+  a game that already finished, sitting on the disk of someone who
+  played it.

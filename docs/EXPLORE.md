@@ -483,6 +483,48 @@ nine times in ten within 30, and never worse than 256. What this is
 ROFL-X does not ship this table or emit positions from it. It is a
 measurement of how close the search has got.
 
+### What the path deltas do not give
+
+Once the chain is in hand the deltas are readable — a step of ±13 or
+less has a plaintext the chain already names — so a path's *shape* is
+exact even though its origin sits behind the unknown low byte. It is
+tempting to think that turns into exact arithmetic on the table. Three
+ways of trying were measured and all three failed. The numbers are
+here so the next attempt starts after them, not before.
+
+1. **`absolute → delta(s) → absolute` relates nothing.** An absolute
+   coordinate *overwrites* the running value rather than continuing it
+   (`waypoints.rs`), so the second absolute is not the first plus the
+   deltas between them. Asserting it anyway yielded 249,364
+   constraints and **111,056 contradictions**, and moved no entry off
+   its anchor.
+
+2. **"The unit arrived where its path ended" is false.** Had it
+   arrived, the next packet's first waypoint would be the last
+   waypoint plus any trailing deltas, which mod 256 is an exact
+   two-unknown constraint, `T[lo_next] = T[lo_last] + D`. Across
+   517,772 candidates that looks like it holds **77.1 %** of the
+   time — until you notice 256,015 of them have `lo_next == lo_last`,
+   which holds trivially whenever `D` is zero, as it is for 99.7 % of
+   them. On the constraints that say anything about the table it holds
+   **0.4 % to 1.3 %**. Its precision also *falls* as the gap grows,
+   1.3 % under 0.4 s against 0.5 % beyond 3 s; if arrival were the
+   mechanism it would rise. A packet reports where a unit *is*,
+   mid-path, not where its path ended.
+
+3. **Displacement-on-the-polyline is true but thin.** The shape being
+   exact, the displacement between two packets should land on that
+   polyline, which couples both axes and needs no speed. It does:
+   under the true table the residual's median is **33.6 units against
+   a random permutation's 155**. But only **2,770 pairs** have a
+   readable multi-point path, because the bitmap of a long path needs
+   table entries we do not have, and 33.6 is not zero. So it is a
+   refinement for once the table is better, not a way in.
+
+Taken together: the deltas hand over path shapes for free and no
+leverage on the table. The soft, scored route above remains the one
+that works.
+
 **Where positions have got to.** Both classes that carry them are now
 partly read: the movement class to within a high byte, the death class
 not at all.

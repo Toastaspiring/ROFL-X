@@ -413,10 +413,12 @@ Next:
   by `scripts/lowbyte_probe.py`, and the search cost tracks that score
   closely enough to stand in for it on a patch with no table to check
   against. What is missing is exactness: 225 of the 256 entries are
-  still off by something. Candidates: the one-byte signed deltas in
-  multi-waypoint entries, which would multiply the observations, and
-  pairs of consecutive absolute waypoints, which bound the difference
-  between two low bytes without naming either.
+  still off by something. The obvious next idea is measured and does
+  **not** work — the path deltas give a path's shape exactly but yield
+  no exact constraint on the table, three separate ways
+  ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). What is left is stronger
+  soft models: the displacement between two packets lies on the path's
+  polyline, which is true but only readable for 2,770 pairs today.
 - [ ] **The running score's numbers.** Netid 590 is identified but its
   three counters are bit-packed rather than byte-aligned, so the
   technique that read the killer does not reach it. Reading it would

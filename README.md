@@ -169,13 +169,16 @@ matter: it is a file, and most of it was never obscured. On the twenty
   it (measured: 247 of 247 predicted). Five other classes, including
   the movement class, fit nothing of the kind — so it is a per-class
   property worth testing, not a way in to all of them.
-- **Spell casts located:** netid 474 is `PKT_NPC_CastSpellAns_s`. It
+- **Spell casts located:** netid 474 carries spell casts. It
   tracks the cast counters (r = +0.827) and not activity
   (r = −0.019 against minions killed); its surplus over the counter
   falls on the champions whose abilities are held or recast (Pantheon
   +206 %) and not on the point-and-click ones (Annie −9 %); and the
-  same analysis picks the real cast class first on 16.9. Located, not
-  decoded — reading which ability at whom needs its table.
+  same analysis picks the real cast class first on 16.9. Which Riot
+  class it *is* stays unsettled: its payload shares the head signature
+  of 16.9's `PKT_NPC_CastSpellAns_s` but not that class's trailing
+  coordinate triple ([docs/EXPLORE.md](docs/EXPLORE.md) § 3). Located,
+  not decoded — reading which ability at whom needs its table.
 - **Items and wards located**, on the seven Summoner's Rift replays of
   the set: netid 890 for purchases, 524 for item removal — which the
   fingerprint matcher independently and confidently calls

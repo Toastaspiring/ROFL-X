@@ -554,6 +554,55 @@ So the first question to ask of a class on a packed patch is not "what
 are its 256 entries" but "is it affine", which a handful of pairs
 answers.
 
+### Which fields a payload has, without its table
+
+A substitution permutes byte *values*, so it cannot change how many
+distinct values a position takes. A bounded field therefore stays
+bounded through the obfuscation, and that is readable with no table at
+all:
+
+- an enum of two values leaves 2 distinct ciphers at its position;
+- a float confined to the map has a leading big-endian byte of sign
+  plus the top seven exponent bits, which for a value in [0, 16384)
+  can only be `0x00` or `0x3f`..`0x46` — so 9 ciphers;
+- a coordinate triple is three such positions, four bytes apart.
+
+Mantissas, net ids, hashes and counters take most of the 256 values
+and are invisible to this, which is what makes a narrow position
+informative. `scripts/payload_shape.py` does it.
+
+Checked on 16.9 first. Netid 985's three trailing coordinates
+(`+0x140`, `+0x144`, `+0x148`: x, a height, z) show up as narrow
+positions at exactly `120`, `124` and `128` of its 132-byte payload —
+which is where `decode --layout` independently puts them — and nothing
+else in the last sixteen bytes is narrow at all.
+
+Run on both sides of the 16.9 / 16.19 gap for the cast class, it says
+something the fingerprint could not:
+
+| | narrow positions |
+|---|---|
+| 16.9 netid 985 | 0, 2, 5, 7, 9, 10, 11, 13, **120, 124, 128** |
+| 16.19 netid 474 | 0, 1, 5, 7, 9, 13 |
+
+The heads agree closely — both narrow at 0, 5, 7, 9 and 13, including
+a float triple at 5/9/13 — so the field order at the start of the
+payload survived the patch gap. But **985's trailing coordinate triple
+is simply absent from 474**, and 474 has no three narrow positions
+four apart anywhere else either.
+
+That cuts both ways and both should be said. The shared head is
+independent support for 474 being the same class, from a property
+neither the counters nor the fingerprint looks at. The missing tail is
+evidence against, or at least evidence that the class changed: a cast's
+target position is in 985's payload and is not in 474's where 985 puts
+it. Since the fingerprint was never confident about this pair either
+(score 0.602, margin 0.018), the honest reading is that **474 carries
+spell casts** — which the counters and the champion-surplus test
+establish on their own — while **474 being `PKT_NPC_CastSpellAns_s`
+specifically is unsettled**, and the payload layout is the reason to
+doubt it.
+
 ### What this does and does not generalise to
 
 It generalises to any class whose plaintext can be pinned from

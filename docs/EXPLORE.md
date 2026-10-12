@@ -554,6 +554,57 @@ So the first question to ask of a class on a packed patch is not "what
 are its 256 entries" but "is it affine", which a handful of pairs
 answers.
 
+### Five ways of getting known plaintext that do not work
+
+Reading a class needs its table, and a table needs known plaintext.
+The replay offers four sources — the framing, statsJson, the game's own
+value ranges, and a decodable patch's layout — and the ones that have
+worked are recorded above. These did not, and each is cheap enough to
+be worth trying again only with a reason:
+
+1. **The payload's game-time float against the framing timestamp.**
+   The cast class carries a game time (`+0x088`), and the block's
+   timestamp is plaintext, so the float's upper bytes ought to be
+   pinned by it. Measured: the two agree to **0.0011 s at the median
+   and 0.008 s at the 90th percentile**, which is far inside one step
+   of the float's second byte, so the idea is sound. But only 76 of
+   3,922 blocks match bit-for-bit — our timestamp accumulates from
+   millisecond deltas and drifts — and the field is not at a fixed
+   4-byte window, so the pairing never becomes exact. The 22 classes
+   whose game-time field *is* at a fixed offset have 2 to 54 blocks
+   each.
+
+2. **A payload echo of the sender's net id.** `param` is the sender and
+   is plaintext, and `FIELDS.md` shows the cast class has an object
+   field that equals it (`+0x044`), which would give exact pairs on
+   every block. It is not in the payload: scanning every position and
+   both byte orders, in raw and `XOR 0x40000000` form, over 19,102
+   blocks, **no position is consistent**. The deserializer fills that
+   field from the transport, as it does `+0x0c`.
+
+3. **The spell slot as a payload byte.** If the slot's bits sat in some
+   byte, that byte's cipher would determine the slot outright, since
+   the substitution is a bijection. No position does, at any single
+   payload length. The best, `[8]`, carries 89–95 % of the slot's
+   entropy with 34–41 distinct ciphers — but it confuses slots 3 and 4
+   systematically, about 80/20 across thirty different ciphers, so it
+   is something correlated with the slot rather than the slot. A byte
+   of the spell-name hash would behave exactly like that.
+
+4. **A count byte driving the payload length.** The length is
+   plaintext, so a field that determines it would be recoverable for
+   every length the class takes — dozens of exact entries. No byte
+   does: the best holds **21 % of the length's entropy on 16.9 and
+   24 % on 16.19**. Several variable-length pieces share the payload,
+   so no one count explains it.
+
+5. **Assuming affinity and fitting from the bounded floats.** For an
+   affine class nine pairs suffice, and the exponent positions give
+   nine known plaintexts (`0x00` and `0x3f`..`0x46`). But their XOR
+   differences span only **rank 5 of 8**: bit 7 is clear in all of
+   them, and bits 3–5 only ever move together. Three independent
+   constraints short.
+
 ### Which fields a payload has, without its table
 
 A substitution permutes byte *values*, so it cannot change how many
@@ -753,10 +804,29 @@ that is trajectory accuracy, not lane-level.
 
 What it still is *not* is a decode. The table is accurate and **not
 exact**: 53 of 256 entries are actually right, and the cost stops
-falling at about 85,000 swaps, so the gap is this objective's limit
-rather than the search's. Getting to exact needs a constraint it does
-not have — and the three obvious candidates for one are measured and
-rejected below.
+falling at about 85,000 swaps.
+
+That plateau has two possible causes needing opposite responses — a
+search stuck short of the optimum, or an optimum that is not the
+answer — so it was settled rather than assumed. Scoring the *true*
+table under the same objective:
+
+| | cost |
+|---|---|
+| the true table | 1.346472e+09 |
+| the best the search found | **1.336770e+09** |
+
+**The search beats the truth by 0.72 %.** So the optimum of the
+constant-speed objective is not the true table, and no better
+optimiser, longer run or further data of this kind can reach it. A
+unit does not quite travel at one speed — it accelerates, stops, is
+slowed — and that mis-specification is larger than the signal
+separating the true table from its near neighbours. The worst entries
+are off by 7 to 10, which is the size of that gap.
+
+This is the useful kind of negative: it ends the search direction
+outright. Exactness needs a *different* constraint, not more of this
+one — and the obvious candidates are measured and rejected below.
 
 ### What the path deltas do not give
 

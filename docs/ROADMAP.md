@@ -329,13 +329,18 @@ method can be checked against a known answer.
 - **Positions to a measured accuracy**, median 4 map units with every
   table entry within 16 steps of right, scored against the control
   patch by `scripts/lowbyte_probe.py`.
+- **Positions emitted**, as JSON lines carrying the accuracy each was
+  read at: 1,761,827 of them over 28,508 units on 16.19. The parser is
+  checked against the control patch, where given the decoder's own
+  table it reproduces all 172,857 of the game's positions exactly.
 
-**Stop point.** *Exact* positions. The search converges — its cost
-stops falling, and the table it lands on is accurate enough for
-trajectories — but accurate is not exact: 53 of 256 entries are
-actually right, so the waypoint parser's own check still fails and no
-positions are emitted. The constraint that would close it is not the
-path deltas, which are measured and give no exact arithmetic three
-separate ways. The next boundary is reached when some other constraint
-makes the table exact, or when the remaining error is shown to be
-irreducible from the file alone.
+**Stop point.** *Exact* positions. Approximate ones are emitted with
+their error bar, and that part is done. Exactness is a different
+matter, and the search cannot reach it: scoring the true table under
+the same objective shows the search's own answer costs *less* than the
+truth, so its optimum is not the answer and no better optimiser helps.
+Nor is the constraint that would close it the path deltas, which give
+no exact arithmetic three separate ways, nor the affine structure,
+which one class of 23 has. The next boundary is reached when some
+other source of known plaintext appears, or when the remaining error
+is shown to be irreducible from the file alone.

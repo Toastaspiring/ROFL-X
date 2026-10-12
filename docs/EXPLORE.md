@@ -24,6 +24,17 @@ This page is the run on the twenty patch-16.19 replays we hold, and
 everything in it came out of those files. No binary is unpacked, no
 process is read, nothing touches the game.
 
+**What those twenty replays are**, because it matters for anything
+counter-based: eleven are build `16.19.821.7343` and nine are
+`16.19.823.0722`, and the netid registry is the same in both — the two
+strict proofs of § 2 hold 10/10 and 9/9 when the builds are scored
+apart, so pooling them is sound. By **game mode** they are not
+uniform: seven are Summoner's Rift, and thirteen are an augment mode
+with no wards, no vision score and no assigned lane positions. So
+`WARD_PLACED` and friends are flat zero in most of the set, and a ward
+class can only be looked for in the seven. Where a result depends on
+the mode, this page says which replays it used.
+
 ---
 
 ## 1. Which entity is which champion
@@ -118,7 +129,7 @@ which on the goal's terms is most of them.
 
 The weaker question is which netid *moves with* the cast counters, and
 the work is then in ruling out the two ways that answer could be
-worthless. `scripts/cast_class.py` does both, and refuses to report
+worthless. `scripts/counter_class.py` does both, and refuses to report
 anything on a packed patch until it has picked the right class on one
 that decodes.
 
@@ -181,6 +192,45 @@ class for it. The packets-per-cast ratio agrees too — 1.20 on 16.9,
 nine of `16.19.823.0722`), and the two strict proofs above hold 10/10
 and 9/9 in those same splits, so the registry really is shared and
 pooling the builds is sound.
+
+The cast identity survives the mode split too, which is worth saying
+because the surplus table above pools both: ranked within the seven
+Summoner's Rift replays alone, 474 is still first at r = +0.721 with
+1.17 packets per cast; within the thirteen augment-mode replays alone,
+first at +0.856 and 1.14.
+
+### The same question, asked of other counters
+
+`scripts/counter_class.py --field <counter>` points the same machinery
+anywhere, and the validation step is what keeps it honest: it first
+ranks the counter on 16.9 and prints the name it lands on, so a run on
+a packed patch is worth exactly as much as that name is right. Three
+more came out of the seven Summoner's Rift replays, each ranked first
+for its counter and each with a 16.9 counterpart whose packets-per-event
+ratio agrees:
+
+| 16.19 | counter | r | per event | 16.9 picks | r | per event |
+|------:|---------|--:|----------:|------------|--:|----------:|
+| 890 | `ITEMS_PURCHASED` | +0.907 | 1.28 | 306 `PKT_BuyItemAns_s` | +0.887 | 1.19 |
+| 524 | `ITEMS_PURCHASED` | +0.783 | 0.72 | 1045 `PKT_RemoveItemAns_s` | +0.868 | 0.72 |
+| 467 | `WARD_PLACED` | +0.820 | 2.43 | 1196 `PKT_UseItemAns_s` | +0.892 | 2.39 |
+
+They pass the confound check as sharply as 474 does — netid 890 tracks
+purchases at +0.907 while sitting at −0.086 on minions killed, −0.022
+on casts and −0.082 on pings; 467 tracks ward placement at +0.820 and
+casts at −0.137.
+
+**Netid 524 is the strongest of the three**, because § 5's fingerprint
+matcher calls it `PKT_RemoveItemAns_s` *confidently* — score 0.968,
+margin 0.231 — entirely independently of statsJson. Two methods, one
+answer. For 890 and 467 the fingerprint proposes something else with a
+low score and does not call it confident, so they rest on the counter
+evidence alone.
+
+These are thinner than the cast result: four to six games rather than
+nineteen, because only seven replays have the mode for it. Wards being
+on the goal's list, netid 467 is where to look next, and more
+Summoner's Rift replays of this patch would settle all three.
 
 What is *not* claimed: this is not the strict proof that names 1080.
 It is a correlation plus two checks it had to survive and one

@@ -168,6 +168,11 @@ matter: it is a file, and most of it was never obscured. On the twenty
   +206 %) and not on the point-and-click ones (Annie −9 %); and the
   same analysis picks the real cast class first on 16.9. Located, not
   decoded — reading which ability at whom needs its table.
+- **Items and wards located**, on the seven Summoner's Rift replays of
+  the set: netid 890 for purchases, 524 for item removal — which the
+  fingerprint matcher independently and confidently calls
+  `PKT_RemoveItemAns_s` — and 467 for ward placement. Thinner evidence
+  than the casts, four to six games each.
 - **Positions, to a measured accuracy.** 27 of the movement class's
   256 table entries are exact, recovered from the coordinate high
   byte's slow drift, and they cover the whole playable map at that

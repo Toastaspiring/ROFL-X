@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find the spell-cast class on a packed patch, and check it is one.
+"""Find the class behind one of Riot's counters, and check it is one.
 
 The exact statsJson proof (docs/EXPLORE.md § 2) wants a netid whose
 per-champion block count *equals* one of Riot's counters, give or take
@@ -39,8 +39,13 @@ Produce the inputs with:
     rofl-x explore -r <replay> [-r ...] --dump-counts counts.json -o /dev/null
 
     # the packed patch under test, then the patch that validates it
-    python scripts/cast_class.py --counts counts19.json \\
+    python scripts/counter_class.py --counts counts19.json \\
         --validate counts9.json --archive patch/16-9.patch
+
+Spell casts are the worked example, being the case the exact test
+misses most plainly, and `--field` points the same machinery at any
+other counter. The per-champion surplus check only means anything for
+casts, so it only runs for them.
 """
 from __future__ import annotations
 
@@ -57,6 +62,7 @@ import zipfile
 # both of these to a replay's counters.
 CASTS = "SPELL1..4_CAST+SUMMON_SPELL1..2_CAST"
 ABILITIES = "SPELL1..4_CAST"
+CAST_FIELDS = (CASTS, ABILITIES)
 # Counters a cast class should *not* track, most of all the first.
 CONFOUNDS = [
     "MINIONS_KILLED",
@@ -101,10 +107,15 @@ def rank(rows, field: str, names: dict[str, str]):
     for r in rows:
         netids |= set(r["blocks_per_champion"])
     out = []
+    # A netid has to be testable in half the replays and in at least
+    # three, which is the floor the Rust matcher uses. Demanding all
+    # but one hides any counter that is zero in some game -- items are
+    # not bought in a four-minute remake, and a mode without wards
+    # leaves the ward counters flat.
+    floor = max(3, (len(rows) + 1) // 2)
     for netid in netids:
         xs, ys, games = pooled(rows, netid, field)
-        # Judge a netid on the replays that could test it, bar one.
-        if games < len(rows) - 1 or not xs:
+        if games < floor or not xs:
             continue
         ratios = [x / y for x, y in zip(xs, ys) if y > 0]
         out.append((pearson(xs, ys), netid, games,
@@ -170,6 +181,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--counts", required=True, help="--dump-counts for the patch under test")
+    ap.add_argument("--field", default=CASTS,
+                    help="the counter to find the class for (default: spell casts)")
     ap.add_argument("--validate", help="--dump-counts for a patch that decodes")
     ap.add_argument("--archive", help="that patch's .patch archive, to name its netids")
     ap.add_argument("--replays", help="glob of the replays behind --counts, for champion names")
@@ -178,31 +191,35 @@ def main() -> int:
 
     if args.validate:
         names = archive_names(args.archive)
-        board = rank(json.load(open(args.validate)), CASTS, names)
+        board = rank(json.load(open(args.validate)), args.field, names)
         print("validation, on a patch whose classes are known:")
         for r, netid, games, ratio, name in board[:5]:
             print(f"  netid {netid:>5}  r={r:+.3f}  {games} games  "
-                  f"blocks/cast {ratio:5.2f}  {name or '(unnamed)'}")
+                  f"blocks/event {ratio:5.2f}  {name or '(unnamed)'}")
+        # Whether this is the right answer is a judgement about the
+        # name, so print it and leave the judgement to the reader
+        # rather than pattern-matching one counter's expected class.
         top = board[0][4] if board else ""
-        print("  -> the method picks "
-              f"{'the real cast class' if 'CastSpell' in top else 'something else: do not trust it'}\n")
+        print(f"  -> on the known patch this counter picks "
+              f"{top or '(unnamed)'}; the run below is only worth as"
+              " much as that is right\n")
 
     rows = json.load(open(args.counts))
-    board = rank(rows, CASTS, {})
+    board = rank(rows, args.field, {})
     print(f"candidates on the patch under test, {len(rows)} replays:")
     for r, netid, games, ratio, _ in board[:5]:
-        print(f"  netid {netid:>5}  r={r:+.3f}  {games} games  blocks/cast {ratio:5.2f}")
+        print(f"  netid {netid:>5}  r={r:+.3f}  {games} games  blocks/event {ratio:5.2f}")
     if not board:
         return 1
     best = board[0][1]
 
     print(f"\nnetid {best} against counters it should not track:")
-    for field in [CASTS, ABILITIES] + CONFOUNDS:
+    for field in dict.fromkeys([args.field, *CAST_FIELDS, *CONFOUNDS]):
         xs, ys, games = pooled(rows, best, field)
-        mark = "  <- casts" if field in (CASTS, ABILITIES) else ""
+        mark = "  <- the one it should track" if field == args.field else ""
         print(f"  {field:<42} r={pearson(xs, ys):+.3f} ({games} games){mark}")
 
-    if args.replays:
+    if args.replays and args.field in CAST_FIELDS:
         rosters = champion_names(args.replays, args.patch)
         board2 = surplus_by_champion(rows, best, rosters)
         print(f"\nsurplus over the counter, by champion ({len(board2)} seen twice or more):")

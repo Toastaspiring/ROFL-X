@@ -632,6 +632,200 @@ pub type BytePair = (u8, u8);
 /// packets together without being able to read the id.
 pub type UnitTracks = HashMap<(usize, u8, u8), Vec<(f32, u8, u8)>>;
 
+/// One unit's position at one moment, as read from a packed patch.
+///
+/// `unit` is the cipher of the net id's low two bytes, not the id
+/// itself: the id cannot be read without more of the table, but the
+/// same unit always gives the same bytes, which is all that is needed
+/// to follow one unit through a game.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Position {
+    pub replay: usize,
+    pub t: f32,
+    pub unit: (u8, u8),
+    pub x: f32,
+    pub z: f32,
+    /// True when both coordinates' low bytes were in the table, so the
+    /// position is exact rather than within half a high byte.
+    pub exact: bool,
+}
+
+/// Map coordinate from a stored value: `docs/PACKETS.md`, WaypointGroup.
+fn map_x(v: i16) -> f32 {
+    f32::from(v) * 2.0 + 7358.0
+}
+
+fn map_z(v: i16) -> f32 {
+    f32::from(v) * 2.0 + 7412.0
+}
+
+/// Read every entry's first waypoint out of one movement payload.
+///
+/// Selecting blocks by payload *shape* only finds entries with a
+/// single waypoint, because any other shape shifts the coordinates by
+/// a bitmap byte — and that is a quarter of the traffic. Parsing the
+/// buffer reaches every entry of every payload that parses, and each
+/// entry's first waypoint is where that unit is, so it is seven times
+/// the positions over twice the units.
+///
+/// It needs no more of the table than the chain already gives, because
+/// every byte it has to *read* is a small number: the flags' low byte,
+/// which is the waypoint count doubled, and the bitmap, which is two
+/// bits per waypoint. The coordinates themselves are not read here,
+/// only located.
+///
+/// The payload is the entry buffer written back to front behind a
+/// header of varints, so buffer index `j` is `payload[len - 1 - j]`,
+/// and the header's length is not known in advance — the caller tries
+/// each one and keeps the length that parses exactly.
+fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Option<Vec<Entry>> {
+    let n = payload.len();
+    let limit = n.checked_sub(header)?;
+    if limit == 0 {
+        return None;
+    }
+    let at = |j: usize| payload[n - 1 - j];
+    let mut j = 0usize;
+    let mut out = Vec::new();
+    while j < limit {
+        if j + ENTRY_HEAD > limit {
+            return None;
+        }
+        let flags = *plain.get(&at(j))?;
+        let count = usize::from(flags >> 1);
+        if count == 0 {
+            return None; // zero waypoints: the format does not allow it
+        }
+        // Buffer index j is the flags' low byte, so the net id starts
+        // at j + 2 and its low two bytes are j + 2 and j + 3. Those
+        // identify the unit: reading one byte further would key on
+        // bytes that are near-constant across the game and quietly
+        // merge units together.
+        let unit = (at(j + 2), at(j + 3));
+        j += ENTRY_HEAD + usize::from(flags & 1);
+        let mut bitmap: Vec<u8> = Vec::new();
+        if count > 1 {
+            let width = ((count - 2) >> 2) + 1;
+            if j + width > limit {
+                return None;
+            }
+            for b in 0..width {
+                bitmap.push(*plain.get(&at(j + b))?);
+            }
+            j += width;
+        }
+        let is_delta = |i: usize| -> bool {
+            bitmap
+                .get(i >> 3)
+                .is_some_and(|byte| byte & (1 << (i & 7)) != 0)
+        };
+        let mut first: Option<((u8, u8), (u8, u8))> = None;
+        for i in 0..count {
+            let mut coord = [(0u8, 0u8); 2];
+            for (axis, slot) in coord.iter_mut().enumerate() {
+                if i > 0 && is_delta(2 * (i - 1) + axis) {
+                    if j + 1 > limit {
+                        return None;
+                    }
+                    j += 1;
+                } else {
+                    if j + 2 > limit {
+                        return None;
+                    }
+                    *slot = (at(j), at(j + 1));
+                    j += 2;
+                }
+            }
+            if i == 0 {
+                first = Some((coord[0], coord[1]));
+            }
+        }
+        let (x, z) = first?;
+        out.push(Entry { unit, x, z });
+    }
+    (j == limit).then_some(out)
+}
+
+/// One entry's unit and the ciphers of its first waypoint, low byte
+/// then high byte per axis.
+struct Entry {
+    unit: (u8, u8),
+    x: (u8, u8),
+    z: (u8, u8),
+}
+
+/// Bytes every entry carries before its optional extra byte: the
+/// 16-bit flags, the unit net id and the move speed.
+const ENTRY_HEAD: usize = 10;
+/// Header lengths tried when looking for the one that parses exactly.
+const HEADER_MAX: usize = 12;
+
+/// Read positions out of a movement class with only a partial table.
+///
+/// `plain` maps payload byte to plaintext — the inverse of what the
+/// chain produces. A coordinate needs both its bytes to be in there to
+/// be read at full precision; with only the high byte known the low
+/// byte is taken as the middle of its range, which is what makes the
+/// error bound half a high byte either way.
+///
+/// Returns the positions and how many payloads parsed to exactly their
+/// own length, which is the check that the table and the header length
+/// are both right: a wrong table fails it on the first block.
+pub fn positions(
+    blocks: &[(usize, f32, Vec<u8>)],
+    plain: &BTreeMap<u8, u8>,
+) -> (Vec<Position>, u64, u64) {
+    let mut out = Vec::new();
+    let (mut parsed, mut seen) = (0u64, 0u64);
+    for (replay, t, payload) in blocks {
+        seen += 1;
+        // Exactly one header length may parse, or the block is dropped:
+        // two that both parse would leave the entries ambiguous.
+        let mut hit: Option<Vec<Entry>> = None;
+        let mut hits = 0usize;
+        for header in 1..=HEADER_MAX {
+            if let Some(entries) = parse_entries(payload, header, plain) {
+                hits += 1;
+                hit = Some(entries);
+            }
+        }
+        if hits != 1 {
+            continue;
+        }
+        parsed += 1;
+        for e in hit.into_iter().flatten() {
+            let (Some((x, x_exact)), Some((z, z_exact))) =
+                (value(e.x, plain), value(e.z, plain))
+            else {
+                continue;
+            };
+            out.push(Position {
+                replay: *replay,
+                t: *t,
+                unit: e.unit,
+                x: map_x(x),
+                z: map_z(z),
+                exact: x_exact && z_exact,
+            });
+        }
+    }
+    (out, parsed, seen)
+}
+
+/// A coordinate from its two payload bytes, and whether it is exact.
+///
+/// The high byte must be known. An unknown low byte is taken as the
+/// middle of its range, which is what bounds the error at half a high
+/// byte — 256 map units — rather than leaving it unbounded.
+fn value((lo, hi): (u8, u8), plain: &BTreeMap<u8, u8>) -> Option<(i16, bool)> {
+    let high = *plain.get(&hi)?;
+    let low = plain.get(&lo).copied();
+    Some((
+        i16::from_le_bytes([low.unwrap_or(0x80), high]),
+        low.is_some(),
+    ))
+}
+
 /// Build the chain outward from `anchor`, whose plaintext is 0, with
 /// `step` as the cipher for plaintext 1.
 pub fn byte_chain(pairs: &[BytePair], anchor: u8, step: u8) -> ByteChain {
@@ -1953,5 +2147,84 @@ mod tests {
         assert_eq!(shape(&[0, 0, 0, 40, 30, 0, 0, 0]), "bursts");
         assert_eq!(shape(&[1, 1, 1, 1, 1, 90]), "spiky");
         assert_eq!(shape(&[1]), "one minute");
+    }
+
+    /// Build a movement payload the way the class does, so the parser
+    /// is tested against the documented wire format rather than
+    /// against itself: entries into a buffer, the buffer substituted
+    /// and written back to front, behind a header.
+    fn movement_payload(entries: &[(u32, Vec<(i16, i16)>)], header: usize, sub: u8) -> Vec<u8> {
+        let mut buf: Vec<u8> = Vec::new();
+        for (unit, points) in entries {
+            let flags = u16::try_from(points.len()).unwrap() << 1;
+            buf.extend_from_slice(&flags.to_le_bytes());
+            buf.extend_from_slice(&unit.to_le_bytes());
+            buf.extend_from_slice(&325.0f32.to_le_bytes());
+            if points.len() > 1 {
+                // Absolute everywhere, so every coordinate is present.
+                buf.extend(std::iter::repeat_n(0u8, ((points.len() - 2) >> 2) + 1));
+            }
+            for (x, z) in points {
+                buf.extend_from_slice(&x.to_le_bytes());
+                buf.extend_from_slice(&z.to_le_bytes());
+            }
+        }
+        // A substitution is any permutation; XOR with a constant is one,
+        // and keeps the test's table easy to state.
+        let mut payload: Vec<u8> = std::iter::repeat_n(0xAAu8, header).collect();
+        payload.extend(buf.iter().rev().map(|b| b ^ sub));
+        payload
+    }
+
+    #[test]
+    fn positions_come_back_out_of_a_payload() {
+        const SUB: u8 = 0x5C;
+        let entries = vec![
+            (0x4000_0034u32, vec![(100i16, -200i16)]),
+            (0x4000_0035, vec![(1000, 2000), (1100, 2100), (1200, 2200)]),
+        ];
+        let payload = movement_payload(&entries, 3, SUB);
+        let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c ^ SUB)).collect();
+
+        let (found, parsed, seen) = positions(&[(0, 12.5, payload)], &plain);
+        assert_eq!((parsed, seen), (1, 1), "the payload must parse exactly");
+        assert_eq!(found.len(), 2, "one position per entry, its first waypoint");
+        assert!(found.iter().all(|p| p.exact));
+        // map_x / map_z double the stored value and add the origin.
+        assert_eq!((found[0].x, found[0].z), (map_x(100), map_z(-200)));
+        assert_eq!((found[1].x, found[1].z), (map_x(1000), map_z(2000)));
+        assert_eq!(found[0].unit, (0x34 ^ SUB, 0x00 ^ SUB));
+    }
+
+    #[test]
+    fn a_wrong_table_yields_nothing_rather_than_nonsense() {
+        let entries = vec![(0x4000_0034u32, vec![(100i16, -200i16)])];
+        let payload = movement_payload(&entries, 3, 0x5C);
+        // The identity is the wrong table here, so the entry stream
+        // cannot parse to its own length. Silence is the right answer.
+        let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c)).collect();
+        let (found, parsed, _) = positions(&[(0, 1.0, payload)], &plain);
+        assert_eq!(parsed, 0);
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_low_byte_is_flagged_and_bounded() {
+        const SUB: u8 = 0x5C;
+        let entries = vec![(0x4000_0034u32, vec![(0x1234i16, 0x5678i16)])];
+        let payload = movement_payload(&entries, 2, SUB);
+        // Everything known except the two coordinate low bytes.
+        let plain: BTreeMap<u8, u8> = (0..=255u8)
+            .map(|c| (c, c ^ SUB))
+            .filter(|(_, p)| *p != 0x34 && *p != 0x78)
+            .collect();
+        let (found, parsed, _) = positions(&[(0, 1.0, payload)], &plain);
+        assert_eq!(parsed, 1);
+        assert_eq!(found.len(), 1);
+        assert!(!found[0].exact, "a missing low byte has to be reported, not hidden");
+        // The low byte is taken as the middle of its range, so the error
+        // cannot exceed half a high byte: 128 stored units, 256 on the map.
+        assert!((found[0].x - map_x(0x1234)).abs() <= 256.0);
+        assert!((found[0].z - map_z(0x5678)).abs() <= 256.0);
     }
 }

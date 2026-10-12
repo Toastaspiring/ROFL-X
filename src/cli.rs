@@ -205,6 +205,29 @@ pub enum Command {
         #[arg(long)]
         dump_counts: Option<PathBuf>,
 
+        /// Write every unit position the movement class gives up, as
+        /// JSON lines. Coordinates carry the accuracy they were read
+        /// at: the table recovered from the file alone pins a
+        /// coordinate's high byte, which is ±256 map units, and
+        /// `--table` narrows that.
+        #[arg(long)]
+        dump_positions: Option<PathBuf>,
+
+        /// A fuller substitution table for the movement class, as the
+        /// `plaintext: payload byte` JSON object `--layout` prints.
+        /// Only the entries it adds are used, and the accuracy
+        /// reported with the positions is adjusted to match.
+        #[arg(long)]
+        table: Option<PathBuf>,
+
+        /// Read positions from this netid instead of the one the
+        /// movement class's shape picks out. The shape test is
+        /// patch-fragile — it selects the wrong class on 16.9 — so
+        /// naming the netid is what makes the result checkable against
+        /// a patch that decodes.
+        #[arg(long)]
+        positions_netid: Option<u16>,
+
         /// Output JSON path. Without it, a text report goes to stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -258,6 +281,9 @@ pub fn run(cli: Cli) -> Result<()> {
             dump_netid,
             dump,
             dump_counts,
+            dump_positions,
+            table,
+            positions_netid,
             output,
         } => match dump_netid {
             Some(netid) => self::dump_netid(&replays, netid, &dump),
@@ -266,8 +292,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 &reference,
                 &patch_dir,
                 self_test,
-                dump_counts.as_deref(),
-                output.as_deref(),
+                ExploreOutputs {
+                    counts: dump_counts.as_deref(),
+                    positions: dump_positions.as_deref(),
+                    table: table.as_deref(),
+                    positions_netid,
+                    report: output.as_deref(),
+                },
             ),
         },
     }
@@ -537,14 +568,36 @@ fn reference_names(patch_dir: &Path, replay: &Replay<'_>) -> BTreeMap<u16, Strin
         .collect()
 }
 
+/// Everything an `explore` run writes besides its own report, and the
+/// one input that only affects what it writes.
+struct ExploreOutputs<'a> {
+    /// `--dump-counts`: the statsJson proof's raw material.
+    counts: Option<&'a Path>,
+    /// `--dump-positions`: unit positions as JSON lines.
+    positions: Option<&'a Path>,
+    /// `--table`: extra substitution entries for the movement class.
+    table: Option<&'a Path>,
+    /// `--positions-netid`: read positions from this class instead of
+    /// the one the shape test picks.
+    positions_netid: Option<u16>,
+    /// `-o`: the JSON report, or a text summary to stdout without it.
+    report: Option<&'a Path>,
+}
+
 fn explore(
     replays: &[PathBuf],
     reference: &[PathBuf],
     patch_dir: &Path,
     self_test: bool,
-    dump_counts: Option<&Path>,
-    output: Option<&Path>,
+    outs: ExploreOutputs<'_>,
 ) -> Result<()> {
+    let ExploreOutputs {
+        counts: dump_counts,
+        positions: dump_positions,
+        table,
+        positions_netid,
+        report: output,
+    } = outs;
     use crate::explore::{
         champion_counts, explore as explore_one, framing, match_patches, match_stats, pool, Framing,
     };
@@ -610,6 +663,12 @@ fn explore(
     };
 
     let waypoints = solve_waypoints(replays)?;
+    let emitted = match dump_positions {
+        Some(path) => {
+            dump_positions_to(replays, waypoints.as_ref(), table, positions_netid, path)?
+        }
+        None => None,
+    };
 
     let mut out = serde_json::json!({
         "patch": patch,
@@ -626,6 +685,7 @@ fn explore(
         },
         "kill_timeline": killer,
         "waypoint_table": waypoints,
+        "positions": emitted,
     });
 
     if !reference.is_empty() {
@@ -1083,6 +1143,115 @@ fn player_counters(replay: &Replay<'_>) -> BTreeMap<String, Vec<i64>> {
     out.retain(|_, v| v.len() == stats.len());
     crate::explore::add_derived(&mut out);
     out
+}
+
+/// Write every position the movement class gives up, as JSON lines.
+///
+/// This is the movement half of the goal on a patch that cannot be
+/// decoded, and the honest part of it is the accuracy: a position read
+/// with only the coordinate's high byte is within 256 map units, and
+/// each line says which of the two it is rather than leaving the
+/// reader to assume.
+///
+/// The table comes from the chain `solve_waypoints` recovered on this
+/// patch, plus whatever `--table` adds. A wrong table does not produce
+/// wrong positions quietly: the entry stream has to parse to exactly
+/// its own length, so it produces none at all, which is why the parsed
+/// share is reported.
+fn dump_positions_to(
+    replays: &[PathBuf],
+    waypoints: Option<&Value>,
+    extra: Option<&Path>,
+    only: Option<u16>,
+    out: &Path,
+) -> Result<Option<Value>> {
+    use crate::explore::{blocks_of, positions};
+
+    // The chain is used when it solved, and when it solved the class
+    // being read: a table recovered for one class says nothing about
+    // another (§ "Two tables from the same patch are unrelated").
+    let solved = waypoints.filter(|w| w["solved"] == true);
+    let chain_netid = solved
+        .and_then(|w| w["netid"].as_u64())
+        .and_then(|n| u16::try_from(n).ok());
+    let Some(netid) = only.or(chain_netid) else {
+        return Ok(None);
+    };
+    let w = solved.filter(|_| chain_netid == Some(netid));
+
+    // The reports hold `plaintext -> payload byte`; reading a payload
+    // needs the other direction.
+    let mut plain: BTreeMap<u8, u8> = BTreeMap::new();
+    let mut from_chain = 0usize;
+    for (p, c) in w.map(|w| &w["table"]).and_then(Value::as_object).into_iter().flatten() {
+        if let (Ok(p), Some(c)) = (
+            u8::from_str_radix(p, 16),
+            c.as_str().and_then(|s| u8::from_str_radix(s, 16).ok()),
+        ) {
+            plain.insert(c, p);
+            from_chain += 1;
+        }
+    }
+    let mut added = 0usize;
+    if let Some(path) = extra {
+        let text = std::fs::read_to_string(path)?;
+        let parsed: BTreeMap<String, String> = serde_json::from_str(&text)?;
+        for (p, c) in parsed {
+            if let (Ok(p), Ok(c)) = (u8::from_str_radix(&p, 16), u8::from_str_radix(&c, 16)) {
+                if plain.insert(c, p).is_none() {
+                    added += 1;
+                }
+            }
+        }
+    }
+
+    let mut blocks: Vec<(usize, f32, Vec<u8>)> = Vec::new();
+    for (i, path) in replays.iter().enumerate() {
+        let bytes = std::fs::read(path)?;
+        let replay = Replay::parse(&bytes)?;
+        for (t, _, payload) in blocks_of(&replay, netid)? {
+            blocks.push((i, t, payload));
+        }
+    }
+    let (found, parsed, seen) = positions(&blocks, &plain);
+
+    let mut text = String::new();
+    let mut exact = 0u64;
+    for p in &found {
+        exact += u64::from(p.exact);
+        text.push_str(&format!(
+            "{{\"replay\":{},\"t\":{:.3},\"unit\":\"{:02x}{:02x}\",\
+             \"x\":{:.1},\"z\":{:.1},\"accuracy_map_units\":{}}}\n",
+            p.replay,
+            p.t,
+            p.unit.0,
+            p.unit.1,
+            p.x,
+            p.z,
+            if p.exact { 0 } else { 256 },
+        ));
+    }
+    std::fs::write(out, text)?;
+    eprintln!("wrote {} positions to {}", found.len(), out.display());
+
+    let units: std::collections::HashSet<(u8, u8)> = found.iter().map(|p| p.unit).collect();
+    Ok(Some(serde_json::json!({
+        "netid": netid,
+        "file": out.display().to_string(),
+        "positions": found.len(),
+        "units": units.len(),
+        "payloads_parsed": parsed,
+        "payloads_seen": seen,
+        "table_entries": { "from_the_chain": from_chain, "added_by_table_option": added },
+        "exact_positions": exact,
+        "accuracy": "a position whose coordinate low bytes are in the table is \
+                     exact; otherwise the low byte is taken as the middle of its \
+                     range, so the position is within 256 map units of 15,000 \
+                     across. Which one each is, each line says.",
+        "check": "a payload has to parse to exactly its own length or it \
+                  contributes nothing, so a wrong table yields no positions \
+                  rather than wrong ones",
+    })))
 }
 
 /// Lowercase hex of a block's raw payload, as it sits in the file.

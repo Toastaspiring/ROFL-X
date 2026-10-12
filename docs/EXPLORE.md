@@ -531,24 +531,32 @@ free choices:
   enough to enumerate against whatever a packed patch does offer — a
   range, an enum, a parse that has to come out exact.
 
-**It is not universal**, which is the other half of the finding. Of the
-six classes whose tables came out of 16.9, only the cast class is
-affine; the rest fit nothing:
+**But it is a one-off, which is the more important half.** The test was
+run over all 273 classes. `decode --layout` recovers a usable table
+for far fewer than that — 222 classes give none at all, their fields
+being too rare or too constant to pin — but of the **23** whose tables
+can be tested, exactly **one** is affine:
 
-| netid | affine fit | best alternative shape |
-|------:|-----------:|------------------------|
-| 985 `PKT_NPC_CastSpellAns_s` | **256 / 256** | — |
-| 201 | 84 / 256 | |
-| 652 | 48 / 256 | |
-| 876 | 38 / 256 | |
-| 347 | 34 / 255 | |
-| 916 WaypointGroup | 10 / 256 | affine mod 256: 7, rotate: 6 |
+| netid | affine fit |
+|------:|-----------:|
+| 985 `PKT_NPC_CastSpellAns_s` | **256 / 256** |
+| 201 | 84 / 256 |
+| 410 | 64 / 256 |
+| 652 | 48 / 256 |
+| 876 | 38 / 256 |
+| 347 | 34 / 255 |
+| 916 WaypointGroup | 10 / 256 |
+
+So this is not a shortcut into the format. It is one class whose
+payload-to-object byte relation happens to be a bit permutation, and
+whether that is the obfuscation differing or that class serialising
+its fields differently cannot be told from the file.
 
 The movement class is the one we most want and the least structured of
-them: 2 fixed points, and no multiplier, rotation or bit-reversal
-explains more than 7 of its 256. That is why its low byte had to be
-searched for rather than solved, and it says the search was not
-missing an obvious trick.
+all of them: 2 fixed points, and no multiplier, rotation or
+bit-reversal explains more than 7 of its 256. That is why its low byte
+had to be searched for rather than solved, and it says the search was
+not missing an obvious trick.
 
 So the first question to ask of a class on a packed patch is not "what
 are its 256 entries" but "is it affine", which a handful of pairs
@@ -869,6 +877,54 @@ here so the next attempt starts after them, not before.
 Taken together: the deltas hand over path shapes for free and no
 leverage on the table. The soft, scored route above remains the one
 that works.
+
+### Positions, emitted
+
+`explore --dump-positions` writes them as JSON lines, one per unit per
+moment, each carrying the accuracy it was read at:
+
+```json
+{"replay":0,"t":0.079,"unit":"3b42","x":1982.0,"z":2548.0,"accuracy_map_units":256}
+```
+
+`unit` is the cipher of the net id's low two bytes rather than the id,
+which cannot be read without more of the table; the same unit always
+gives the same pair, which is what following one through a game needs.
+
+**Checked against the game's own answer first.** Given the table that
+`decode --layout` recovers on 16.9, the file-only parser is run over
+the movement class and compared with the positions the deserializer
+produced from its own plaintext buffer:
+
+| | |
+|---|---|
+| payloads parsed | **46,418 of 46,418** |
+| positions | 172,857 over 5,662 units |
+| identical to the deserializer's | **172,857 — all of them** |
+| in one output but not the other | 0 |
+
+So the wire format and the table handling are right, which is the part
+that could not be checked on a patch with no binary.
+
+On **16.19**, with only the chain's 27 entries:
+
+| | |
+|---|---|
+| payloads parsed | 436,568 of 610,440 (71.5 %) |
+| positions | **1,761,827 over 28,508 units** |
+| exact | 19,647, where both low bytes fell in the chain |
+| the rest | within 256 map units of 15,000 across |
+
+A wrong table does not produce wrong positions quietly — the entry
+stream has to parse to exactly its own length, so it produces none at
+all, which is why the parsed share is reported and is unit-tested.
+
+Two honest notes. The 28.5 % of payloads that do not parse are ones
+whose flags or bitmap bytes fall outside the 27 known entries, so a
+fuller table would recover them too. And the class is named by its
+shape, which is **patch-fragile**: on 16.9 that test picks netid 1151
+and then fails its own checks, so `--positions-netid` exists to say
+which class to read — and is what made the validation above possible.
 
 **Where positions have got to.** Both classes that carry them are now
 partly read: the movement class to within a high byte, the death class

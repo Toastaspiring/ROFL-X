@@ -166,9 +166,10 @@ matter: it is a file, and most of it was never obscured. On the twenty
   the eight bit positions — affine over GF(2) on all 256 entries, and
   checked by decoding 11,898 held-out fields exactly. That makes its
   table 16 bits rather than 256 free choices, so nine pairs determine
-  it (measured: 247 of 247 predicted). Five other classes, including
-  the movement class, fit nothing of the kind — so it is a per-class
-  property worth testing, not a way in to all of them.
+  it (measured: 247 of 247 predicted). It is a one-off, though: of the
+  23 classes whose tables can be tested on 16.9 it is the only affine
+  one, the next closest fitting 84 of 256 — so it is an anomaly worth
+  testing for, not a way in to the format.
 - **Spell casts located:** netid 474 carries spell casts. It
   tracks the cast counters (r = +0.827) and not activity
   (r = −0.019 against minions killed); its surplus over the counter
@@ -193,8 +194,12 @@ matter: it is a file, and most of it was never obscured. On the twenty
   and never worse than 32 — every one of the 256 entries lands within
   16 steps of right, and the high byte being exact bounds the rest. A
   champion hitbox is about 65 units, so that is trajectory accuracy.
-  Accurate is still not exact — 53 of 256 entries are actually right —
-  so no positions are emitted from it yet.
+  Accurate is still not exact — 53 of 256 entries are actually right.
+- **Positions are emitted.** `explore --dump-positions` writes
+  **1,761,827 unit positions over 28,508 units** on 16.19 as JSON
+  lines, each carrying the accuracy it was read at. Validated on 16.9,
+  where the same parser given the decoder's table reproduces
+  **172,857 of 172,857** of the game's own positions exactly.
 
 Per-patch detail: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Plan:
 [docs/ROADMAP.md](docs/ROADMAP.md).

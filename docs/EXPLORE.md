@@ -672,12 +672,25 @@ side's lit ground is the ground around the units it owns, so the viewer
 fills the map dark and cuts holes at those positions.
 
 Units are not the only source. A turret sees 1350, the same as a
-champion, and grants it to its own side; a fountain covers its base,
-its range taken as the distance to that base's own nexus turrets —
-2261 units one side, 2196 the other, measured from the geometry rather
-than guessed. Adding those takes the lit share of the map from 20.7 %
-to **32.1 %** at a sampled moment, which is what a real minimap looks
-like: lanes lit along the tower line, and a base that glows.
+champion, and grants it to its own side. The turret at the spawn point
+sees far enough to cover the whole base, which is a statement about an
+area rather than a radius: the base is a triangle with three lane
+mouths, and a circle wide enough to reach its far corner — the mid
+inhibitor turret, 4,587 units out — would spill into the river and
+light ground the team cannot see.
+
+So the base is lit as its own shape. The fountain, the nexus, its two
+turrets, the three inhibitors and their turrets stand at the base's
+corners; their convex hull is the base, widened by 650 units to take in
+the floor between them and the walls. Checked point by point, that
+lights all twelve of a base's structures and nothing beyond them: the
+inner and outer turrets, the river, the side's own jungle and mid all
+stay dark. It covers 8.7 % of the map, which is about what a base is.
+
+Adding turrets and the two bases takes the lit share from 20.7 % to
+between **31 % and 41 %** depending on the moment, which is what a real
+minimap looks like: lanes lit along the tower line, and a base that
+glows.
 
 A fallen turret sees nothing, and nothing read so far says when one
 falls, since a structure never moves and so never sends a waypoint.

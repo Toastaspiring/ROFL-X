@@ -178,8 +178,10 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
     leaves at the next packet spread across the interval rather than dumped at its end —
     which is what otherwise makes a unit snap.
     How far a unit sees is not in the file, so the radii are the game's documented ones —
-    1350 for a champion or a turret, 1200 for a minion, and a fountain reaching its own
-    nexus turrets. A turret that has fallen still lights the map here, because nothing
+    1350 for a champion or a turret, 1200 for a minion. The base is lit as its own shape
+    rather than a radius, because the turret at the spawn point covers it and a circle
+    that wide would spill into the river. A turret that has fallen still lights the map
+    here, because nothing
     read so far says when one falls. Terrain is not modelled: walls block sight in
     the game and do not here, so the lit patches are round where they should be ragged. Drop a
     <code>rofl-x explore --dump-positions</code> JSONL onto the page to view another dump.
@@ -493,11 +495,32 @@ function drawFog() {
   fctx.globalCompositeOperation = "destination-out";
 
   /* Vision from the things that never move. A turret sees 1350, the
-     same as a champion, and gives it to its own side; the fountain
-     covers the base, its range taken as the distance to that base's own
-     nexus turrets. A fallen turret sees nothing, and nothing read so
-     far says when one falls -- a structure never moves, so it never
-     sends a waypoint -- so late in a game this is generous. */
+     same as a champion, and gives it to its own side. A fallen turret
+     sees nothing, and nothing read so far says when one falls -- a
+     structure never moves, so it never sends a waypoint -- so late in a
+     game this is generous.
+
+     The turret at the spawn point sees far enough to cover the base, so
+     rather than a radius the base is lit as its own shape: the hull of
+     the structures standing behind the inhibitors, widened to the
+     walls. A circle reaching the far corner of the base would spill
+     into the river. */
+  for (const r of (data[patch].base_vision || [])) {
+    if (r.team !== eye || !r.ring || r.ring.length < 3) continue;
+    fctx.beginPath();
+    r.ring.forEach(([x, z], i) =>
+      i ? fctx.lineTo(sx(x), sy(z)) : fctx.moveTo(sx(x), sy(z)));
+    fctx.closePath();
+    fctx.fillStyle = "rgba(0,0,0,1)";
+    fctx.fill();
+    /* Stroking the same ring widens it past the structures themselves,
+       which is what puts the base floor and its walls inside. */
+    fctx.strokeStyle = "rgba(0,0,0,1)";
+    fctx.lineJoin = "round";
+    fctx.lineCap = "round";
+    fctx.lineWidth = toPx(r.pad || 650) * 2;
+    fctx.stroke();
+  }
   for (const v of (data[patch].static_vision || [])) {
     if (v.team !== eye) continue;
     const r = toPx(v.sight);

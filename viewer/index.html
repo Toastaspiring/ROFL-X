@@ -174,7 +174,9 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
     is read from the replay's own visibility packets, and so is which side owns a unit.
     <strong>Movement:</strong> a packet is a click, not a position — it carries the path
     asked for and the unit's speed, and the unit is usually interrupted before arriving,
-    so units are walked along their path at their own speed.
+    so units are walked along their path at their own speed, with the small error that
+    leaves at the next packet spread across the interval rather than dumped at its end —
+    which is what otherwise makes a unit snap.
     How far a unit sees is not in the file, so the radii are the game's documented ones —
     1350 for a champion, 1200 for a minion. Terrain is not modelled: walls block sight in
     the game and do not here, so the lit patches are round where they should be ragged. Drop a
@@ -336,17 +338,38 @@ function span() {
   return hi;
 }
 
-/* Where a unit is at `time`, by walking its last order at its speed.
+/* Where a unit is at `time`. Continuous, by construction.
 
    A movement packet is a *click*: it carries the path the player asked
-   the unit to walk, not where the unit went. The unit sets off at its
-   own speed and is usually interrupted by the next click long before it
-   arrives, so the end of a path is a destination and not a position.
+   for and the unit's speed, not where the unit went. Walking that path
+   at that speed predicts the next packet's position well -- a median of
+   7 map units out on a patch whose positions are known to be the game's
+   own, 16 on 16.19 -- but "well" is not "exactly", and the leftover is
+   dumped at the packet boundary, which is the snap.
 
-   The order carries that speed, and it reads as one -- a median of 381
-   map units a second across this replay, 350 commonest, which is what
-   champions and minions actually walk. So the unit is put `speed *
-   elapsed` along its path, and stops at the end if it got there. */
+   So the leftover is spread across the interval instead. The unit
+   follows its real path at its real speed, and the small correction
+   needed to arrive exactly where the next packet says it is grows
+   linearly from nothing at the start to all of it at the end. The
+   result is continuous at every order boundary: no snap, and the shape
+   between boundaries is still the path the player clicked. */
+function along(path, dist) {
+  if (!path.length) return null;
+  if (path.length === 1) return path[0];
+  let left = dist;
+  for (let i = 0; i < path.length - 1; i++) {
+    const [ax, az] = path[i], [bx, bz] = path[i + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len === 0) continue;
+    if (left <= len) {
+      const u = left / len;
+      return [ax + (bx - ax) * u, az + (bz - az) * u];
+    }
+    left -= len;
+  }
+  return path[path.length - 1];
+}
+
 function walk(orders, time) {
   if (!orders || !orders.length) return null;
   let lo = 0, hi = orders.length - 1, found = -1;
@@ -358,22 +381,18 @@ function walk(orders, time) {
   if (found < 0) return null;
   const [t0, speed, path] = orders[found];
   if (!path || !path.length) return null;
-  if (path.length === 1) return path[0];
-  // A speed outside what a unit can walk means the field misread; fall
-  // back to the start of the path rather than flinging it somewhere.
-  if (!(speed > 100 && speed < 2500)) return path[0];
-  let left = Math.max(0, time - t0) * speed;
-  for (let i = 0; i < path.length - 1; i++) {
-    const [ax, az] = path[i], [bx, bz] = path[i + 1];
-    const len = Math.hypot(bx - ax, bz - az);
-    if (len === 0) continue;
-    if (left <= len) {
-      const u = left / len;
-      return [ax + (bx - ax) * u, az + (bz - az) * u];
-    }
-    left -= len;
-  }
-  return path[path.length - 1];          // it arrived and stopped there
+  // A speed outside what a unit can walk means the field misread; hold
+  // the reported position rather than flinging it somewhere.
+  const sp = speed > 100 && speed < 2500 ? speed : 0;
+  const here = sp ? along(path, (time - t0) * sp) : path[0];
+  const next = orders[found + 1];
+  if (!next || !next[2] || !next[2].length) return here;
+  const span = next[0] - t0;
+  if (!(span > 0.01)) return here;
+  const landing = sp ? along(path, span * sp) : path[0];
+  const [tx, tz] = next[2][0];
+  const u = Math.max(0, Math.min(1, (time - t0) / span));
+  return [here[0] + (tx - landing[0]) * u, here[1] + (tz - landing[1]) * u];
 }
 
 function at(track, time) {

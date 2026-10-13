@@ -50,6 +50,52 @@ def check(name: str, ok: bool, detail: str) -> None:
     print(f"  [{PASS if ok else FAIL}] {name}: {detail}")
 
 
+def _along(path, dist):
+    if len(path) == 1:
+        return path[0]
+    left = dist
+    for a, b in zip(path, path[1:]):
+        seg = math.dist(a, b)
+        if seg == 0:
+            continue
+        if left <= seg:
+            u = left / seg
+            return (a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u)
+        left -= seg
+    return path[-1]
+
+
+def _walker(orders):
+    """Position at any moment: the path at its speed, with the error
+    that leaves at the next order spread across the interval."""
+    def at(time):
+        lo, hi, found = 0, len(orders) - 1, -1
+        if not orders or orders[0][0] > time:
+            return None
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if orders[mid][0] <= time:
+                found, lo = mid, mid + 1
+            else:
+                hi = mid - 1
+        if found < 0:
+            return None
+        t0, sp, path = orders[found]
+        sp = sp if CHAMPION_SPEED[0] * 0.3 < sp < DASH_CEILING else 0
+        here = _along(path, (time - t0) * sp) if sp else path[0]
+        if found + 1 >= len(orders):
+            return here
+        t1, _, nxt = orders[found + 1]
+        span = t1 - t0
+        if span <= 0.01 or not nxt:
+            return here
+        landing = _along(path, span * sp) if sp else path[0]
+        u = max(0.0, min(1.0, (time - t0) / span))
+        return (here[0] + (nxt[0][0] - landing[0]) * u,
+                here[1] + (nxt[0][1] - landing[1]) * u)
+    return at
+
+
 def load(path):
     rows = [json.loads(line) for line in open(path, encoding="utf-8")]
     return [r for r in rows if r.get("replay", 0) == 0]
@@ -145,6 +191,36 @@ def main() -> int:
           f"{len(low)} units could be champions; the tenth busiest has "
           f"{counts[9] if len(counts) > 9 else 0} packets, the eleventh "
           f"{counts[10] if len(counts) > 10 else 0} ({gap:.0f}x apart)")
+
+    # --- the reconstruction is continuous -------------------------------
+    # A movement packet is a click: the path asked for and the speed to
+    # walk it. Walking that predicts the next packet well but not
+    # exactly, and dumping the leftover at the boundary is what makes a
+    # unit snap. Spreading it across the interval removes that, and this
+    # measures what is left -- which should only be the game's own
+    # teleports: a flash is 400 units, a recall is further.
+    champ_units = sorted(low.items(), key=lambda kv: -len(kv[1]))[:10] if low else []
+    worst = []
+    for _, v in champ_units:
+        orders = sorted((r["t"], r.get("speed", 0),
+                         [tuple(q) for q in (r.get("path") or [(r["x"], r["z"])])])
+                        for r in v)
+        at = _walker(orders)
+        if not orders:
+            continue
+        t, end, prev = orders[0][0], orders[-1][0], None
+        while t < end:
+            cur = at(t)
+            if cur and prev:
+                worst.append(math.dist(prev, cur))
+            prev, t = cur, t + 0.01
+    if worst:
+        worst.sort()
+        huge = sum(1 for d in worst if d > 600)
+        check("motion is continuous at 10ms", huge == 0,
+              f"{len(worst)} samples: median step {worst[len(worst)//2]:.2f}, "
+              f"99.9th {worst[int(len(worst)*0.999)]:.0f}, worst {worst[-1]:.0f} units; "
+              f"{huge} beyond a flash's 600")
 
     bad = sum(1 for _, ok, _ in results if not ok)
     print(f"\n{len(results) - bad} of {len(results)} checks passed")

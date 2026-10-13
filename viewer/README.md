@@ -51,9 +51,9 @@ map's own geometry so the check still works.
 
 ## Rebuilding its data from a replay
 
-`viewer_data.json` is produced by the `scripts/viewer_*.py` set. Each
-script's docstring lists the files it reads; they run in the working
-directory and expect those names. In outline:
+`viewer_data.json` is produced by the `scripts/viewer_*.py` set. Every
+path is an option with a default, so this runs as written from a
+directory holding the dumps:
 
 ```bash
 # 1. positions, and the report that goes with them
@@ -64,20 +64,26 @@ rofl-x explore -r <replay>.rofl --table table1619.json \
 # 2. deaths, which need no table -- the class names its victim in plaintext
 rofl-x explore -r <replay>.rofl --dump-netid <death netid> --dump deaths19.jsonl
 
-# 3. the scoreboard, for summoner spells and death counts to check against
-rofl-x summary -r <replay>.rofl > sum19.txt
+# 3. the scoreboard, which is what checks the rest
+rofl-x summary -r <replay>.rofl > summary.txt
+python scripts/viewer_truth.py --summary summary.txt --out truth1619.json
 
 # 4. vision from the things that never move, and the base's own footprint
 python scripts/viewer_vision.py
-python scripts/viewer_basepad.py
+python scripts/viewer_basepad.py --minimap viewer/map11.png
 
-# 5. deaths and recalls
+# 5. deaths, then recalls (which merge themselves into the same file)
 python scripts/viewer_events.py
 python scripts/viewer_recalls.py
 
 # 6. the page's data
-python scripts/viewer_build.py table
+python scripts/viewer_build.py
 ```
+
+Every path above is a default; `--help` on any script lists them. The
+one argument worth knowing is `viewer_build.py --table`: without a
+solved table the low byte of each coordinate is unknown, and the page
+says so and draws the error radius rather than pretending.
 
 ## Checking it without looking
 

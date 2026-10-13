@@ -27,12 +27,19 @@ working directory by these fixed names:
 Writes `viewer/viewer_data.json`. Pass any argument to use the solved
 16.19 table; without one it falls back to the unsolved low byte.
 """
-import collections, json, math, sys
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import math
+import os
 
 ORDER, CHAOS = (400.0, 400.0), (14400.0, 14400.0)
 ENTITY_CAP = 30000
 
-def build(pos_path, meta_path, table_path, anchor, label, accuracy):
+def build(pos_path, meta_path, table_path, anchor, label, accuracy,
+          extras=False):
     meta = json.load(open(meta_path))["replays"][0]
     roster = [p["champion"] for p in meta["players"]]
     first = int(meta["entities"]["champions"]["first"], 16)
@@ -108,9 +115,10 @@ def build(pos_path, meta_path, table_path, anchor, label, accuracy):
     # packets and from where the unit was born (see ownteam2).
     owners, inv = {}, {}
     try:
-        owners = {int(k, 16): v for k, v in json.load(open("owners1619.json")).items()}
+        owners = {int(k, 16): v for k, v in
+                  json.load(open(args.owners, encoding="utf-8")).items()}
         tab = {int(p, 16): int(c, 16) for p, c in
-               json.load(open("table1619.json")).items()}
+               json.load(open(args.table, encoding="utf-8")).items()}
         inv = {c: p for p, c in tab.items()}
     except FileNotFoundError:
         pass
@@ -119,70 +127,114 @@ def build(pos_path, meta_path, table_path, anchor, label, accuracy):
         lo, hi = inv.get(int(unit[0:2], 16)), inv.get(int(unit[2:4], 16))
         if lo is None or hi is None:
             return 0
-        return {"order": 1, "chaos": 2}.get(owners.get(0x40000000 | (hi << 8) | lo), 0)
+        return {"order": 1, "chaos": 2}.get(
+            owners.get(0x40000000 | (hi << 8) | lo), 0)
 
     picked = set(u for u, _ in champs)
-    others = [(p[0], p[1], p[2], side(u)) for u, v in units.items() if u not in picked
-              for p in v]
+    others = [(p[0], p[1], p[2], side(u)) for u, v in units.items()
+              if u not in picked for p in v]
     step = max(1, len(others) // ENTITY_CAP)
     ents = [[round(t, 1), round(x), round(z), s] for t, x, z, s in others[::step]]
+
+    # The map furniture, the fog and the events are only built for the
+    # patch they were derived from. Which one that is used to be guessed
+    # from the positions file's name; it is now said outright.
     extra = {}
-    try:
-        fog = json.load(open("fog1619.json")) if "1sr" in pos_path else {}
-        for u, rec in out.items():
+    if extras:
+        fog = load(args.fog, {})
+        for rec in out.values():
             if rec["name"] in fog:
                 rec["seen_by"] = {"order": fog[rec["name"]]["by_order"],
                                   "chaos": fog[rec["name"]]["by_chaos"]}
         extra["fog"] = bool(fog)
-    except FileNotFoundError:
-        pass
-    try:
-        extra["camps"] = json.load(open("camps1619.json")) if "1sr" in pos_path else []
-    except FileNotFoundError:
-        extra["camps"] = []
-    try:
+        extra["camps"] = load(args.camps, [])
         # Positions of the units each side owns: the ground it lights.
-        extra["lit"] = json.load(open("lit1619.json")) if "1sr" in pos_path else {}
-    except FileNotFoundError:
-        extra["lit"] = {}
-    try:
-        extra["objects"] = json.load(open("objects1619.json")) if "1sr" in pos_path else []
-    except FileNotFoundError:
-        extra["objects"] = []
-    try:
-        # Vision from things that never move: towers and the fountain.
-        extra["static_vision"] = (json.load(open("static_vision.json"))
-                                  if "1sr" in pos_path else [])
-        extra["base_vision"] = (json.load(open("base_vision.json"))
-                                if "1sr" in pos_path else [])
-    except FileNotFoundError:
-        extra["static_vision"] = []
-        extra["base_vision"] = []
-    try:
-        # Deaths (from the death class) and recalls, so the page can stop
-        # drawing a champion that is not on the field.
-        extra["events"] = (json.load(open("events1619.json"))
-                           if "1sr" in pos_path else [])
-    except FileNotFoundError:
-        extra["events"] = []
+        extra["lit"] = load(args.lit, {})
+        extra["objects"] = load(args.objects, [])
+        # Vision from the things that never move.
+        extra["static_vision"] = load(args.towers, [])
+        extra["base_vision"] = load(args.regions, [])
+        # Deaths and recalls, so the page can stop drawing a champion
+        # that is not on the field.
+        extra["events"] = load(args.events, [])
+    else:
+        extra = {"fog": False, "camps": [], "lit": {}, "objects": [],
+                 "static_vision": [], "base_vision": [], "events": []}
     return {"label": label, "accuracy": accuracy, "roster": roster,
             "units": out, "entities": ents, "entity_total": len(others), **extra}
 
-data = {}
-TAB9 = {int(p, 16): int(c, 16) for p, c in json.load(open("true916_table.json")).items()}
-ANCHOR19 = int(json.load(open("e1sr.json"))["waypoint_table"]["anchor"], 16)
-data["patch_16_9"] = build("pos916.jsonl", "e9meta.json", "true916_table.json", TAB9[0x00],
-                           "16.9 — control, verified identical to the game's own decoder",
-                           "exact")
-table1619 = "table1619.json" if len(sys.argv) > 1 else None
-data["patch_16_19"] = build("pos1sr_t.jsonl" if table1619 else "pos1sr.jsonl", "e1sr.json", table1619, ANCHOR19,
-                            "16.19 — read from the file alone",
-                            "high byte exact, low byte searched" if table1619
-                            else "high byte exact, low byte unknown: ±256 map units")
-for k, v in data.items():
-    named = sum(1 for u in v["units"].values() if u["name"])
-    print(f"{k}: {named}/10 named, {len(v['entities'])} entity dots "
-          f"of {v['entity_total']}, teams "
-          f"{collections.Counter(u['team'] for u in v['units'].values())}")
-json.dump(data, open("viewer/viewer_data.json", "w"), separators=(",", ":"))
-print("wrote viewer/viewer_data.json")
+def load(path, empty):
+    """A file the page can do without, or what to use when it is absent."""
+    try:
+        return json.load(open(path, encoding="utf-8"))
+    except FileNotFoundError:
+        return empty
+
+
+def main() -> int:
+    global args
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    g = ap.add_argument_group("the patch under judgement")
+    g.add_argument("--positions", default="pos1sr_t.jsonl",
+                   help="`explore --dump-positions` output")
+    g.add_argument("--meta", default="e1sr.json", help="its `explore` report")
+    g.add_argument("--table", default="table1619.json",
+                   help="the movement class's table; omit if it is unsolved")
+    g.add_argument("--label", default="16.19 — read from the file alone")
+
+    g = ap.add_argument_group("the control, decoded by the game's own binary")
+    g.add_argument("--control-positions", default="pos916.jsonl")
+    g.add_argument("--control-meta", default="e9meta.json")
+    g.add_argument("--control-table", default="true916_table.json")
+    g.add_argument("--control-label",
+                   default="16.9 — control, verified identical to the game's own decoder")
+
+    g = ap.add_argument_group("what else the page draws, all optional")
+    g.add_argument("--owners", default="owners1619.json")
+    g.add_argument("--fog", default="fog1619.json")
+    g.add_argument("--camps", default="camps1619.json")
+    g.add_argument("--lit", default="lit1619.json")
+    g.add_argument("--objects", default="objects1619.json")
+    g.add_argument("--towers", default="static_vision.json")
+    g.add_argument("--regions", default="base_vision.json")
+    g.add_argument("--events", default="events1619.json")
+
+    ap.add_argument("--out", default="viewer/viewer_data.json")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.table):
+        print(f"no table at {args.table}: the low byte stays unknown, "
+              f"so positions carry ±256 map units")
+        args.table = None
+
+    tab9 = {int(p, 16): int(c, 16) for p, c in
+            json.load(open(args.control_table, encoding="utf-8")).items()}
+    anchor = int(json.load(open(args.meta, encoding="utf-8"))
+                 ["waypoint_table"]["anchor"], 16)
+
+    data = {
+        "patch_16_9": build(args.control_positions, args.control_meta,
+                            args.control_table, tab9[0x00],
+                            args.control_label, "exact", extras=False),
+        "patch_16_19": build(args.positions, args.meta, args.table, anchor,
+                             args.label,
+                             "high byte exact, low byte searched" if args.table
+                             else "high byte exact, low byte unknown: "
+                                  "±256 map units",
+                             extras=True),
+    }
+    for k, v in data.items():
+        named = sum(1 for u in v["units"].values() if u["name"])
+        print(f"{k}: {named}/10 named, {len(v['entities'])} entity dots "
+              f"of {v['entity_total']}, teams "
+              f"{collections.Counter(u['team'] for u in v['units'].values())}")
+    json.dump(data, open(args.out, "w", encoding="utf-8"),
+              separators=(",", ":"))
+    print(f"wrote {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

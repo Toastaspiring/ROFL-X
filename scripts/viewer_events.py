@@ -33,7 +33,12 @@ Writes jumps1619.json (every event, including the ones too uncertain to
 draw) and events1619.json (the deaths). Recalls are replaced by
 viewer_recalls.py, which finds them by their channel instead.
 """
-import collections, json, math
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import math
 
 FOUNTAIN = {"order": (420.0, 440.0), "chaos": (14340.0, 14390.0)}
 # A champion that is dead or not yet in play is parked just outside its
@@ -66,120 +71,152 @@ def along(path, dist):
     return path[-1]
 
 
-data = json.load(open("viewer/viewer_data.json"))["patch_16_19"]
-champs = {k: v for k, v in data["units"].items() if v.get("name")}
-first = int(json.load(open("e1sr.json"))["replays"][0]["entities"]["champions"]["first"], 16)
-TAB = {int(p, 16): int(c, 16) for p, c in json.load(open("table1619.json")).items()}
-INV = {c: p for p, c in TAB.items()}
-truth = json.load(open("truth1619.json"))
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--positions", default="pos1sr_t.jsonl",
+                    help="`explore --dump-positions` output")
+    ap.add_argument("--meta", default="e1sr.json",
+                    help="the `explore` report for the same replay")
+    ap.add_argument("--table", default="table1619.json",
+                    help="the movement class's substitution table")
+    ap.add_argument("--deaths", default="deaths19.jsonl",
+                    help="`explore --dump-netid <death class>` output")
+    ap.add_argument("--viewer-data", default="viewer/viewer_data.json",
+                    help="a build of the page's data, for the named units")
+    ap.add_argument("--patch", default="patch_16_19",
+                    help="which patch inside that file to read")
+    ap.add_argument("--truth", default="truth1619.json",
+                    help="summoner spells and deaths, from viewer_truth.py")
+    ap.add_argument("--jumps-out", default="jumps1619.json",
+                    help="where to write every event, drawable or not")
+    ap.add_argument("--out", default="events1619.json",
+                    help="where to write the deaths the page draws")
+    args = ap.parse_args()
 
-def parked(r, team):
-    """A position at the side's own corner, outside the map, is not a
-    position: it is the stream declining to report the unit. 93% of the
-    ones that fall there with the champion alive are moments the enemy
-    could not see it. Treating them as positions invents a jump across
-    the map and back."""
-    return math.dist((r["x"], r["z"]), PARK[team]) < 900
+    data = json.load(open(args.viewer_data, encoding="utf-8"))[args.patch]
+    champs = {k: v for k, v in data["units"].items() if v.get("name")}
+    first = int(json.load(open(args.meta, encoding="utf-8"))["replays"][0]["entities"]["champions"]["first"], 16)
+    TAB = {int(p, 16): int(c, 16) for p, c in json.load(open(args.table, encoding="utf-8")).items()}
+    INV = {c: p for p, c in TAB.items()}
+    truth = json.load(open(args.truth, encoding="utf-8"))
+
+    def parked(r, team):
+        """A position at the side's own corner, outside the map, is not a
+        position: it is the stream declining to report the unit. 93% of the
+        ones that fall there with the champion alive are moments the enemy
+        could not see it. Treating them as positions invents a jump across
+        the map and back."""
+        return math.dist((r["x"], r["z"]), PARK[team]) < 900
 
 
-rows = collections.defaultdict(list)
-for line in open("pos1sr_t.jsonl", encoding="utf-8"):
-    r = json.loads(line)
-    rows[r["unit"]].append(r)
-for k, rec in champs.items():
-    rows[k] = [r for r in rows[k] if not parked(r, rec["team"])]
-deaths_by_idx = collections.defaultdict(list)
-for line in open("deaths19.jsonl", encoding="utf-8"):
-    r = json.loads(line)
-    p = int(r["param"], 16) if isinstance(r["param"], str) else r["param"]
-    if 0 <= p - first < 10:
-        deaths_by_idx[p - first].append(r["t"])
+    rows = collections.defaultdict(list)
+    for line in open(args.positions, encoding="utf-8"):
+        r = json.loads(line)
+        rows[r["unit"]].append(r)
+    for k, rec in champs.items():
+        rows[k] = [r for r in rows[k] if not parked(r, rec["team"])]
+    deaths_by_idx = collections.defaultdict(list)
+    for line in open(args.deaths, encoding="utf-8"):
+        r = json.loads(line)
+        p = int(r["param"], 16) if isinstance(r["param"], str) else r["param"]
+        if 0 <= p - first < 10:
+            deaths_by_idx[p - first].append(r["t"])
 
-events = []
-for key, rec in champs.items():
-    lo, hi = INV.get(int(key[0:2], 16)), INV.get(int(key[2:4], 16))
-    idx = (0x40000000 | (hi << 8) | lo) - first if lo is not None and hi is not None else -1
-    ds = sorted(deaths_by_idx.get(idx, []))
-    team, name = rec["team"], rec["name"]
-    v = sorted(rows[key], key=lambda r: r["t"])
+    events = []
+    for key, rec in champs.items():
+        lo, hi = INV.get(int(key[0:2], 16)), INV.get(int(key[2:4], 16))
+        idx = (0x40000000 | (hi << 8) | lo) - first if lo is not None and hi is not None else -1
+        ds = sorted(deaths_by_idx.get(idx, []))
+        team, name = rec["team"], rec["name"]
+        v = sorted(rows[key], key=lambda r: r["t"])
 
-    # Deaths come from the death class. A champion is down from the
-    # death until its next packet, and that reappearance is a respawn,
-    # not a walk.
-    for d in ds:
-        nxt = next((r for r in v if r["t"] > d), None)
-        # Where it fell: the last position it reported while still alive.
-        last = None
-        for r in v:
-            if r["t"] > d:
-                break
-            last = r
-        events.append({"unit": key, "name": name, "team": team, "kind": "death",
-                       "t": round(d, 2), "until": round(nxt["t"], 2) if nxt else None,
-                       "at": [round(last["x"]), round(last["z"])] if last else None,
-                       "to": [round(nxt["x"]), round(nxt["z"])] if nxt else None})
+        # Deaths come from the death class. A champion is down from the
+        # death until its next packet, and that reappearance is a respawn,
+        # not a walk.
+        for d in ds:
+            nxt = next((r for r in v if r["t"] > d), None)
+            # Where it fell: the last position it reported while still alive.
+            last = None
+            for r in v:
+                if r["t"] > d:
+                    break
+                last = r
+            events.append({"unit": key, "name": name, "team": team, "kind": "death",
+                           "t": round(d, 2), "until": round(nxt["t"], 2) if nxt else None,
+                           "at": [round(last["x"]), round(last["z"])] if last else None,
+                           "to": [round(nxt["x"]), round(nxt["z"])] if nxt else None})
 
-    raw = []
-    for a, b in zip(v, v[1:]):
-        dt = b["t"] - a["t"]
-        if dt <= 0:
-            continue
-        path = [tuple(p) for p in (a.get("path") or [(a["x"], a["z"])])]
-        sp = a.get("speed") or 0
-        landed = along(path, dt * sp) if 100 < sp < 2200 else path[0]
-        err = math.dist(landed, (b["x"], b["z"]))
-        if err > UNEXPLAINED:
-            raw.append((b["t"], landed, (b["x"], b["z"]), err))
+        raw = []
+        for a, b in zip(v, v[1:]):
+            dt = b["t"] - a["t"]
+            if dt <= 0:
+                continue
+            path = [tuple(p) for p in (a.get("path") or [(a["x"], a["z"])])]
+            sp = a.get("speed") or 0
+            landed = along(path, dt * sp) if 100 < sp < 2200 else path[0]
+            err = math.dist(landed, (b["x"], b["z"]))
+            if err > UNEXPLAINED:
+                raw.append((b["t"], landed, (b["x"], b["z"]), err))
 
-    # Collapse runs into single events.
-    for t, src, dst, err in raw:
-        if events and events[-1].get("unit") == key and events[-1]["kind"] != "death" \
-                and t - events[-1]["t"] < SAME_EVENT:
-            events[-1]["t"] = round(t, 2)
-            events[-1]["to"] = [round(dst[0]), round(dst[1])]
-            events[-1]["jump"] = round(math.dist(events[-1]["raw_from"], dst))
-            continue
-        after_death = any(d < t <= d + REVIVE for d in ds)
-        at_spawn = (math.dist(dst, FOUNTAIN[team]) < AT_SPAWN
-                    or math.dist(dst, PARK[team]) < AT_SPAWN)
-        from_far = math.dist(src, FOUNTAIN[team]) > CAME_FROM
-        kind = ("respawn" if after_death and at_spawn else
-                "recall" if at_spawn and from_far else
-                "near-spawn" if at_spawn else
-                "blink" if err < BLINK else "teleport")
-        events.append({"unit": key, "name": name, "team": team, "kind": kind,
-                       "t": round(t, 2), "from": [round(c) for c in src],
-                       "raw_from": src, "to": [round(c) for c in dst],
-                       "jump": round(err)})
-for e in events:
-    e.pop("raw_from", None)
+        # Collapse runs into single events.
+        for t, src, dst, err in raw:
+            if events and events[-1].get("unit") == key and events[-1]["kind"] != "death" \
+                    and t - events[-1]["t"] < SAME_EVENT:
+                events[-1]["t"] = round(t, 2)
+                events[-1]["to"] = [round(dst[0]), round(dst[1])]
+                events[-1]["jump"] = round(math.dist(events[-1]["raw_from"], dst))
+                continue
+            after_death = any(d < t <= d + REVIVE for d in ds)
+            at_spawn = (math.dist(dst, FOUNTAIN[team]) < AT_SPAWN
+                        or math.dist(dst, PARK[team]) < AT_SPAWN)
+            from_far = math.dist(src, FOUNTAIN[team]) > CAME_FROM
+            kind = ("respawn" if after_death and at_spawn else
+                    "recall" if at_spawn and from_far else
+                    "near-spawn" if at_spawn else
+                    "blink" if err < BLINK else "teleport")
+            events.append({"unit": key, "name": name, "team": team, "kind": kind,
+                           "t": round(t, 2), "from": [round(c) for c in src],
+                           "raw_from": src, "to": [round(c) for c in dst],
+                           "jump": round(err)})
+    for e in events:
+        e.pop("raw_from", None)
 
-kinds = collections.Counter(e["kind"] for e in events)
-print("events found, against what the replay says they should be:\n")
-print(f"   {'champion':<13} {'death':>13} {'respawn':>8} {'recall':>7} "
-      f"{'teleport':>18} {'blink':>15}")
-tot = collections.Counter()
-for name in sorted({e["name"] for e in events}):
-    c = collections.Counter(e["kind"] for e in events if e["name"] == name)
-    sp = truth[name]["spells"]
-    tp_truth = sp.get("Teleport"); fl_truth = sp.get("Flash")
-    tot["tp_truth"] += tp_truth or 0
-    tot["fl_truth"] += fl_truth or 0
-    print(f"   {name:<13} {c['death']:>5} of {truth[name]['deaths']:<4} "
-          f"{c['respawn']:>8} {c['recall']:>7} "
-          f"{c['teleport']:>8} of {('%s' % tp_truth) if tp_truth is not None else 'none':<6} "
-          f"{c['blink']:>6} of {('%s' % fl_truth) if fl_truth is not None else 'none':<5}")
-print(f"\n   totals: {kinds['death']} deaths of {sum(t['deaths'] for t in truth.values())}, "
-      f"{kinds['respawn']} respawns, {kinds['recall']} recalls, "
-      f"{kinds['teleport']} teleports of {tot['tp_truth']}, "
-      f"{kinds['blink']} blinks of {tot['fl_truth']} flashes")
-json.dump(events, open("jumps1619.json", "w"), separators=(",", ":"))
+    kinds = collections.Counter(e["kind"] for e in events)
+    print("events found, against what the replay says they should be:\n")
+    print(f"   {'champion':<13} {'death':>13} {'respawn':>8} {'recall':>7} "
+          f"{'teleport':>18} {'blink':>15}")
+    tot = collections.Counter()
+    for name in sorted({e["name"] for e in events}):
+        c = collections.Counter(e["kind"] for e in events if e["name"] == name)
+        sp = truth[name]["spells"]
+        tp_truth = sp.get("Teleport"); fl_truth = sp.get("Flash")
+        tot["tp_truth"] += tp_truth or 0
+        tot["fl_truth"] += fl_truth or 0
+        print(f"   {name:<13} {c['death']:>5} of {truth[name]['deaths']:<4} "
+              f"{c['respawn']:>8} {c['recall']:>7} "
+              f"{c['teleport']:>8} of {('%s' % tp_truth) if tp_truth is not None else 'none':<6} "
+              f"{c['blink']:>6} of {('%s' % fl_truth) if fl_truth is not None else 'none':<5}")
+    print(f"\n   totals: {kinds['death']} deaths of {sum(t['deaths'] for t in truth.values())}, "
+          f"{kinds['respawn']} respawns, {kinds['recall']} recalls, "
+          f"{kinds['teleport']} teleports of {tot['tp_truth']}, "
+          f"{kinds['blink']} blinks of {tot['fl_truth']} flashes")
+    json.dump(events, open(args.jumps_out, "w", encoding="utf-8"), separators=(",", ":"))
 
-keep = [e for e in events if e["kind"] in ("death", "recall")]
-json.dump(keep, open("events1619.json", "w"), separators=(",", ":"))
-print()
-print(f"wrote {len(keep)} drawable events to events1619.json "
-      f"({kinds['death']} deaths, {kinds['recall']} recalls)")
-print(f"left undrawn: {kinds['teleport']} unexplained jumps that are not "
-      f"teleports -- statsJson says the game held 2 -- plus {kinds['blink']} "
-      f"short ones against 33 flashes. Neither is separable yet.")
+    # Deaths only. The recalls found here, by their jump, are the worse
+    # way of finding them -- viewer_recalls.py looks for the channel
+    # instead and merges its own into this file.
+    keep = [e for e in events if e["kind"] == "death"]
+    json.dump(keep, open(args.out, "w", encoding="utf-8"), separators=(",", ":"))
+    print()
+    print(f"wrote {len(keep)} drawable events to {args.out} "
+          f"({kinds['death']} deaths; recalls come from viewer_recalls.py)")
+    print(f"left undrawn: {kinds['teleport']} unexplained jumps that are not "
+          f"teleports -- statsJson says the game held 2 -- plus {kinds['blink']} "
+          f"short ones against 33 flashes. Neither is separable yet.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

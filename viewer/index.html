@@ -124,6 +124,9 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
         <button id="play">Play</button>
         <span id="clock">0:00</span>
         <input id="scrub" type="range" min="0" max="100" value="0" step="0.1" aria-label="Match time">
+        <label style="display:flex;gap:6px;align-items:center;font-size:0.88rem;color:var(--dim)">
+          <input type="checkbox" id="showEnts" checked> minions &amp; others
+        </label>
         <select id="speed" aria-label="Speed">
           <option value="1">1×</option>
           <option value="4">4×</option>
@@ -144,13 +147,14 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
         <h2>Units</h2>
         <div class="scroller">
           <table>
-            <thead><tr><th>unit</th><th>packets</th><th>fountain</th></tr></thead>
+            <thead><tr><th>unit</th><th>packets</th><th>named by</th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
-        <p class="note" style="margin-top:8px">Identity is inferred, not read: these are the ten
-          low-id units that walk all game. Team comes from which fountain each one visits.
-          <code>unit</code> is the obfuscated net id, which cannot be decoded yet.</p>
+        <p class="note" style="margin-top:8px">A unit named <em>by net id</em> was decoded with
+          the class's table and looked up in the champion run, so the name is read rather than
+          guessed. One named <em>by shape</em> is a unit the table cannot reach yet: it keeps its
+          obfuscated key, and its team comes from which fountain it visits.</p>
       </div>
     </div>
   </div>
@@ -175,6 +179,15 @@ const ictx = ink.getContext("2d");
 const $ = (id) => document.getElementById(id);
 
 let data = null, patch = "patch_16_19", mode = "all", picked = null;
+const icons = {};
+function loadIcons(names) {
+  for (const n of names) {
+    if (!n || icons[n]) continue;
+    const img = new Image();
+    img.onload = () => { icons[n] = img; render(); };
+    img.src = `champ/${n}.png`;
+  }
+}
 let t = 0, playing = false, last = 0;
 
 const sx = (x) => (x - MAPMIN_X) / (MAPMAX_X - MAPMIN_X) * SIZE;
@@ -242,8 +255,28 @@ function at(track, time) {
   return found < 0 ? null : track[found];
 }
 
+function entities() { return (data && data[patch].entities) || []; }
+
+function drawEntities() {
+  const es = entities();
+  if (!es.length || !$("showEnts").checked) return;
+  ictx.fillStyle = "#cfd8c6";
+  if (mode === "all") {
+    ictx.globalAlpha = 0.22;
+    for (const [, x, z] of es) ictx.fillRect(sx(x) - 0.5, sy(z) - 0.5, 1.5, 1.5);
+  } else {
+    ictx.globalAlpha = 0.5;
+    for (const [tt, x, z] of es) {
+      if (tt < t - 2 || tt > t + 2) continue;
+      ictx.fillRect(sx(x) - 1, sy(z) - 1, 2, 2);
+    }
+  }
+  ictx.globalAlpha = 1;
+}
+
 function render() {
   ictx.clearRect(0, 0, SIZE, SIZE);
+  drawEntities();
   const us = units();
   if (mode === "all") {
     for (const [key, u] of Object.entries(us)) {
@@ -259,6 +292,7 @@ function render() {
     const now = at(u.track, t);
     if (!now) continue;
     const colour = TEAM[u.team] || TEAM.unknown;
+    void key;
     const dim = picked && key !== picked;
 
     ictx.globalAlpha = dim ? 0.18 : 0.55;
@@ -285,13 +319,29 @@ function render() {
       ictx.stroke();
     }
     ictx.globalAlpha = dim ? 0.3 : 1;
-    ictx.fillStyle = colour;
-    ictx.beginPath();
-    ictx.arc(cx, cy, dim ? 3 : 4.5, 0, Math.PI * 2);
-    ictx.fill();
-    ictx.strokeStyle = "#0b1114";
-    ictx.lineWidth = 1.2;
-    ictx.stroke();
+    const icon = u.name && icons[u.name];
+    if (icon) {
+      const r = dim ? 7 : 10;
+      ictx.save();
+      ictx.beginPath();
+      ictx.arc(cx, cy, r, 0, Math.PI * 2);
+      ictx.clip();
+      ictx.drawImage(icon, cx - r, cy - r, r * 2, r * 2);
+      ictx.restore();
+      ictx.strokeStyle = colour;
+      ictx.lineWidth = 2;
+      ictx.beginPath();
+      ictx.arc(cx, cy, r, 0, Math.PI * 2);
+      ictx.stroke();
+    } else {
+      ictx.fillStyle = colour;
+      ictx.beginPath();
+      ictx.arc(cx, cy, dim ? 3 : 4.5, 0, Math.PI * 2);
+      ictx.fill();
+      ictx.strokeStyle = "#0b1114";
+      ictx.lineWidth = 1.2;
+      ictx.stroke();
+    }
   }
   ictx.globalAlpha = 1;
 }
@@ -311,16 +361,20 @@ function sidebar() {
     `<div class="verdict"><span class="dot" style="background:${colour}"></span>
        <span>${verdict}</span></div>
      <div class="verdict"><span class="dot" style="background:var(--dim)"></span>
-       <span>${Object.keys(us).length} units, ${Object.values(us)
-         .reduce((a, u) => a + u.track.length, 0).toLocaleString()} samples at 1 Hz.</span></div>`;
+       <span>${Object.keys(us).length} champions, ${Object.values(us)
+         .reduce((a, u) => a + u.track.length, 0).toLocaleString()} samples at 1 Hz, plus
+         ${(d.entities || []).length.toLocaleString()} positions of minions, monsters and
+         everything else the class carries.</span></div>`;
   $("accuracy").textContent = d.label + " — " + d.accuracy + ".";
 
   $("rows").innerHTML = Object.entries(us)
     .sort((a, b) => b[1].packets - a[1].packets)
     .map(([k, u]) => `<tr data-k="${k}" class="${picked === k ? "pick" : ""}">
-      <td><span class="swatch" style="background:${TEAM[u.team] || TEAM.unknown}"></span>${k}</td>
+      <td><span class="swatch" style="background:${TEAM[u.team] || TEAM.unknown}"></span>${
+        u.name || k}</td>
       <td>${u.packets.toLocaleString()}</td>
-      <td>${u.near_order}&thinsp;/&thinsp;${u.near_chaos}</td></tr>`).join("");
+      <td>${u.name ? "net id" : "shape"}</td></tr>`).join("");
+  loadIcons(Object.values(us).map((u) => u.name));
   for (const tr of $("rows").children) {
     tr.onclick = () => { picked = picked === tr.dataset.k ? null : tr.dataset.k; sidebar(); render(); };
   }
@@ -379,6 +433,7 @@ $("p9").onclick = () => setPatch("patch_16_9");
 $("p19").onclick = () => setPatch("patch_16_19");
 $("vPlay").onclick = () => setMode("play");
 $("vAll").onclick = () => setMode("all");
+$("showEnts").onchange = render;
 addEventListener("keydown", (e) => {
   if (e.key === " ") { e.preventDefault(); $("play").click(); }
   if (e.key === "ArrowRight") { t = Math.min(span(), t + 5); $("scrub").value = t; render(); }

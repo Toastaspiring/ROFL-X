@@ -1213,11 +1213,12 @@ fn dump_positions_to(
             blocks.push((i, t, payload));
         }
     }
-    let (found, parsed, seen) = positions(&blocks, &plain);
+    let got = positions(&blocks, &plain);
+    let found = &got.found;
 
     let mut text = String::new();
     let mut exact = 0u64;
-    for p in &found {
+    for p in found {
         exact += u64::from(p.exact);
         text.push_str(&format!(
             "{{\"replay\":{},\"t\":{:.3},\"unit\":\"{:02x}{:02x}\",\
@@ -1240,8 +1241,9 @@ fn dump_positions_to(
         "file": out.display().to_string(),
         "positions": found.len(),
         "units": units.len(),
-        "payloads_parsed": parsed,
-        "payloads_seen": seen,
+        "payloads_parsed": got.parsed,
+        "payloads_seen": got.seen,
+        "entries_off_the_map": got.off_map,
         "table_entries": { "from_the_chain": from_chain, "added_by_table_option": added },
         "exact_positions": exact,
         "accuracy": "a position whose coordinate low bytes are in the table is \

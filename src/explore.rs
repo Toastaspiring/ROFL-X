@@ -759,6 +759,9 @@ struct Entry {
 const ENTRY_HEAD: usize = 10;
 /// Header lengths tried when looking for the one that parses exactly.
 const HEADER_MAX: usize = 12;
+/// What counts as on the map, with room for the fringes a unit can
+/// stand on. The same bound `packet::handlers::waypoints` applies.
+const ON_MAP: std::ops::Range<f32> = -1000.0..16000.0;
 
 /// Read positions out of a movement class with only a partial table.
 ///
@@ -768,15 +771,14 @@ const HEADER_MAX: usize = 12;
 /// byte is taken as the middle of its range, which is what makes the
 /// error bound half a high byte either way.
 ///
-/// Returns the positions and how many payloads parsed to exactly their
-/// own length, which is the check that the table and the header length
-/// are both right: a wrong table fails it on the first block.
-pub fn positions(
-    blocks: &[(usize, f32, Vec<u8>)],
-    plain: &BTreeMap<u8, u8>,
-) -> (Vec<Position>, u64, u64) {
+/// Returns the positions, how many payloads parsed to exactly their own
+/// length, and how many entries had to be dropped for landing off the
+/// map. Those two together are the check on the table: a wrong one
+/// either fails to parse or parses into nonsense, and both are counted
+/// rather than hidden.
+pub fn positions(blocks: &[(usize, f32, Vec<u8>)], plain: &BTreeMap<u8, u8>) -> Positions {
     let mut out = Vec::new();
-    let (mut parsed, mut seen) = (0u64, 0u64);
+    let (mut parsed, mut seen, mut off_map) = (0u64, 0u64, 0u64);
     for (replay, t, payload) in blocks {
         seen += 1;
         // Exactly one header length may parse, or the block is dropped:
@@ -799,6 +801,15 @@ pub fn positions(
             else {
                 continue;
             };
+            // A point off the map is not a position, it is a misparse.
+            // With a partial table the parse itself rejects those, since
+            // an unknown byte stops it; with a full one every byte reads
+            // as something and the structure has to be checked here
+            // instead. `waypoints.rs` applies the same bound.
+            if !ON_MAP.contains(&map_x(x)) || !ON_MAP.contains(&map_z(z)) {
+                off_map += 1;
+                continue;
+            }
             out.push(Position {
                 replay: *replay,
                 t: *t,
@@ -809,7 +820,18 @@ pub fn positions(
             });
         }
     }
-    (out, parsed, seen)
+    Positions { found: out, parsed, seen, off_map }
+}
+
+/// What [`positions`] read, and what it had to throw away.
+pub struct Positions {
+    pub found: Vec<Position>,
+    /// Payloads whose entry stream parsed to exactly its own length.
+    pub parsed: u64,
+    pub seen: u64,
+    /// Entries that parsed but put a unit off the map, so the parse was
+    /// wrong however well it fitted.
+    pub off_map: u64,
 }
 
 /// A coordinate from its two payload bytes, and whether it is exact.
@@ -2186,8 +2208,10 @@ mod tests {
         let payload = movement_payload(&entries, 3, SUB);
         let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c ^ SUB)).collect();
 
-        let (found, parsed, seen) = positions(&[(0, 12.5, payload)], &plain);
-        assert_eq!((parsed, seen), (1, 1), "the payload must parse exactly");
+        let got = positions(&[(0, 12.5, payload)], &plain);
+        let found = &got.found;
+        assert_eq!((got.parsed, got.seen), (1, 1), "the payload must parse exactly");
+        assert_eq!(got.off_map, 0, "every point here is on the map");
         assert_eq!(found.len(), 2, "one position per entry, its first waypoint");
         assert!(found.iter().all(|p| p.exact));
         // map_x / map_z double the stored value and add the origin.
@@ -2203,28 +2227,32 @@ mod tests {
         // The identity is the wrong table here, so the entry stream
         // cannot parse to its own length. Silence is the right answer.
         let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c)).collect();
-        let (found, parsed, _) = positions(&[(0, 1.0, payload)], &plain);
-        assert_eq!(parsed, 0);
-        assert!(found.is_empty());
+        let got = positions(&[(0, 1.0, payload)], &plain);
+        assert_eq!(got.parsed, 0);
+        assert!(got.found.is_empty());
     }
 
     #[test]
     fn an_unknown_low_byte_is_flagged_and_bounded() {
         const SUB: u8 = 0x5C;
-        let entries = vec![(0x4000_0034u32, vec![(0x1234i16, 0x5678i16)])];
+        // On the map, since an off-map point is now dropped as a
+        // misparse: 0x0a34 reads 12,582 across and 0x0c78 reads 13,796
+        // down. The low bytes 0x34 and 0x78 are still the unknown ones.
+        let entries = vec![(0x4000_0034u32, vec![(0x0a34i16, 0x0c78i16)])];
         let payload = movement_payload(&entries, 2, SUB);
         // Everything known except the two coordinate low bytes.
         let plain: BTreeMap<u8, u8> = (0..=255u8)
             .map(|c| (c, c ^ SUB))
             .filter(|(_, p)| *p != 0x34 && *p != 0x78)
             .collect();
-        let (found, parsed, _) = positions(&[(0, 1.0, payload)], &plain);
-        assert_eq!(parsed, 1);
+        let got = positions(&[(0, 1.0, payload)], &plain);
+        let found = &got.found;
+        assert_eq!(got.parsed, 1);
         assert_eq!(found.len(), 1);
         assert!(!found[0].exact, "a missing low byte has to be reported, not hidden");
         // The low byte is taken as the middle of its range, so the error
         // cannot exceed half a high byte: 128 stored units, 256 on the map.
-        assert!((found[0].x - map_x(0x1234)).abs() <= 256.0);
-        assert!((found[0].z - map_z(0x5678)).abs() <= 256.0);
+        assert!((found[0].x - map_x(0x0a34)).abs() <= 256.0);
+        assert!((found[0].z - map_z(0x0c78)).abs() <= 256.0);
     }
 }

@@ -234,7 +234,35 @@ function visible(u, t) {
   for (const [a, b] of spans) if (t >= a && t <= b) return true;
   return false;
 }
-const icons = {}, objIcons = {};
+const icons = {}, objIcons = {}, tinted = {};
+
+/* The structure icons ship as neutral grey masks, and the game tints
+   them per side with a per-channel multiply: blue side scales red down
+   and blue up, red side the reverse. Same matrix Code-De-La-League
+   uses, applied once per icon and cached. Camps, drakes and baron are
+   already coloured and are left alone. */
+const NEUTRAL = new Set(["tower", "tower_low", "tower_medium", "inhibitor", "nexus"]);
+const TINT = { order: [0.42, 0.95, 1.3], chaos: [1.3, 0.36, 0.36] };
+
+function tint(img, team) {
+  const key = `${img.src}|${team}`;
+  if (tinted[key]) return tinted[key];
+  const c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  const x = c.getContext("2d");
+  x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, c.width, c.height);
+  const [kr, kg, kb] = TINT[team] || [1, 1, 1];
+  for (let i = 0; i < d.data.length; i += 4) {
+    d.data[i] = Math.min(255, d.data[i] * kr);
+    d.data[i + 1] = Math.min(255, d.data[i + 1] * kg);
+    d.data[i + 2] = Math.min(255, d.data[i + 2] * kb);
+  }
+  x.putImageData(d, 0, 0);
+  tinted[key] = c;
+  return c;
+}
 function loadObjIcons(names) {
   for (const n of names) {
     if (!n || objIcons[n]) continue;
@@ -320,18 +348,35 @@ function at(track, time) {
 
 function entities() { return (data && data[patch].entities) || []; }
 
+/* Everything that is not a champion, coloured by the side that owns
+   it. Which side is read: from the visibility packets, and from which
+   base the unit was born next to. A unit whose side could not be
+   decided stays neutral rather than being guessed at.
+
+   Size is a different matter. A minion's *kind* -- melee, caster,
+   siege, super -- is not readable from the movement class, which
+   carries a position and nothing that distinguishes them, so every
+   one is drawn the same. The spawn class names units on a patch that
+   decodes; until that class is read on 16.19 the kinds are unknown
+   and drawing them at different sizes would be invention. */
+const SIDE = ["#cfd8c6", "#4aa3e8", "#e8615c"];
 function drawEntities() {
   const es = entities();
   if (!es.length || !$("showEnts").checked) return;
-  ictx.fillStyle = "#cfd8c6";
   if (mode === "all") {
-    ictx.globalAlpha = 0.22;
-    for (const [, x, z] of es) ictx.fillRect(sx(x) - 0.5, sy(z) - 0.5, 1.5, 1.5);
+    ictx.globalAlpha = 0.26;
+    for (const [, x, z, side] of es) {
+      ictx.fillStyle = SIDE[side || 0];
+      ictx.fillRect(sx(x) - 0.5, sy(z) - 0.5, 1.5, 1.5);
+    }
   } else {
-    ictx.globalAlpha = 0.5;
-    for (const [tt, x, z] of es) {
+    ictx.globalAlpha = 0.75;
+    for (const [tt, x, z, side] of es) {
       if (tt < t - 2 || tt > t + 2) continue;
-      ictx.fillRect(sx(x) - 1, sy(z) - 1, 2, 2);
+      ictx.fillStyle = SIDE[side || 0];
+      ictx.beginPath();
+      ictx.arc(sx(x), sy(z), 2, 0, Math.PI * 2);
+      ictx.fill();
     }
   }
   ictx.globalAlpha = 1;
@@ -357,7 +402,8 @@ function drawObjects() {
     const cx = sx(o.x), cy = sy(o.z);
     if (img) {
       ictx.globalAlpha = o.spans ? 1 : 0.85;
-      ictx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+      const art = o.team && NEUTRAL.has(o.icon) ? tint(img, o.team) : img;
+      ictx.drawImage(art, cx - w / 2, cy - h / 2, w, h);
       ictx.globalAlpha = 1;
     } else {
       ictx.strokeStyle = "#e8d6a0";

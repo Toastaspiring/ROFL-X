@@ -342,11 +342,25 @@ function loadObjIcons(names) {
     img.src = `obj/${n}.png`;
   }
 }
+/* Champion portraits: beside the page if they were fetched there, and
+   Riot's own Data Dragon otherwise, so a clone of the repository works
+   without 600 KB of Riot's art committed into it. The names are already
+   Data Dragon's own keys, which is what makes the second line work. */
+const DDRAGON = "https://ddragon.leagueoflegends.com/cdn/16.20.1/img/champion";
 function loadIcons(names) {
   for (const n of names) {
     if (!n || icons[n]) continue;
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => { icons[n] = img; render(); };
+    /* `img.src` reads back as the absolute URL, so the fallback is
+       tracked with a flag rather than by looking at it. */
+    let tried = false;
+    img.onerror = () => {
+      if (tried) return;
+      tried = true;
+      img.src = `${DDRAGON}/${n}.png`;
+    };
     img.src = `champ/${n}.png`;
   }
 }

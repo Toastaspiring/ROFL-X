@@ -645,9 +645,16 @@ pub struct Position {
     pub unit: (u8, u8),
     pub x: f32,
     pub z: f32,
-    /// True when both coordinates' low bytes were in the table, so the
-    /// position is exact rather than within half a high byte.
+    /// True when every coordinate's low byte was in the table, so the
+    /// path is exact rather than within half a high byte.
     pub exact: bool,
+    /// Move speed in map units a second, as the class carries it.
+    pub speed: f32,
+    /// The whole path the unit was told to walk, `(x, z)` each. The
+    /// first point is where it is at `t`; a packet is an order to walk,
+    /// not a teleport, so where the unit is between packets is a point
+    /// along this at `speed`.
+    pub path: Vec<(f32, f32)>,
 }
 
 /// Map coordinate from a stored value: `docs/PACKETS.md`, WaypointGroup.
@@ -685,24 +692,33 @@ fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Opt
         return None;
     }
     let at = |j: usize| payload[n - 1 - j];
+    let read = |j: usize| plain.get(&at(j)).copied();
     let mut j = 0usize;
     let mut out = Vec::new();
     while j < limit {
         if j + ENTRY_HEAD > limit {
             return None;
         }
-        let flags = *plain.get(&at(j))?;
+        let start = j;
+        let flags = read(start)?;
         let count = usize::from(flags >> 1);
         if count == 0 {
             return None; // zero waypoints: the format does not allow it
         }
-        // Buffer index j is the flags' low byte, so the net id starts
-        // at j + 2 and its low two bytes are j + 2 and j + 3. Those
-        // identify the unit: reading one byte further would key on
-        // bytes that are near-constant across the game and quietly
-        // merge units together.
-        let unit = (at(j + 2), at(j + 3));
-        j += ENTRY_HEAD + usize::from(flags & 1);
+        // Buffer index `start` is the flags' low byte, so the net id
+        // runs from start + 2 and the move speed from start + 6. The
+        // id's low two bytes identify the unit: reading one byte
+        // further would key on bytes that are near-constant across the
+        // game and quietly merge units together.
+        let unit = (at(start + 2), at(start + 3));
+        let speed = f32::from_le_bytes([
+            read(start + 6)?,
+            read(start + 7)?,
+            read(start + 8)?,
+            read(start + 9)?,
+        ]);
+        j = start + ENTRY_HEAD + usize::from(flags & 1);
+
         let mut bitmap: Vec<u8> = Vec::new();
         if count > 1 {
             let width = ((count - 2) >> 2) + 1;
@@ -710,7 +726,7 @@ fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Opt
                 return None;
             }
             for b in 0..width {
-                bitmap.push(*plain.get(&at(j + b))?);
+                bitmap.push(read(j + b)?);
             }
             j += width;
         }
@@ -719,39 +735,51 @@ fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Opt
                 .get(i >> 3)
                 .is_some_and(|byte| byte & (1 << (i & 7)) != 0)
         };
-        let mut first: Option<((u8, u8), (u8, u8))> = None;
+
+        // The whole path, not only where the unit is now. A waypoint
+        // after the first may be a signed one-byte step from the one
+        // before rather than a fresh pair, which is what the bitmap
+        // says. Carrying the running value is what makes a path out of
+        // the two kinds.
+        let mut points: Vec<(i16, i16)> = Vec::with_capacity(count);
+        let mut here = [0i16; 2];
+        let mut exact = true;
         for i in 0..count {
-            let mut coord = [(0u8, 0u8); 2];
-            for (axis, slot) in coord.iter_mut().enumerate() {
+            for (axis, value) in here.iter_mut().enumerate() {
                 if i > 0 && is_delta(2 * (i - 1) + axis) {
                     if j + 1 > limit {
                         return None;
                     }
+                    let step = read(j)? as i8;
+                    *value = value.wrapping_add(i16::from(step));
                     j += 1;
                 } else {
                     if j + 2 > limit {
                         return None;
                     }
-                    *slot = (at(j), at(j + 1));
+                    let high = read(j + 1)?;
+                    let low = read(j);
+                    exact &= low.is_some();
+                    *value = i16::from_le_bytes([low.unwrap_or(0x80), high]);
                     j += 2;
                 }
             }
-            if i == 0 {
-                first = Some((coord[0], coord[1]));
-            }
+            points.push((here[0], here[1]));
         }
-        let (x, z) = first?;
-        out.push(Entry { unit, x, z });
+        out.push(Entry { unit, speed, points, exact });
     }
     (j == limit).then_some(out)
 }
 
-/// One entry's unit and the ciphers of its first waypoint, low byte
-/// then high byte per axis.
+/// One unit's move order: where it is, how fast it walks, and the path
+/// it was told to walk. The first point is where it is now.
 struct Entry {
     unit: (u8, u8),
-    x: (u8, u8),
-    z: (u8, u8),
+    speed: f32,
+    points: Vec<(i16, i16)>,
+    /// False when a coordinate's low byte was not in the table, so the
+    /// point is within half a high byte rather than exact.
+    exact: bool,
 }
 
 /// Bytes every entry carries before its optional extra byte: the
@@ -796,27 +824,30 @@ pub fn positions(blocks: &[(usize, f32, Vec<u8>)], plain: &BTreeMap<u8, u8>) -> 
         }
         parsed += 1;
         for e in hit.into_iter().flatten() {
-            let (Some((x, x_exact)), Some((z, z_exact))) =
-                (value(e.x, plain), value(e.z, plain))
-            else {
-                continue;
-            };
+            let path: Vec<(f32, f32)> =
+                e.points.iter().map(|(x, z)| (map_x(*x), map_z(*z))).collect();
             // A point off the map is not a position, it is a misparse.
             // With a partial table the parse itself rejects those, since
             // an unknown byte stops it; with a full one every byte reads
             // as something and the structure has to be checked here
             // instead. `waypoints.rs` applies the same bound.
-            if !ON_MAP.contains(&map_x(x)) || !ON_MAP.contains(&map_z(z)) {
+            if path
+                .iter()
+                .any(|(x, z)| !ON_MAP.contains(x) || !ON_MAP.contains(z))
+            {
                 off_map += 1;
                 continue;
             }
+            let Some(&(x, z)) = path.first() else { continue };
             out.push(Position {
                 replay: *replay,
                 t: *t,
                 unit: e.unit,
-                x: map_x(x),
-                z: map_z(z),
-                exact: x_exact && z_exact,
+                x,
+                z,
+                exact: e.exact,
+                speed: e.speed,
+                path,
             });
         }
     }
@@ -832,20 +863,6 @@ pub struct Positions {
     /// Entries that parsed but put a unit off the map, so the parse was
     /// wrong however well it fitted.
     pub off_map: u64,
-}
-
-/// A coordinate from its two payload bytes, and whether it is exact.
-///
-/// The high byte must be known. An unknown low byte is taken as the
-/// middle of its range, which is what bounds the error at half a high
-/// byte — 256 map units — rather than leaving it unbounded.
-fn value((lo, hi): (u8, u8), plain: &BTreeMap<u8, u8>) -> Option<(i16, bool)> {
-    let high = *plain.get(&hi)?;
-    let low = plain.get(&lo).copied();
-    Some((
-        i16::from_le_bytes([low.unwrap_or(0x80), high]),
-        low.is_some(),
-    ))
 }
 
 /// Build the chain outward from `anchor`, whose plaintext is 0, with

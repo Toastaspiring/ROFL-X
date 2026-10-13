@@ -333,6 +333,55 @@ function span() {
   return hi;
 }
 
+/* Where a unit is at `time`, by walking its last order.
+
+   A movement packet is not a teleport. It carries the path the unit was
+   told to walk, so between two packets the unit is somewhere along that
+   path rather than sitting where the last packet reported it.
+
+   The order also carries a speed, and on a patch that decodes it reads
+   as one: a median of 395 map units a second, which is a champion's
+   walk. On 16.19 the same field reads 1400 with absurd outliers, so it
+   is not trusted here. Instead the path is walked in proportion to the
+   time until the next order, which uses only positions that were
+   actually read and arrives exactly where the next order says the unit
+   is. */
+function walk(orders, time) {
+  if (!orders || !orders.length) return null;
+  let lo = 0, hi = orders.length - 1, found = -1;
+  if (orders[0][0] > time) return null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (orders[mid][0] <= time) { found = mid; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  if (found < 0) return null;
+  const [t0, , path] = orders[found];
+  if (!path || path.length === 0) return null;
+  if (path.length === 1) return path[0];
+  const next = orders[found + 1];
+  const window = next ? next[0] - t0 : 0;
+  // No next order, or no time between them: the unit is at the path's end.
+  if (!(window > 0.05)) return path[path.length - 1];
+  const want = Math.max(0, Math.min(1, (time - t0) / window));
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    total += Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]);
+  }
+  if (total === 0) return path[0];
+  let left = want * total;
+  for (let i = 0; i < path.length - 1; i++) {
+    const [ax, az] = path[i], [bx, bz] = path[i + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len === 0) continue;
+    if (left <= len) {
+      const u = left / len;
+      return [ax + (bx - ax) * u, az + (bz - az) * u];
+    }
+    left -= len;
+  }
+  return path[path.length - 1];
+}
+
 function at(track, time) {
   // Last sample at or before `time`, and nothing if the unit has not
   // appeared yet — a champion absent from the stream is absent, not frozen
@@ -463,7 +512,8 @@ function render() {
     return;
   }
   for (const [key, u] of Object.entries(us)) {
-    const now = at(u.track, t);
+    const walked = walk(u.orders, t);
+    const now = walked ? [t, walked[0], walked[1], 0] : at(u.track, t);
     if (!now) continue;
     if (!visible(u, t)) continue;
     const colour = TEAM[u.team] || TEAM.unknown;

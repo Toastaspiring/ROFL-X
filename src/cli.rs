@@ -1220,15 +1220,23 @@ fn dump_positions_to(
     let mut exact = 0u64;
     for p in found {
         exact += u64::from(p.exact);
+        // The path and the speed go out alongside the position, because
+        // a packet is an order to walk and not a teleport: where a unit
+        // is between two packets is a point along `path` at `speed`.
+        let path: Vec<String> =
+            p.path.iter().map(|(x, z)| format!("[{x:.1},{z:.1}]")).collect();
         text.push_str(&format!(
             "{{\"replay\":{},\"t\":{:.3},\"unit\":\"{:02x}{:02x}\",\
-             \"x\":{:.1},\"z\":{:.1},\"accuracy_map_units\":{}}}\n",
+             \"x\":{:.1},\"z\":{:.1},\"speed\":{:.1},\"path\":[{}],\
+             \"accuracy_map_units\":{}}}\n",
             p.replay,
             p.t,
             p.unit.0,
             p.unit.1,
             p.x,
             p.z,
+            p.speed,
+            path.join(","),
             if p.exact { 0 } else { 256 },
         ));
     }

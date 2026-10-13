@@ -626,6 +626,23 @@ the enemy comes out as:
 Junglers spending half as long in enemy sight as laners is the check
 that this is real and not an artefact of how the windows are paired.
 
+**Whose unit is it** follows from the same packets, and the rule reads
+backwards at first. The visibility pair fires when a team *gains or
+loses* sight, so a side generates no events at all for its own units —
+it can always see them. The owner is therefore the team with **fewer**
+events, not more. That places all ten champions on the right side, and
+decides 2,860 of the 9,941 units; the rest see equal traffic from both
+sides and stay undecided.
+
+That is what lets the fog be *drawn* rather than merely applied. A
+side's lit ground is the ground around the units it owns, so the viewer
+fills the map dark and cuts holes at those positions. Two halves of
+that are different in kind and the page says so: **which units a side
+could see is read from the file; how far a unit sees is not in the file
+at all**, so the lit radius is a model, about 1150 map units. The lit
+area is also an undercount, since only the 39 % of positions whose
+owner could be decided light anything.
+
 ### What the movement class already shows besides champions
 
 Monsters walk inside their camp, so a camp is a place where units stay

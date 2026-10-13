@@ -108,6 +108,7 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
     <div class="mapcard">
       <div class="stage">
         <canvas id="map" width="640" height="640"></canvas>
+        <canvas id="fog" width="640" height="640"></canvas>
         <canvas id="ink" width="640" height="640"></canvas>
         <div id="fallback">Minimap image unavailable — lanes drawn from the map's own geometry.</div>
       </div>
@@ -169,8 +170,11 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
 
   <footer>
     Minimap from Riot's Data Dragon (<code>map11.png</code>, 16.20.1). Map coordinates
-    −120…14870 across, −120…14980 down. Drop a <code>rofl-x explore --dump-positions</code>
-    JSONL onto the page to view another dump.
+    −120…14870 across, −120…14980 down. <strong>Fog:</strong> which units a side could see
+    is read from the replay's own visibility packets; how far a unit sees is not in the
+    file, so the lit radius is a model (about 1150 map units) and the dark is drawn from
+    the positions of the units that side owns. Drop a
+    <code>rofl-x explore --dump-positions</code> JSONL onto the page to view another dump.
   </footer>
 </div>
 
@@ -179,10 +183,14 @@ const MAPMIN_X = -120, MAPMAX_X = 14870, MAPMIN_Z = -120, MAPMAX_Z = 14980;
 const SIZE = 640;
 const TEAM = { order: "#4aa3e8", chaos: "#e8615c", unknown: "#b9a469" };
 const TRAIL_S = 14;
+const SIGHT = 1150;
+const SIGHT_PX = SIGHT / (MAPMAX_X - MAPMIN_X) * SIZE;
 
 const base = document.getElementById("map");
 const ink = document.getElementById("ink");
+const fog = document.getElementById("fog");
 const bctx = base.getContext("2d");
+const fctx = fog.getContext("2d");
 const ictx = ink.getContext("2d");
 const $ = (id) => document.getElementById(id);
 
@@ -309,7 +317,34 @@ function drawCamps() {
   ictx.globalAlpha = 1;
 }
 
+/* Fog the ground a side cannot see. Which units a side could see is
+   read from the file; how far a unit sees is not in the file at all, so
+   the lit radius is a model and is marked as one in the page. */
+function drawFog() {
+  fctx.clearRect(0, 0, SIZE, SIZE);
+  const lit = (data && data[patch].lit) || {};
+  const own = lit[eye];
+  if (eye === "all" || !own || !own.length) return;
+  fctx.fillStyle = "rgba(3, 7, 10, 0.86)";
+  fctx.fillRect(0, 0, SIZE, SIZE);
+  fctx.globalCompositeOperation = "destination-out";
+  const window_s = mode === "all" ? Infinity : 2.5;
+  for (const [tt, x, z] of own) {
+    if (Math.abs(tt - t) > window_s) continue;
+    const cx = sx(x), cy = sy(z);
+    const g = fctx.createRadialGradient(cx, cy, SIGHT_PX * 0.45, cx, cy, SIGHT_PX);
+    g.addColorStop(0, "rgba(0,0,0,1)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    fctx.fillStyle = g;
+    fctx.beginPath();
+    fctx.arc(cx, cy, SIGHT_PX, 0, Math.PI * 2);
+    fctx.fill();
+  }
+  fctx.globalCompositeOperation = "source-over";
+}
+
 function render() {
+  drawFog();
   ictx.clearRect(0, 0, SIZE, SIZE);
   drawEntities();
   drawCamps();

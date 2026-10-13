@@ -178,7 +178,9 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
     leaves at the next packet spread across the interval rather than dumped at its end —
     which is what otherwise makes a unit snap.
     How far a unit sees is not in the file, so the radii are the game's documented ones —
-    1350 for a champion, 1200 for a minion. Terrain is not modelled: walls block sight in
+    1350 for a champion or a turret, 1200 for a minion, and a fountain reaching its own
+    nexus turrets. A turret that has fallen still lights the map here, because nothing
+    read so far says when one falls. Terrain is not modelled: walls block sight in
     the game and do not here, so the lit patches are round where they should be ragged. Drop a
     <code>rofl-x explore --dump-positions</code> JSONL onto the page to view another dump.
   </footer>
@@ -489,6 +491,25 @@ function drawFog() {
   fctx.fillStyle = "rgba(3, 7, 10, 0.86)";
   fctx.fillRect(0, 0, SIZE, SIZE);
   fctx.globalCompositeOperation = "destination-out";
+
+  /* Vision from the things that never move. A turret sees 1350, the
+     same as a champion, and gives it to its own side; the fountain
+     covers the base, its range taken as the distance to that base's own
+     nexus turrets. A fallen turret sees nothing, and nothing read so
+     far says when one falls -- a structure never moves, so it never
+     sends a waypoint -- so late in a game this is generous. */
+  for (const v of (data[patch].static_vision || [])) {
+    if (v.team !== eye) continue;
+    const r = toPx(v.sight);
+    const cx = sx(v.x), cy = sy(v.z);
+    const g = fctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, r);
+    g.addColorStop(0, "rgba(0,0,0,1)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    fctx.fillStyle = g;
+    fctx.beginPath();
+    fctx.arc(cx, cy, r, 0, Math.PI * 2);
+    fctx.fill();
+  }
   const window_s = mode === "all" ? Infinity : 2.5;
   for (const [tt, x, z, sight] of own) {
     if (Math.abs(tt - t) > window_s) continue;

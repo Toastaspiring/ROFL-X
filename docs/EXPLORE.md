@@ -669,7 +669,19 @@ sides and stay undecided.
 
 That is what lets the fog be *drawn* rather than merely applied. A
 side's lit ground is the ground around the units it owns, so the viewer
-fills the map dark and cuts holes at those positions. Two halves of
+fills the map dark and cuts holes at those positions.
+
+Units are not the only source. A turret sees 1350, the same as a
+champion, and grants it to its own side; a fountain covers its base,
+its range taken as the distance to that base's own nexus turrets —
+2261 units one side, 2196 the other, measured from the geometry rather
+than guessed. Adding those takes the lit share of the map from 20.7 %
+to **32.1 %** at a sampled moment, which is what a real minimap looks
+like: lanes lit along the tower line, and a base that glows.
+
+A fallen turret sees nothing, and nothing read so far says when one
+falls, since a structure never moves and so never sends a waypoint.
+Late in a game this is therefore generous, and the page says so. Two halves of
 that are different in kind and the page says so: **which units a side
 could see is read from the file; how far a unit sees is not in the file
 at all**, so the lit radius is a model, about 1150 map units. The lit

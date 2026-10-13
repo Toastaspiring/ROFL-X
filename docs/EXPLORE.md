@@ -562,6 +562,39 @@ So the first question to ask of a class on a packed patch is not "what
 are its 256 entries" but "is it affine", which a handful of pairs
 answers.
 
+### A movement packet is a click
+
+The waypoint class does not report where a unit is. It reports where a
+player asked it to go: the path, and the speed to walk it at. The unit
+sets off and is usually interrupted by the next click long before
+arriving, so the end of a path is a destination and not a position.
+Reading only the first waypoint, as this did at first, throws away
+everything in between and makes a unit teleport from click to click.
+
+The speed is also a sharp test of the table, because it has to come out
+as a speed. On 16.9 it reads a median of **395** map units a second
+against a champion's 325 walking and about 500 with boots, peaking at
+1780 for dashes. On 16.19 it read **1524**, which is not a walk — and
+trying every offset in the entry found none that read better, so the
+field had not moved and the table was wrong at its bytes.
+
+**One entry fixed it.** A speed in [256, 512) can only have the
+exponent byte `0x43`, and that position shows a single cipher `0xcb`
+95 % of the time, so `T(0x43) = 0xcb`. The table had `0x44` there,
+one step out, which doubles every speed:
+
+| | median | within 250–650 | commonest |
+|---|--:|--:|---|
+| before | 1428 | 0.3 % | 1400, 1524, 1576 |
+| after | **381** | **95.5 %** | **350**, 381, 394, 337, 357 |
+
+Those are champion and minion speeds. The mantissa needed no forcing:
+its commonest cipher `0xe5` was already pinned to `0xaf` by the
+champion naming, and `0x43AF0000` is 350 — which is why 350 comes out
+commonest. An earlier attempt that forced the mantissa too stole
+`0xe5` from Cho'Gath and dropped the naming to 9 of 10, which is how
+the overreach was caught.
+
 ### Naming a champion, and what that pays for
 
 The movement class calls a unit by its net id, which sits behind the

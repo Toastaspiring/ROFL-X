@@ -172,6 +172,9 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
     Minimap from Riot's Data Dragon (<code>map11.png</code>, 16.20.1). Map coordinates
     −120…14870 across, −120…14980 down. <strong>Fog:</strong> which units a side could see
     is read from the replay's own visibility packets, and so is which side owns a unit.
+    <strong>Movement:</strong> a packet is a click, not a position — it carries the path
+    asked for and the unit's speed, and the unit is usually interrupted before arriving,
+    so units are walked along their path at their own speed.
     How far a unit sees is not in the file, so the radii are the game's documented ones —
     1350 for a champion, 1200 for a minion. Terrain is not modelled: walls block sight in
     the game and do not here, so the lit patches are round where they should be ragged. Drop a
@@ -333,19 +336,17 @@ function span() {
   return hi;
 }
 
-/* Where a unit is at `time`, by walking its last order.
+/* Where a unit is at `time`, by walking its last order at its speed.
 
-   A movement packet is not a teleport. It carries the path the unit was
-   told to walk, so between two packets the unit is somewhere along that
-   path rather than sitting where the last packet reported it.
+   A movement packet is a *click*: it carries the path the player asked
+   the unit to walk, not where the unit went. The unit sets off at its
+   own speed and is usually interrupted by the next click long before it
+   arrives, so the end of a path is a destination and not a position.
 
-   The order also carries a speed, and on a patch that decodes it reads
-   as one: a median of 395 map units a second, which is a champion's
-   walk. On 16.19 the same field reads 1400 with absurd outliers, so it
-   is not trusted here. Instead the path is walked in proportion to the
-   time until the next order, which uses only positions that were
-   actually read and arrives exactly where the next order says the unit
-   is. */
+   The order carries that speed, and it reads as one -- a median of 381
+   map units a second across this replay, 350 commonest, which is what
+   champions and minions actually walk. So the unit is put `speed *
+   elapsed` along its path, and stops at the end if it got there. */
 function walk(orders, time) {
   if (!orders || !orders.length) return null;
   let lo = 0, hi = orders.length - 1, found = -1;
@@ -355,20 +356,13 @@ function walk(orders, time) {
     if (orders[mid][0] <= time) { found = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
   if (found < 0) return null;
-  const [t0, , path] = orders[found];
-  if (!path || path.length === 0) return null;
+  const [t0, speed, path] = orders[found];
+  if (!path || !path.length) return null;
   if (path.length === 1) return path[0];
-  const next = orders[found + 1];
-  const window = next ? next[0] - t0 : 0;
-  // No next order, or no time between them: the unit is at the path's end.
-  if (!(window > 0.05)) return path[path.length - 1];
-  const want = Math.max(0, Math.min(1, (time - t0) / window));
-  let total = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    total += Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]);
-  }
-  if (total === 0) return path[0];
-  let left = want * total;
+  // A speed outside what a unit can walk means the field misread; fall
+  // back to the start of the path rather than flinging it somewhere.
+  if (!(speed > 100 && speed < 2500)) return path[0];
+  let left = Math.max(0, time - t0) * speed;
   for (let i = 0; i < path.length - 1; i++) {
     const [ax, az] = path[i], [bx, bz] = path[i + 1];
     const len = Math.hypot(bx - ax, bz - az);
@@ -379,7 +373,7 @@ function walk(orders, time) {
     }
     left -= len;
   }
-  return path[path.length - 1];
+  return path[path.length - 1];          // it arrived and stopped there
 }
 
 function at(track, time) {

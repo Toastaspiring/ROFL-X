@@ -184,6 +184,27 @@ const MAPMIN_X = -120, MAPMAX_X = 14870, MAPMIN_Z = -120, MAPMAX_Z = 14980;
 const SIZE = 640;
 const TEAM = { order: "#4aa3e8", chaos: "#e8615c", unknown: "#b9a469" };
 const TRAIL_S = 14;
+/* Icon sizes as the game sets them. ICON_SIZE is in minimap-icon units
+   and ICON_K is the game's px per unit on its own 512px minimap, so a
+   size here is the size it has in game, scaled to this canvas. The
+   values come from Code-De-La-League, which took them from
+   gameplay.lolminimap.bin. */
+const TEX = 512, ICON_K = 0.38;
+const ICON_SIZE = {
+  champion: 70, tower: 72, turretPlates: 90, inhibitor: 64, nexus: 70,
+  buffCamp: 86, lesserCamp: [28, 32], drake: 56, elder: 60, pitMonster: 62,
+  ward: 64, controlWard: 80, dead: 106,
+};
+function iconPx(kind) {
+  const v = ICON_SIZE[kind] ?? 60;
+  const px = (n) => n * ICON_K * (SIZE / TEX);
+  return Array.isArray(v) ? [px(v[0]), px(v[1])] : [px(v), px(v)];
+}
+/* This page's object kinds, in the game's own names. */
+const ICON_KIND = {
+  tower: "tower", inhibitor: "inhibitor", nexus: "nexus",
+  buff: "buffCamp", lesser: "lesserCamp", dragon: "drake", baron: "pitMonster",
+};
 /* Sight ranges as the game defines them: 1350 for a champion, a pet, a
    super minion or a turret; 1200 for a melee, caster or siege minion;
    900 for a stealth, control or totem ward; 500 for a farsight. Each
@@ -329,25 +350,20 @@ function occupied(o, when) {
 function drawObjects() {
   const objs = (data && data[patch].objects) || [];
   if (!objs.length || !$("showCamps").checked) return;
-  const SIZES = { tower: 15, inhibitor: 14, nexus: 17, buff: 16, lesser: 12,
-                  dragon: 17, baron: 18 };
   for (const o of objs) {
     if (mode === "play" && !occupied(o, t)) continue;
-    if (eye !== "all" && o.team && o.team !== eye && mode === "play") {
-      // an enemy structure is still on your minimap; a camp is not
-    }
     const img = objIcons[o.icon];
-    const r = (SIZES[o.kind] || 13) / 2;
+    const [w, h] = iconPx(ICON_KIND[o.kind] || "drake");
     const cx = sx(o.x), cy = sy(o.z);
     if (img) {
       ictx.globalAlpha = o.spans ? 1 : 0.85;
-      ictx.drawImage(img, cx - r, cy - r, r * 2, r * 2);
+      ictx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
       ictx.globalAlpha = 1;
     } else {
       ictx.strokeStyle = "#e8d6a0";
       ictx.globalAlpha = 0.6;
       ictx.beginPath();
-      ictx.arc(cx, cy, r, 0, Math.PI * 2);
+      ictx.arc(cx, cy, Math.max(w, h) / 2, 0, Math.PI * 2);
       ictx.stroke();
       ictx.globalAlpha = 1;
     }
@@ -434,7 +450,7 @@ function render() {
     ictx.globalAlpha = dim ? 0.3 : 1;
     const icon = u.name && icons[u.name];
     if (icon) {
-      const r = dim ? 7 : 10;
+      const r = iconPx("champion")[0] / 2 * (dim ? 0.7 : 1);
       ictx.save();
       ictx.beginPath();
       ictx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -449,7 +465,7 @@ function render() {
     } else {
       ictx.fillStyle = colour;
       ictx.beginPath();
-      ictx.arc(cx, cy, dim ? 3 : 4.5, 0, Math.PI * 2);
+      ictx.arc(cx, cy, iconPx("champion")[0] / 2 * (dim ? 0.45 : 0.6), 0, Math.PI * 2);
       ictx.fill();
       ictx.strokeStyle = "#0b1114";
       ictx.lineWidth = 1.2;

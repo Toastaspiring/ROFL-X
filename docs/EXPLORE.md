@@ -562,6 +562,48 @@ So the first question to ask of a class on a packed patch is not "what
 are its 256 entries" but "is it affine", which a handful of pairs
 answers.
 
+### Naming a champion, and what that pays for
+
+The movement class calls a unit by its net id, which sits behind the
+substitution — so on a packed patch the positions were anonymous. Three
+things the replay gives up in plaintext name them anyway:
+
+- **deaths.** The death class fires once per death and addresses its
+  victim, and `param` is plaintext, so every champion's exact death
+  times read with no table at all. A champion that dies stops sending
+  waypoints for the death timer, so its movement stream carries the
+  same times as gaps. Exact where it applies and silent where a
+  champion never dies — one survivor is fine, since the assignment
+  fills the last place by elimination, two is not.
+- **lane.** Every player has an assigned position, and early in a game
+  a player is in that lane. Always available; blind to the difference
+  between a bottom carry and its support, who share a lane.
+- **side.** In any lane the blue-side player stands nearer the blue
+  base. Always available, and unharmed by a constant error in the
+  coordinate origin, because both players in a lane shift together —
+  which matters, because 16.19 has one.
+
+None is enough alone, so `scripts/name_champions.py` scores all three
+and solves one assignment. On 16.9 all three agree on all ten and
+reproduce what the known table decodes. On 16.19 they name all ten, and
+a lane check against each player's assigned position passes **10 of
+10** — where the table's own decode had managed 2 of 6.
+
+**What it pays for is the table, not the labels.** A named champion
+pins its net id's low byte, which is an exact entry at a plaintext the
+high-byte chain never reaches. The constant-speed search cannot find
+those on its own: it only constrains ciphers that appear as
+*coordinates*, so a cipher appearing as a net id is invisible to it and
+gets assigned arbitrarily. That is why 16.19's positions could be
+physically right — speeds median 331 units/s against the control's 340
+— while only **1 of 10** champion ids decoded correctly.
+
+Fed back as ten more anchors, the search returns a table whose own net
+id decode agrees with the behavioural naming **10 of 10**, and the
+champions land in their assigned lanes 10 of 10. The scaffolding then
+comes away: with the table right, the net id names the champion
+directly, which is how the control patch does it.
+
 ### Five ways of getting known plaintext that do not work
 
 Reading a class needs its table, and a table needs known plaintext.

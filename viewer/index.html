@@ -254,13 +254,23 @@ let data = null, patch = "patch_16_19", mode = "all", picked = null, eye = "all"
    rather than drawn, and dropping them is what makes the rest legible
    -- read as positions they throw a champion across the map and back.
 
-   Recalls are an inference, not a reading: a jump that crosses the map
-   and lands at the champion's own fountain with no death to account
-   for. 30 of them, 1 to 5 per champion, all but one landing within
-   1,600 units of the fountain. The scoreboard has no recall counter to
-   check them against, and this is certainly an undercount, since a
-   champion that recalls while already out of sight never shows the
-   jump. So the page marks them as inferred.
+   Recalls are found the way the game makes them. A champion recalling
+   holds one spot -- eight seconds, or four under Baron's empowered
+   recall -- and is then put in its own fountain. So the shape to look
+   for is a silence that starts away from base and ends at the fountain,
+   with no death to account for it and covering more ground than the
+   champion could have walked in that time. 37 of them, 1 to 10 per
+   champion.
+
+   The channel's own length is not measurable here. Standing still and
+   being out of sight are the same thing in this class -- both are
+   silence -- so the gap is the hidden time plus the channel, and it
+   runs from 4 to 20 seconds with no peak at 8. What the eight seconds
+   do give is a floor: a silence shorter than four seconds cannot be a
+   recall, however much it looks like one, and that rules some out.
+
+   So recalls are an inference, and the scoreboard has no recall counter
+   to check them against. The page marks them as inferred.
 
    Teleports are not drawn at all. The scoreboard says exactly one
    player carried Teleport and cast it twice; 323 jumps in this game
@@ -275,10 +285,16 @@ function deadAt(unit, time) {
     if (time >= e.t && (e.until == null || time < e.until)) return e;
   return null;
 }
-const RECALL_SHOW_S = 4.0;
+/* The marker stands through the channel, which is at most the eight
+   seconds the game takes -- the recorded silence can be longer than
+   that, but the extra is the champion being out of sight beforehand,
+   not channelling. */
+const RECALL_MAX_S = 8.0;
 function recallAt(unit, time) {
-  for (const e of eventsFor(unit, "recall"))
-    if (time >= e.t - RECALL_SHOW_S && time <= e.t) return e;
+  for (const e of eventsFor(unit, "recall")) {
+    const shown = Math.min(e.channel || RECALL_MAX_S, RECALL_MAX_S);
+    if (time >= e.t - shown && time <= e.t) return e;
+  }
   return null;
 }
 
@@ -688,7 +704,8 @@ function render() {
       const art = objIcons[u.team === "order" ? "recall_ally" : "recall_enemy"];
       const [w, h] = iconPx("recall");
       if (art && art.complete && art.naturalWidth) {
-        ictx.globalAlpha = (dim ? 0.3 : 0.9) * (1 - (t - (back.t - RECALL_SHOW_S)) / RECALL_SHOW_S * 0.4);
+        const shown = Math.min(back.channel || RECALL_MAX_S, RECALL_MAX_S);
+        ictx.globalAlpha = (dim ? 0.3 : 0.9) * (0.55 + 0.45 * (t - (back.t - shown)) / shown);
         ictx.drawImage(art, sx(back.from[0]) - w / 2, sy(back.from[1]) - h / 2, w, h);
         ictx.globalAlpha = 1;
       }

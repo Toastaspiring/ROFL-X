@@ -647,13 +647,25 @@ champion exactly as `NUM_DEATHS` does — 1 for Darius, 4 for Cho'Gath,
 correctly, and it gives the viewer a champion that is off the field
 rather than loitering at a corner.
 
-**Recalls are an inference.** A jump that crosses the map and lands at
-the champion's own fountain with no death to account for: **30** of
-them, 1 to 5 per champion, all but one within 1,600 units of the
-fountain, and 94 % followed by the champion walking back out of the base.
-There is no recall counter in statsJson to check them against, and it is
-certainly an undercount — a champion that recalls while already out of
-sight never shows the jump.
+**Recalls are found by their shape, and are an inference.** A champion
+recalling holds one spot — eight seconds, or four under Baron's
+empowered recall — and is then put in its own fountain. So what to look
+for is a silence that starts away from base, ends at the fountain, has
+no death to account for it, and covers more ground than the champion
+could have walked in that time. **37** of them, 1 to 10 per champion.
+
+The channel's own length is *not* measurable here, which is worth being
+plain about. Standing still and being out of sight are the same thing in
+this class — both are silence — so the gap is the hidden time plus the
+channel, and it runs from 4 to 20 seconds with no peak at 8. What the
+eight seconds give instead is a floor: a silence shorter than four
+seconds cannot be a recall however much it looks like one, and that
+rules some out. There is no recall counter in statsJson to check the
+rest against.
+
+Looking for the jump instead of the silence was the wrong way round, and
+gave 30 events of which 32 of the first 42 landed at a corner rather
+than a fountain — champions going out of vision, not recalling.
 
 **Teleports cannot be found at all, and the page draws none.** statsJson
 says exactly one player carried Teleport and cast it twice. There are

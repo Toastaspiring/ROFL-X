@@ -134,7 +134,7 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
           <input type="checkbox" id="showEnts" checked> minions &amp; others
         </label>
         <label style="display:flex;gap:6px;align-items:center;font-size:0.88rem;color:var(--dim)">
-          <input type="checkbox" id="showCamps"> camps
+          <input type="checkbox" id="showCamps" checked> objects
         </label>
         <select id="speed" aria-label="Speed">
           <option value="1">1×</option>
@@ -171,9 +171,10 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
   <footer>
     Minimap from Riot's Data Dragon (<code>map11.png</code>, 16.20.1). Map coordinates
     −120…14870 across, −120…14980 down. <strong>Fog:</strong> which units a side could see
-    is read from the replay's own visibility packets; how far a unit sees is not in the
-    file, so the lit radius is a model (about 1150 map units) and the dark is drawn from
-    the positions of the units that side owns. Drop a
+    is read from the replay's own visibility packets, and so is which side owns a unit.
+    How far a unit sees is not in the file, so the radii are the game's documented ones —
+    1350 for a champion, 1200 for a minion. Terrain is not modelled: walls block sight in
+    the game and do not here, so the lit patches are round where they should be ragged. Drop a
     <code>rofl-x explore --dump-positions</code> JSONL onto the page to view another dump.
   </footer>
 </div>
@@ -183,8 +184,13 @@ const MAPMIN_X = -120, MAPMAX_X = 14870, MAPMIN_Z = -120, MAPMAX_Z = 14980;
 const SIZE = 640;
 const TEAM = { order: "#4aa3e8", chaos: "#e8615c", unknown: "#b9a469" };
 const TRAIL_S = 14;
-const SIGHT = 1150;
-const SIGHT_PX = SIGHT / (MAPMAX_X - MAPMIN_X) * SIZE;
+/* Sight ranges as the game defines them: 1350 for a champion, a pet, a
+   super minion or a turret; 1200 for a melee, caster or siege minion;
+   900 for a stealth, control or totem ward; 500 for a farsight. Each
+   lit position carries its own, so this is a per-source radius rather
+   than one guess for everything. */
+const SIGHT_DEFAULT = 1200;
+const toPx = (units) => units / (MAPMAX_X - MAPMIN_X) * SIZE;
 
 const base = document.getElementById("map");
 const ink = document.getElementById("ink");
@@ -207,7 +213,15 @@ function visible(u, t) {
   for (const [a, b] of spans) if (t >= a && t <= b) return true;
   return false;
 }
-const icons = {};
+const icons = {}, objIcons = {};
+function loadObjIcons(names) {
+  for (const n of names) {
+    if (!n || objIcons[n]) continue;
+    const img = new Image();
+    img.onload = () => { objIcons[n] = img; render(); };
+    img.src = `obj/${n}.png`;
+  }
+}
 function loadIcons(names) {
   for (const n of names) {
     if (!n || icons[n]) continue;
@@ -302,19 +316,42 @@ function drawEntities() {
   ictx.globalAlpha = 1;
 }
 
-function drawCamps() {
-  const camps = (data && data[patch].camps) || [];
-  if (!camps.length || !$("showCamps").checked) return;
-  ictx.strokeStyle = "#e8d6a0";
-  ictx.globalAlpha = 0.55;
-  ictx.lineWidth = 1.2;
-  for (const c of camps) {
-    const r = Math.max(4, Math.min(11, Math.sqrt(c.samples)));
-    ictx.beginPath();
-    ictx.arc(sx(c.x), sy(c.z), r, 0, Math.PI * 2);
-    ictx.stroke();
+/* The map's own furniture. Where each one stands is map geometry, not a
+   reading. Whether a camp has anything in it *is* a reading: a monster
+   only sends waypoints while alive, so a camp with no occupancy span
+   covering this moment has been cleared and is not drawn. A structure
+   never moves, so nothing here knows whether a turret still stands. */
+function occupied(o, when) {
+  if (!o.spans) return true;                 // a structure: always drawn
+  for (const [a, b] of o.spans) if (when >= a - 2 && when <= b + 2) return true;
+  return false;
+}
+function drawObjects() {
+  const objs = (data && data[patch].objects) || [];
+  if (!objs.length || !$("showCamps").checked) return;
+  const SIZES = { tower: 15, inhibitor: 14, nexus: 17, buff: 16, lesser: 12,
+                  dragon: 17, baron: 18 };
+  for (const o of objs) {
+    if (mode === "play" && !occupied(o, t)) continue;
+    if (eye !== "all" && o.team && o.team !== eye && mode === "play") {
+      // an enemy structure is still on your minimap; a camp is not
+    }
+    const img = objIcons[o.icon];
+    const r = (SIZES[o.kind] || 13) / 2;
+    const cx = sx(o.x), cy = sy(o.z);
+    if (img) {
+      ictx.globalAlpha = o.spans ? 1 : 0.85;
+      ictx.drawImage(img, cx - r, cy - r, r * 2, r * 2);
+      ictx.globalAlpha = 1;
+    } else {
+      ictx.strokeStyle = "#e8d6a0";
+      ictx.globalAlpha = 0.6;
+      ictx.beginPath();
+      ictx.arc(cx, cy, r, 0, Math.PI * 2);
+      ictx.stroke();
+      ictx.globalAlpha = 1;
+    }
   }
-  ictx.globalAlpha = 1;
 }
 
 /* Fog the ground a side cannot see. Which units a side could see is
@@ -329,15 +366,16 @@ function drawFog() {
   fctx.fillRect(0, 0, SIZE, SIZE);
   fctx.globalCompositeOperation = "destination-out";
   const window_s = mode === "all" ? Infinity : 2.5;
-  for (const [tt, x, z] of own) {
+  for (const [tt, x, z, sight] of own) {
     if (Math.abs(tt - t) > window_s) continue;
+    const r = toPx(sight || SIGHT_DEFAULT);
     const cx = sx(x), cy = sy(z);
-    const g = fctx.createRadialGradient(cx, cy, SIGHT_PX * 0.45, cx, cy, SIGHT_PX);
+    const g = fctx.createRadialGradient(cx, cy, r * 0.72, cx, cy, r);
     g.addColorStop(0, "rgba(0,0,0,1)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     fctx.fillStyle = g;
     fctx.beginPath();
-    fctx.arc(cx, cy, SIGHT_PX, 0, Math.PI * 2);
+    fctx.arc(cx, cy, r, 0, Math.PI * 2);
     fctx.fill();
   }
   fctx.globalCompositeOperation = "source-over";
@@ -347,7 +385,7 @@ function render() {
   drawFog();
   ictx.clearRect(0, 0, SIZE, SIZE);
   drawEntities();
-  drawCamps();
+  drawObjects();
   const us = units();
   if (mode === "all") {
     for (const [key, u] of Object.entries(us)) {
@@ -450,6 +488,7 @@ function sidebar() {
       <td>${u.packets.toLocaleString()}</td>
       <td>${u.name ? "net id" : "shape"}</td></tr>`).join("");
   loadIcons(Object.values(us).map((u) => u.name));
+  loadObjIcons((d.objects || []).map((o) => o.icon));
   for (const tr of $("rows").children) {
     tr.onclick = () => { picked = picked === tr.dataset.k ? null : tr.dataset.k; sidebar(); render(); };
   }

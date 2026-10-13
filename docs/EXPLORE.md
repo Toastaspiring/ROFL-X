@@ -650,10 +650,24 @@ put. Taking every unit whose positions sit inside a 900-unit radius and
 clustering them gives **26 such places** on one replay, and two of them
 are recognisable: one at (9842, 4406) against the dragon pit's roughly
 (9866, 4414), and one at (4790, 10184) against baron's roughly (5007,
-10471). The dragon agreement to within about 25 units is a hint that
-the constant offset above may be smaller than the fountain test
-suggested, or in the fountain coordinates rather than the data — that
-is a lead, not a finding.
+10471). That lead turned out to be the whole story, and it settles the offset.
+
+**There is no offset.** Matching the detected clusters against the
+sixteen landmarks whose real positions are known — the twelve camps,
+both pits and the scuttle spawns — the best fit is a shift of
+**x by −20 and z by +40**, which is nothing, with **15 of 16 landmarks
+matched at a mean error of 259 units**. That residual is the spread of
+a camp's own monsters, not a systematic shift: gromp matches to 45 and
+51 units, wolves to 83, the dragon pit to 128.
+
+So the earlier "constant offset of 400 to 900 units" was wrong. It came
+from fountain coordinates that were guesses, and from a table that was
+still poor at the extremes. With the 36-anchor table the blue-side
+champions register at the blue fountain at last (24 to 91 visits each,
+where they had 0), and the four that still read as the wrong side are
+the team that *won*: they spent the end of the game standing in the
+loser's base. The fountain test was a bad heuristic for a finished
+game, and the positions were right all along.
 
 **Turrets are not in this.** A structure never moves, so it never sends
 a waypoint, and nothing here gives its position. Plants and wards are

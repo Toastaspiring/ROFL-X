@@ -604,6 +604,45 @@ champions land in their assigned lanes 10 of 10. The scaffolding then
 comes away: with the table right, the net id names the champion
 directly, which is how the control patch does it.
 
+### Fog of war, which does not have to be modelled
+
+The visibility pair is already read (§ 3), and it covers everything,
+not only champions: on one 16.19 replay it is **482,518 blocks over
+9,941 distinct units**, each saying that a unit entered or left one
+team's sight. Both the unit and the time are plaintext, so the windows
+need no table.
+
+That means the game's own record of who could see what is in the file,
+and a viewer can show the match as one side saw it rather than
+modelling vision. Per champion, the share of the game spent visible to
+the enemy comes out as:
+
+| | visible to the enemy |
+|---|---|
+| Cho'Gath, Karthus (junglers) | 36 %, 33 % |
+| the six laners | 58 % – 69 % |
+| Miss Fortune (bottom) | 71 % |
+
+Junglers spending half as long in enemy sight as laners is the check
+that this is real and not an artefact of how the windows are paired.
+
+### What the movement class already shows besides champions
+
+Monsters walk inside their camp, so a camp is a place where units stay
+put. Taking every unit whose positions sit inside a 900-unit radius and
+clustering them gives **26 such places** on one replay, and two of them
+are recognisable: one at (9842, 4406) against the dragon pit's roughly
+(9866, 4414), and one at (4790, 10184) against baron's roughly (5007,
+10471). The dragon agreement to within about 25 units is a hint that
+the constant offset above may be smaller than the fountain test
+suggested, or in the fountain coordinates rather than the data — that
+is a lead, not a finding.
+
+**Turrets are not in this.** A structure never moves, so it never sends
+a waypoint, and nothing here gives its position. Plants and wards are
+in the spawn class with their coordinates, which `SpawnMinion` gives on
+16.9 — on 16.19 that class is not read yet, so neither are they.
+
 ### Five ways of getting known plaintext that do not work
 
 Reading a class needs its table, and a table needs known plaintext.

@@ -121,11 +121,19 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
           <button id="vPlay" aria-pressed="false">Playback</button>
           <button id="vAll" aria-pressed="true">All positions</button>
         </div>
+        <div class="seg" role="group" aria-label="Whose view">
+          <button id="eyeAll" aria-pressed="true">See all</button>
+          <button id="eyeOrder" aria-pressed="false">As blue</button>
+          <button id="eyeChaos" aria-pressed="false">As red</button>
+        </div>
         <button id="play">Play</button>
         <span id="clock">0:00</span>
         <input id="scrub" type="range" min="0" max="100" value="0" step="0.1" aria-label="Match time">
         <label style="display:flex;gap:6px;align-items:center;font-size:0.88rem;color:var(--dim)">
           <input type="checkbox" id="showEnts" checked> minions &amp; others
+        </label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:0.88rem;color:var(--dim)">
+          <input type="checkbox" id="showCamps"> camps
         </label>
         <select id="speed" aria-label="Speed">
           <option value="1">1×</option>
@@ -178,7 +186,19 @@ const bctx = base.getContext("2d");
 const ictx = ink.getContext("2d");
 const $ = (id) => document.getElementById(id);
 
-let data = null, patch = "patch_16_19", mode = "all", picked = null;
+let data = null, patch = "patch_16_19", mode = "all", picked = null, eye = "all";
+
+/* Was this unit visible to `team` at time `t`? The windows come from the
+   visibility pair, which is the game's own record of who could see what,
+   so this is read rather than modelled. A unit is always visible to its
+   own side. */
+function visible(u, t) {
+  if (eye === "all" || u.team === eye) return true;
+  const spans = u.seen_by && u.seen_by[eye];
+  if (!spans) return true;
+  for (const [a, b] of spans) if (t >= a && t <= b) return true;
+  return false;
+}
 const icons = {};
 function loadIcons(names) {
   for (const n of names) {
@@ -274,16 +294,35 @@ function drawEntities() {
   ictx.globalAlpha = 1;
 }
 
+function drawCamps() {
+  const camps = (data && data[patch].camps) || [];
+  if (!camps.length || !$("showCamps").checked) return;
+  ictx.strokeStyle = "#e8d6a0";
+  ictx.globalAlpha = 0.55;
+  ictx.lineWidth = 1.2;
+  for (const c of camps) {
+    const r = Math.max(4, Math.min(11, Math.sqrt(c.samples)));
+    ictx.beginPath();
+    ictx.arc(sx(c.x), sy(c.z), r, 0, Math.PI * 2);
+    ictx.stroke();
+  }
+  ictx.globalAlpha = 1;
+}
+
 function render() {
   ictx.clearRect(0, 0, SIZE, SIZE);
   drawEntities();
+  drawCamps();
   const us = units();
   if (mode === "all") {
     for (const [key, u] of Object.entries(us)) {
       if (picked && key !== picked) continue;
       ictx.fillStyle = TEAM[u.team] || TEAM.unknown;
       ictx.globalAlpha = picked ? 0.5 : 0.28;
-      for (const [, x, z] of u.track) ictx.fillRect(sx(x) - 1, sy(z) - 1, 2, 2);
+      for (const [tt, x, z] of u.track) {
+        if (!visible(u, tt)) continue;
+        ictx.fillRect(sx(x) - 1, sy(z) - 1, 2, 2);
+      }
     }
     ictx.globalAlpha = 1;
     return;
@@ -291,6 +330,7 @@ function render() {
   for (const [key, u] of Object.entries(us)) {
     const now = at(u.track, t);
     if (!now) continue;
+    if (!visible(u, t)) continue;
     const colour = TEAM[u.team] || TEAM.unknown;
     void key;
     const dim = picked && key !== picked;
@@ -434,6 +474,17 @@ $("p19").onclick = () => setPatch("patch_16_19");
 $("vPlay").onclick = () => setMode("play");
 $("vAll").onclick = () => setMode("all");
 $("showEnts").onchange = render;
+$("showCamps").onchange = render;
+function setEye(e) {
+  eye = e;
+  for (const [id, v] of [["eyeAll", "all"], ["eyeOrder", "order"], ["eyeChaos", "chaos"]]) {
+    $(id).setAttribute("aria-pressed", String(e === v));
+  }
+  render();
+}
+$("eyeAll").onclick = () => setEye("all");
+$("eyeOrder").onclick = () => setEye("order");
+$("eyeChaos").onclick = () => setEye("chaos");
 addEventListener("keydown", (e) => {
   if (e.key === " ") { e.preventDefault(); $("play").click(); }
   if (e.key === "ArrowRight") { t = Math.min(span(), t + 5); $("scrub").value = t; render(); }

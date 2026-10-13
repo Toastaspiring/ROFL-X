@@ -681,11 +681,22 @@ light ground the team cannot see.
 
 So the base is lit as its own shape. The fountain, the nexus, its two
 turrets, the three inhibitors and their turrets stand at the base's
-corners; their convex hull is the base, widened by 650 units to take in
-the floor between them and the walls. Checked point by point, that
-lights all twelve of a base's structures and nothing beyond them: the
-inner and outer turrets, the river, the side's own jungle and mid all
-stay dark. It covers 8.7 % of the map, which is about what a base is.
+corners, and their convex hull is the base.
+
+That hull stops at the structures, though, and the floor runs on past
+them to the walls. How much further is measured rather than guessed:
+the minimap draws the base floor blue-grey and the open ground outside
+it olive, so flood-filling the floor from each fountain and measuring
+how far its pixels lie beyond the hull gives **950 units** one side and
+**1,050** the other. At those widths each region covers 99 % of its own
+floor. About an eighth of what it lights is not floor — the hull's
+rounded corners reaching into the base walls, which are inside the base
+anyway.
+
+Checked point by point, that lights all nine structures of a base and
+nothing beyond them: the inner and outer turrets, the river, the side's
+own jungle and mid all stay dark. It covers 10.5 % and 11.1 % of the
+map, which is about what a base is.
 
 Adding turrets and the two bases takes the lit share from 20.7 % to
 between **31 % and 41 %** depending on the moment, which is what a real

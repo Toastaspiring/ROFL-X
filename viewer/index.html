@@ -504,7 +504,10 @@ function drawFog() {
      rather than a radius the base is lit as its own shape: the hull of
      the structures standing behind the inhibitors, widened to the
      walls. A circle reaching the far corner of the base would spill
-     into the river. */
+     into the river. The widening is not a guess either -- the minimap
+     draws the base floor a different colour from the open ground
+     outside it, so it was measured from those pixels: about 1000 units
+     past the structures, which covers 99% of the floor. */
   for (const r of (data[patch].base_vision || [])) {
     if (r.team !== eye || !r.ring || r.ring.length < 3) continue;
     fctx.beginPath();
@@ -518,7 +521,7 @@ function drawFog() {
     fctx.strokeStyle = "rgba(0,0,0,1)";
     fctx.lineJoin = "round";
     fctx.lineCap = "round";
-    fctx.lineWidth = toPx(r.pad || 650) * 2;
+    fctx.lineWidth = toPx(r.pad || 1000) * 2;
     fctx.stroke();
   }
   for (const v of (data[patch].static_vision || [])) {

@@ -201,6 +201,7 @@ const TRAIL_S = 14;
 const TEX = 512, ICON_K = 0.38;
 const ICON_SIZE = {
   champion: 70, tower: 72, turretPlates: 90, inhibitor: 64, nexus: 70,
+  recall: 64, teleport: 64,
   buffCamp: 86, lesserCamp: [28, 32], drake: 56, elder: 60, pitMonster: 62,
   ward: 64, controlWard: 80, dead: 106,
 };
@@ -236,6 +237,51 @@ let data = null, patch = "patch_16_19", mode = "all", picked = null, eye = "all"
    visibility pair, which is the game's own record of who could see what,
    so this is read rather than modelled. A unit is always visible to its
    own side. */
+/* What happened to a champion that is not simply walking.
+
+   Deaths come from the death class, which names its victim in a
+   plaintext field, so they need no table: its 74 deaths split per
+   champion exactly as the replay's own scoreboard does, which is what
+   says it is read correctly. A dead champion is not on the field --
+   the game parks it outside its corner of the map until it respawns --
+   so it is drawn where it fell rather than as a unit loitering off the
+   edge.
+
+   A position at either corner outside the map is not a position at all.
+   It is the stream declining to report a unit, which it does while the
+   unit is dead or out of sight: of the moments a champion sits there
+   alive, 93% are ones the enemy could not see it. Those are dropped
+   rather than drawn, and dropping them is what makes the rest legible
+   -- read as positions they throw a champion across the map and back.
+
+   Recalls are an inference, not a reading: a jump that crosses the map
+   and lands at the champion's own fountain with no death to account
+   for. 30 of them, 1 to 5 per champion, all but one landing within
+   1,600 units of the fountain. The scoreboard has no recall counter to
+   check them against, and this is certainly an undercount, since a
+   champion that recalls while already out of sight never shows the
+   jump. So the page marks them as inferred.
+
+   Teleports are not drawn at all. The scoreboard says exactly one
+   player carried Teleport and cast it twice; 323 jumps in this game
+   are unexplained by the packet that reports them, and nothing
+   separates those two from the ability dashes and model error in the
+   rest. Drawing a guess would be worse than drawing nothing. */
+function eventsFor(unit, kind) {
+  return (data[patch].events || []).filter(e => e.unit === unit && e.kind === kind);
+}
+function deadAt(unit, time) {
+  for (const e of eventsFor(unit, "death"))
+    if (time >= e.t && (e.until == null || time < e.until)) return e;
+  return null;
+}
+const RECALL_SHOW_S = 4.0;
+function recallAt(unit, time) {
+  for (const e of eventsFor(unit, "recall"))
+    if (time >= e.t - RECALL_SHOW_S && time <= e.t) return e;
+  return null;
+}
+
 function visible(u, t) {
   if (eye === "all" || u.team === eye) return true;
   const spans = u.seen_by && u.seen_by[eye];
@@ -374,6 +420,11 @@ function along(path, dist) {
   return path[path.length - 1];
 }
 
+/* Past this, the residual is not a walk's error but the game moving the
+   champion. 2.4% of steps are beyond it; a flash is 400 units and a
+   recall is the width of the map. */
+const JUMP = 600;
+
 function walk(orders, time) {
   if (!orders || !orders.length) return null;
   let lo = 0, hi = orders.length - 1, found = -1;
@@ -395,6 +446,20 @@ function walk(orders, time) {
   if (!(span > 0.01)) return here;
   const landing = sp ? along(path, span * sp) : path[0];
   const [tx, tz] = next[2][0];
+  /* Walking the path predicts where the next packet finds the unit, but
+     not exactly, and dumping the leftover at the boundary is what makes
+     a unit snap. Spreading it across the interval removes that.
+
+     Only while the unit really walked, though. A recall, a respawn, a
+     flash and a dash are not movement: the game puts the champion
+     somewhere, and the packet predicts none of it. Spreading a
+     fifteen-thousand-unit residual draws a champion gliding across the
+     whole map over the interval, when what happened was instant -- the
+     smoothing would be inventing the very motion it is meant to
+     reproduce. So past what a walk can leave behind, the jump is kept
+     as a jump and happens at the packet that reports it. */
+  const slip = Math.hypot(tx - landing[0], tz - landing[1]);
+  if (slip > JUMP) return here;
   const u = Math.max(0, Math.min(1, (time - t0) / span));
   return [here[0] + (tx - landing[0]) * u, here[1] + (tz - landing[1]) * u];
 }
@@ -592,8 +657,42 @@ function render() {
     }
     ictx.stroke();
 
+    /* Dead: draw where it fell, not where the game parked it. */
+    const gone = deadAt(key, t);
+    if (gone && gone.at) {
+      const [dx, dz] = gone.at;
+      const art = objIcons["dead"];
+      const [w, h] = iconPx("dead");
+      ictx.globalAlpha = dim ? 0.3 : 0.75;
+      if (art && art.complete && art.naturalWidth) {
+        ictx.drawImage(art, sx(dx) - w / 2, sy(dz) - h / 2, w, h);
+      } else {
+        ictx.strokeStyle = colour;
+        ictx.lineWidth = 2;
+        const r = w / 3;
+        ictx.beginPath();
+        ictx.moveTo(sx(dx) - r, sy(dz) - r); ictx.lineTo(sx(dx) + r, sy(dz) + r);
+        ictx.moveTo(sx(dx) + r, sy(dz) - r); ictx.lineTo(sx(dx) - r, sy(dz) + r);
+        ictx.stroke();
+      }
+      ictx.globalAlpha = 1;
+      continue;
+    }
+
     const [, x, z, acc] = now;
     const cx = sx(x), cy = sy(z);
+
+    /* Recalling: the marker sits where the champion left from. */
+    const back = recallAt(key, t);
+    if (back && back.from) {
+      const art = objIcons[u.team === "order" ? "recall_ally" : "recall_enemy"];
+      const [w, h] = iconPx("recall");
+      if (art && art.complete && art.naturalWidth) {
+        ictx.globalAlpha = (dim ? 0.3 : 0.9) * (1 - (t - (back.t - RECALL_SHOW_S)) / RECALL_SHOW_S * 0.4);
+        ictx.drawImage(art, sx(back.from[0]) - w / 2, sy(back.from[1]) - h / 2, w, h);
+        ictx.globalAlpha = 1;
+      }
+    }
     if (acc > 0) {
       // The stated error bar, to scale: a ring the true position lies within.
       ictx.globalAlpha = dim ? 0.1 : 0.3;
@@ -660,7 +759,8 @@ function sidebar() {
       <td>${u.packets.toLocaleString()}</td>
       <td>${u.name ? "net id" : "shape"}</td></tr>`).join("");
   loadIcons(Object.values(us).map((u) => u.name));
-  loadObjIcons((d.objects || []).map((o) => o.icon));
+  loadObjIcons((d.objects || []).map((o) => o.icon)
+               .concat(["dead", "recall_ally", "recall_enemy"]));
   for (const tr of $("rows").children) {
     tr.onclick = () => { picked = picked === tr.dataset.k ? null : tr.dataset.k; sidebar(); render(); };
   }

@@ -595,6 +595,76 @@ commonest. An earlier attempt that forced the mantissa too stole
 `0xe5` from Cho'Gath and dropped the naming to 9 of 10, which is how
 the overreach was caught.
 
+### Not every position change is a walk
+
+Walking a unit along its path at its own speed predicts where the next
+packet finds it, but not exactly, and dumping the leftover at the
+boundary is what makes a unit snap. Spreading it across the interval
+removes that — while the unit really walked.
+
+It does not always. A recall, a respawn, a flash and a dash are not
+movement: the game puts the champion somewhere, and the packet predicts
+none of it. Spreading a residual of fifteen thousand units draws a
+champion gliding across the whole map over the interval, when what
+happened was instant. The smoothing invents the very motion it exists
+to reproduce.
+
+So past 600 units — a flash is 400 — the jump is kept as a jump and
+happens at the packet reporting it. **2.4 %** of steps are beyond that.
+Sampled every 10 ms across all ten champions, the median step is then
+**2.07 map units**, the 99.9th percentile **10.6**, and every step
+larger than a flash sits exactly on a packet boundary where the game
+moved the champion: **0** stray discontinuities in 1.58 million samples.
+
+### The corner outside the map means "not here"
+
+Champions kept appearing at one of two spots outside the map, `(-632,
+-558)` and `(15362, 15398)`, one per side. They are not positions. The
+stream parks a unit there instead of reporting it, and the reason is
+visibility: of the moments a champion sits at its corner **alive**,
+**93 %** are moments the enemy could not see it. The rest are deaths.
+
+This had been showing up for a long time as the 728 positions that fell
+off the map and would not go away. **516** of them are this, and the
+remaining 212 (0.25 % of all positions) are genuine table error. Read as
+positions they throw a champion across the map and back, which is where
+most of the apparent recalls came from.
+
+The parser still reports them, because the file says them and the 16.9
+control is byte-identical to the game's own deserializer. The reading —
+that they mean "not here" — belongs downstream, and so does dropping
+them.
+
+### Deaths, recalls, and the teleport that cannot be found
+
+statsJson is the referee again. It carries each player's two summoner
+spells and how many times each was cast, and `NUM_DEATHS` per player.
+
+**Deaths are exact.** The death class names its victim in a plaintext
+`param`, so it needs no table at all. Its **74** deaths split per
+champion exactly as `NUM_DEATHS` does — 1 for Darius, 4 for Cho'Gath,
+15 for Ahri, all ten matching. That is what says the class is read
+correctly, and it gives the viewer a champion that is off the field
+rather than loitering at a corner.
+
+**Recalls are an inference.** A jump that crosses the map and lands at
+the champion's own fountain with no death to account for: **30** of
+them, 1 to 5 per champion, all but one within 1,600 units of the
+fountain, and 94 % followed by the champion walking back out of the base.
+There is no recall counter in statsJson to check them against, and it is
+certainly an undercount — a champion that recalls while already out of
+sight never shows the jump.
+
+**Teleports cannot be found at all, and the page draws none.** statsJson
+says exactly one player carried Teleport and cast it twice. There are
+**323** jumps in that game the reporting packet does not explain, and
+nothing separates those two from the rest: the channel is not visible
+either, since Gwen's two real teleports are not among the candidates
+that stood still beforehand. The same holds for flashes — 80 short
+jumps against 33 casts, and Karthus, who had no Flash, contributes four.
+Ability dashes, slows and table error all leave the same signature.
+Drawing a guess would be worse than drawing nothing.
+
 ### Naming a champion, and what that pays for
 
 The movement class calls a unit by its net id, which sits behind the

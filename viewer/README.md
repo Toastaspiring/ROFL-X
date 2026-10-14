@@ -27,6 +27,14 @@ beside it holds a finished 16.9 game and a finished 16.19 one.
 - **Recalls**, inferred from their shape: a silence that starts away from
   base, ends at the fountain, has no death to account for it, and covers
   more ground than the champion could have walked meanwhile.
+- **Wards**, on a patch with an archive, each one appearing when it is
+  placed and gone when it dies — a trinket lasts about 105 s, a stealth
+  ward 148 s, and a control ward until something kills it. The icon
+  fades as the ward ages, which is most of what a ward timer is for.
+
+Wards are drawn only for the control patch. On a packed patch the class
+that carries them is identified (netid 898 on 16.19) but not readable —
+`docs/EXPLORE.md` says exactly how far that got and what blocks it.
 
 Teleports are **not** drawn. The scoreboard says the sample game held
 two; 323 jumps in it are unexplained by the packet reporting them, and
@@ -76,7 +84,11 @@ python scripts/viewer_basepad.py --minimap viewer/map11.png
 python scripts/viewer_events.py
 python scripts/viewer_recalls.py
 
-# 6. the page's data
+# 6. wards, where the patch has an archive to decode them
+rofl-x file -r <control>.rofl --patch-dir ./patch -o decoded.json
+python scripts/viewer_wards.py --decoded decoded.json --out wards916.json
+
+# 7. the page's data
 python scripts/viewer_build.py
 ```
 

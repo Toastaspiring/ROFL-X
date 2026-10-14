@@ -39,7 +39,7 @@ ORDER, CHAOS = (400.0, 400.0), (14400.0, 14400.0)
 ENTITY_CAP = 30000
 
 def build(pos_path, meta_path, table_path, anchor, label, accuracy,
-          extras=False):
+          extras=False, wards=None):
     meta = json.load(open(meta_path))["replays"][0]
     roster = [p["champion"] for p in meta["players"]]
     first = int(meta["entities"]["champions"]["first"], 16)
@@ -160,6 +160,9 @@ def build(pos_path, meta_path, table_path, anchor, label, accuracy,
     else:
         extra = {"fog": False, "camps": [], "lit": {}, "objects": [],
                  "static_vision": [], "base_vision": [], "events": []}
+    # Wards are read outright wherever the patch has an archive, so they
+    # are attached per patch rather than with the rest.
+    extra["wards"] = load(wards, []) if wards else []
     return {"label": label, "accuracy": accuracy, "roster": roster,
             "units": out, "entities": ents, "entity_total": len(others), **extra}
 
@@ -188,6 +191,9 @@ def main() -> int:
     g.add_argument("--control-positions", default="pos916.jsonl")
     g.add_argument("--control-meta", default="e9meta.json")
     g.add_argument("--control-table", default="true916_table.json")
+    g.add_argument("--control-wards", default="wards916.json",
+                   help="wards from viewer_wards.py; a patch with an "
+                        "archive decodes them outright")
     g.add_argument("--control-label",
                    default="16.9 — control, verified identical to the game's own decoder")
 
@@ -217,13 +223,14 @@ def main() -> int:
     data = {
         "patch_16_9": build(args.control_positions, args.control_meta,
                             args.control_table, tab9[0x00],
-                            args.control_label, "exact", extras=False),
+                            args.control_label, "exact", extras=False,
+                            wards=args.control_wards),
         "patch_16_19": build(args.positions, args.meta, args.table, anchor,
                              args.label,
                              "high byte exact, low byte searched" if args.table
                              else "high byte exact, low byte unknown: "
                                   "±256 map units",
-                             extras=True),
+                             extras=True, wards=None),
     }
     for k, v in data.items():
         named = sum(1 for u in v["units"].values() if u["name"])

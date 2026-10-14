@@ -577,6 +577,52 @@ function drawObjects() {
   }
 }
 
+/* Wards, where the patch decodes them.
+
+   A ward is placed, lives, and dies, so it is drawn only between those
+   two moments -- the same rule the camps and drakes follow. Its life
+   comes from the file: a trinket runs about 105s here, a stealth ward
+   148s, and a control ward lasts until something kills it, which in
+   this game ranged from 7s to 557s. Twelve were never destroyed at all
+   and run to the final whistle.
+
+   The icons are the game's own two: a plain ward, and the control ward
+   that also reveals. Ally and enemy are relative to the side being
+   watched; with no side chosen, blue reads as ally and red as enemy,
+   which is how the map itself is coloured. */
+function drawWards() {
+  const wards = data[patch].wards || [];
+  if (!wards.length) return;
+  for (const w of wards) {
+    const live = mode === "all" || (t >= w.t && t <= w.until);
+    if (!live) continue;
+    if (!visibleSide(w.team)) continue;
+    const ally = eye === "all" ? w.team === "order" : w.team === eye;
+    const art = objIcons[`${w.kind === "controlWard" ? "cw" : "ward"}_${ally ? "ally" : "enemy"}`];
+    const [iw, ih] = iconPx(w.kind);
+    const cx = sx(w.x), cy = sy(w.z);
+    /* Fading over its life shows at a glance which wards are about to
+       expire, which is most of what a ward's timer is for. */
+    const age = w.until > w.t ? (t - w.t) / (w.until - w.t) : 0;
+    ictx.globalAlpha = mode === "all" ? 0.5 : 1 - 0.45 * Math.max(0, Math.min(1, age));
+    if (art && art.complete && art.naturalWidth) {
+      ictx.drawImage(art, cx - iw / 2, cy - ih / 2, iw, ih);
+    } else {
+      ictx.fillStyle = ally ? "#7fd4ff" : "#ff7a7a";
+      ictx.beginPath();
+      ictx.arc(cx, cy, iw / 3, 0, Math.PI * 2);
+      ictx.fill();
+    }
+    ictx.globalAlpha = 1;
+  }
+}
+
+/* A ward belonging to the other side is only on the map if that side is
+   being watched, or if nothing is being hidden. */
+function visibleSide(team) {
+  return eye === "all" || team === eye;
+}
+
 /* Fog the ground a side cannot see. Which units a side could see is
    read from the file; how far a unit sees is not in the file at all, so
    the lit radius is a model and is marked as one in the page. */
@@ -652,6 +698,7 @@ function render() {
   ictx.clearRect(0, 0, SIZE, SIZE);
   drawEntities();
   drawObjects();
+  drawWards();
   const us = units();
   if (mode === "all") {
     for (const [key, u] of Object.entries(us)) {
@@ -791,7 +838,8 @@ function sidebar() {
       <td>${u.name ? "net id" : "shape"}</td></tr>`).join("");
   loadIcons(Object.values(us).map((u) => u.name));
   loadObjIcons((d.objects || []).map((o) => o.icon)
-               .concat(["dead", "recall_ally", "recall_enemy"]));
+               .concat(["dead", "recall_ally", "recall_enemy",
+                        "ward_ally", "ward_enemy", "cw_ally", "cw_enemy"]));
   for (const tr of $("rows").children) {
     tr.onclick = () => { picked = picked === tr.dataset.k ? null : tr.dataset.k; sidebar(); render(); };
   }

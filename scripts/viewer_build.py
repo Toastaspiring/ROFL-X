@@ -185,6 +185,9 @@ def main() -> int:
     g.add_argument("--meta", default="e1sr.json", help="its `explore` report")
     g.add_argument("--table", default="table1619.json",
                    help="the movement class's table; omit if it is unsolved")
+    g.add_argument("--wards", default="wards1619.json",
+                   help="wards from viewer_wards_cast.py, read out of the "
+                        "cast class on a patch with no archive")
     g.add_argument("--label", default="16.19 — read from the file alone")
 
     g = ap.add_argument_group("the control, decoded by the game's own binary")
@@ -230,7 +233,7 @@ def main() -> int:
                              "high byte exact, low byte searched" if args.table
                              else "high byte exact, low byte unknown: "
                                   "±256 map units",
-                             extras=True, wards=None),
+                             extras=True, wards=args.wards),
     }
     for k, v in data.items():
         named = sum(1 for u in v["units"].values() if u["name"])

@@ -1036,8 +1036,9 @@ something the fingerprint could not:
 The heads agree closely — both narrow at 0, 5, 7, 9 and 13, including
 a float triple at 5/9/13 — so the field order at the start of the
 payload survived the patch gap. But **985's trailing coordinate triple
-is simply absent from 474**, and 474 has no three narrow positions
-four apart anywhere else either.
+is simply absent from 474**. (The second half of this paragraph, as
+first written, also said 474 had no coordinate anywhere else. That was
+wrong, and the section "Wards on a packed patch" below corrects it.)
 
 That cuts both ways and both should be said. The shared head is
 independent support for 474 being the same class, from a property
@@ -1050,6 +1051,65 @@ spell casts** — which the counters and the champion-surplus test
 establish on their own — while **474 being `PKT_NPC_CastSpellAns_s`
 specifically is unsettled**, and the payload layout is the reason to
 doubt it.
+
+### Wards on a packed patch, through the cast class
+
+The spawn class was the wrong door. Placing a ward is a *cast*, and the
+cast class carries both what was cast and where it was aimed — so that
+is where the wards are, on a patch with no archive at all.
+
+**A correction first.** This document said of netid 474 that "985's
+trailing coordinate triple is simply absent from 474, and 474 has no
+three narrow positions four apart anywhere else either". The second half
+is wrong. 474 does carry a coordinate, at payload offsets **23–26 (x)
+and 27–30 (z)**, little-endian floats. `payload_shape.py` missed it
+because its narrowness test wants nine cipher values or fewer and these
+offsets show twenty — three of which cover 99.4 % of casts and seventeen
+of which are rare. A field can be narrow in substance and wide in count.
+
+It was found by asking the game instead of the payload. Every block is
+addressed to the champion that cast, and the movement class says where
+that champion was to a couple of units, so a scan of every offset
+against that answer key turns the question into a measurement:
+
+| offset | reading | agreement |
+|---|---|---|
+| 26 | x exponent | **95.8 %** over the recurring values |
+| 30 | z exponent | **95.0 %** |
+
+and the same three ciphers mean the same three things at both —
+`0x80→0x46`, `0x4d→0x45`, `0x18→0x44` — which one shared table requires
+and two unrelated fields would not produce.
+
+**The mantissa, from where casts are aimed.** Those bytes do *not* track
+the caster, which is itself the finding: the field is the cast's target,
+not its origin. But a good share of casts are aimed at the caster's own
+feet, so the most common vote wins while the rest scatter over 255
+values. Read against x at offset 25 and against z at offset 29 — a
+different set of casts and a different set of numbers — the two agree on
+**63.4 % of ciphers, where chance is 0.4 %**. Over seven replays that is
+151 entries with no collisions; a bootstrap pass, pinning an unknown
+byte by the range a cast can reach, brings it to **163 of 256**.
+
+**Which casts are wards, by the counter.** A 4-byte spell id sits at
+offset 16, and one value's per-champion tally is
+
+    found       5  9  3  4   2  7   9  10  7  2
+    trinket     5  9  3  4  21  7   9  10  7  4
+
+— **eight of ten champions exactly**, with the scoreboard's own
+`WARD_PLACED` minus `WARD_PLACED_DETECTOR`. The two it misses are the
+support and his partner, and a second id accounts for nineteen of
+Maokai's twenty-two remaining wards with nothing left over: the support
+item's ward, which is why the trinket alone could never have explained
+him. Two ids, 77 of the game's 84 wards.
+
+**What comes out.** 44 of 84 wards placed and located, the rest held up
+by the 93 table entries still missing. Of those 44, **none** falls off
+the map and none lands further from its caster than a cast can reach —
+which is the check that matters, since a wrong table scatters
+coordinates everywhere. A ward's *duration* is not read by any of this,
+so the page draws the game's own 120 s and says it is a model.
 
 ### What this does and does not generalise to
 

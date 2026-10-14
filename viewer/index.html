@@ -589,7 +589,14 @@ function drawObjects() {
    The icons are the game's own two: a plain ward, and the control ward
    that also reveals. Ally and enemy are relative to the side being
    watched; with no side chosen, blue reads as ally and red as enemy,
-   which is how the map itself is coloured. */
+   which is how the map itself is coloured.
+
+   On 16.19 there is no archive and the wards are read out of the cast
+   class instead: placing a ward is a cast, and the cast carries where it
+   was aimed. How long one lasts is not in anything read there, so the
+   life shown is the game's own 120s and is a model, not a reading --
+   which is why those fade on a timer rather than vanish when something
+   kills them. */
 function drawWards() {
   const wards = data[patch].wards || [];
   if (!wards.length) return;

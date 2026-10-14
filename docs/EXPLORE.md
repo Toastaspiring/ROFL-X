@@ -1108,8 +1108,26 @@ him. Two ids, 77 of the game's 84 wards.
 by the 93 table entries still missing. Of those 44, **none** falls off
 the map and none lands further from its caster than a cast can reach —
 which is the check that matters, since a wrong table scatters
-coordinates everywhere. A ward's *duration* is not read by any of this,
-so the page draws the game's own 120 s and says it is a model.
+coordinates everywhere.
+
+**How precise, and the bias that was in it.** A coordinate is four
+bytes, and reading only the exponent and the byte under it puts a ward
+on a **64-unit grid**. Worse, the unread bytes were being filled with
+zero, which is not an estimate — it is the bottom of the interval, so
+every such ward was pushed the same way by half a step. Reading the
+third byte too, where the table covers it, and filling anything still
+unread with the *middle* of its range instead:
+
+| | before | after |
+|---|---|---|
+| exact to under a unit | 0 of 44 | **21 of 44** |
+| worst uncertainty | 64 units, one-sided | **32 units, centred** |
+
+The page draws a ring at that radius for the ones still on a grid, so a
+ward that is not pinned says so rather than looking exact.
+
+A ward's *duration* is not read by any of this, so the page draws the
+game's own 120 s and says it is a model.
 
 ### What this does and does not generalise to
 

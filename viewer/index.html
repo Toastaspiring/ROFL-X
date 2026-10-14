@@ -596,7 +596,15 @@ function drawObjects() {
    was aimed. How long one lasts is not in anything read there, so the
    life shown is the game's own 120s and is a model, not a reading --
    which is why those fade on a timer rather than vanish when something
-   kills them. */
+   kills them.
+
+   Nor is every coordinate read to the last byte. A float's exponent and
+   the byte under it place a ward on a 64-unit grid; the byte below that
+   takes it to a quarter of a unit. Where the table does not yet cover
+   that third byte the ward is drawn at the middle of the interval it
+   could be in -- not the bottom, which is what zero-filling would do and
+   would push every such ward the same way -- and a ring shows how wide
+   that interval is. */
 function drawWards() {
   const wards = data[patch].wards || [];
   if (!wards.length) return;
@@ -619,6 +627,17 @@ function drawWards() {
       ictx.beginPath();
       ictx.arc(cx, cy, iw / 3, 0, Math.PI * 2);
       ictx.fill();
+    }
+    /* Where the coordinate is not read to the last byte, the ward sits
+       somewhere inside this ring rather than exactly on the icon. Shown
+       rather than implied, the same as the position error bars. */
+    if (w.accuracy > 0) {
+      ictx.strokeStyle = ally ? "#7fd4ff" : "#ff7a7a";
+      ictx.globalAlpha *= 0.55;
+      ictx.lineWidth = 1;
+      ictx.beginPath();
+      ictx.arc(cx, cy, Math.max(2, toPx(w.accuracy)), 0, Math.PI * 2);
+      ictx.stroke();
     }
     ictx.globalAlpha = 1;
   }

@@ -18,7 +18,14 @@ SOURCES = {
     "954826ad": "trinket",       # per-champion count matches WARD_PLACED
     "6047b32c": "support item",  # covers the support's remainder exactly
 }
-SPELL_OFF, X, Z = 16, (25, 26), (29, 30)
+# The coordinate is a little-endian float, so x occupies 23..26 and z
+# 27..30: byte 0 lowest, the exponent last. Every byte it can read makes
+# the position finer -- with only the exponent and the byte beside it a
+# coordinate lands on a 64-unit grid, and the one below that takes it to
+# a quarter of a unit.
+SPELL_OFF = 16
+X = (23, 24, 25, 26)
+Z = (27, 28, 29, 30)
 MODEL_LIFE = 120.0     # a stealth ward's own duration; see the docstring
 WARD_SIGHT = 900.0
 
@@ -47,11 +54,30 @@ def at(k, t, slack=1.0):
             best = v[j]
     return (best[1], best[2]) if best and abs(best[0] - t) <= slack else None
 
-def coord(pay, man, exp):
-    a, b = T.get(pay[man]), T.get(pay[exp])
-    if a is None or b is None:
-        return None
-    return struct.unpack("<f", bytes([0, 0, a, b]))[0]
+def coord(pay, offs):
+    """Read as much of the float as the table covers.
+
+    The exponent and the byte under it are needed; the two below them
+    are a bonus. A byte that cannot be read is filled with the middle of
+    its range rather than with zero, because zero is not an estimate --
+    it is the bottom of the interval, and using it pushes every
+    coordinate the same way. The midpoint halves the worst error and
+    removes the bias."""
+    b0, b1, b2, b3 = (T.get(pay[o]) for o in offs)
+    if b3 is None or b2 is None:
+        return None, None
+    known = 2 + (b1 is not None) + (b1 is not None and b0 is not None)
+    if b1 is None:
+        b1, b0 = 0x80, 0x80
+    elif b0 is None:
+        b0 = 0x80
+    v = struct.unpack("<f", bytes([b0, b1, b2, b3]))[0]
+    # how wide the interval the unread bytes leave
+    step = struct.unpack("<f", bytes([0, 0, b2, b3]))[0]
+    nxt = struct.unpack("<f", bytes([0, 0, (b2 + 1) & 0xFF, b3]))[0]
+    grid = abs(nxt - step) if (b2 + 1) <= 0xFF else 0.0
+    err = 0.0 if known >= 3 else grid / 2.0
+    return v, err
 
 out, unread, bad = [], 0, 0
 for line in open("cast474.jsonl", encoding="utf-8"):
@@ -65,7 +91,7 @@ for line in open("cast474.jsonl", encoding="utf-8"):
     src = SOURCES.get(pay[SPELL_OFF:SPELL_OFF + 4].hex())
     if not src:
         continue
-    x, z = coord(pay, *X), coord(pay, *Z)
+    (x, ex), (z, ez) = coord(pay, X), coord(pay, Z)
     if x is None or z is None:
         unread += 1
         continue
@@ -77,7 +103,8 @@ for line in open("cast474.jsonl", encoding="utf-8"):
     out.append({"t": round(r["t"], 2), "until": round(r["t"] + MODEL_LIFE, 2),
                 "killed": False, "kind": "ward", "name": src,
                 "team": named[k]["team"], "role": named[k]["name"],
-                "x": round(x), "z": round(z), "sight": WARD_SIGHT,
+                "x": round(x, 1), "z": round(z, 1),
+                "accuracy": round(max(ex, ez), 1), "sight": WARD_SIGHT,
                 "modelled_life": True})
 out.sort(key=lambda w: w["t"])
 by = collections.Counter(w["role"] for w in out)

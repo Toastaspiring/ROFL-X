@@ -825,6 +825,68 @@ a waypoint, and nothing here gives its position. Plants and wards are
 in the spawn class with their coordinates, which `SpawnMinion` gives on
 16.9 — on 16.19 that class is not read yet, so neither are they.
 
+### Wards: the class is found, the table is not
+
+Wards are the obvious next thing after positions, and on **16.9 they are
+already read** — `rofl-x file` returns 158 of them with name, owner,
+position and duration, and its self-check against statsJson passes
+`wards_placed 10/10`. The question is only how to get there on a packed
+patch.
+
+The scoreboard says what the answer must be: `WARD_PLACED` totals **84**
+in the 16.19 sample, split Maokai 24, Karthus 10, Ahri 10, Cho'Gath 9,
+down to Qiyana 3, with `WARD_PLACED_DETECTOR` naming the 5 control wards
+among them.
+
+**The class is netid 898.** On 16.9 wards live in the spawn class, netid
+214, which the packet catalog records as matching `WARD_PLACED` exactly,
+50 / 50. Its 16.19 counterpart was proposed by fingerprint at a score of
+only 0.647 — not confident — but everything structural agrees:
+
+| | 16.9, netid 214 | 16.19, netid 898 |
+|---|---|---|
+| blocks | 2,729 | 1,309 |
+| distinct net ids | 2,729 — one per block | 1,309 — one per block |
+| ids in increasing time order | 97.7 % | 98.7 % |
+| first id | `0x400001ff` | `0x40000201` |
+| last id | `0x40016c51` | `0x40012965` |
+| payload bytes | 58–68 | 58–72 |
+
+One net id per block, handed out in order, starting just past the
+`0x200` where the game's own start-of-game entities end: that is a
+spawner, and nothing else in either patch looks like it.
+
+**What does not work.** Three routes were tried and are worth recording
+so they are not tried again:
+
+- *The exact counter proof.* No netid's per-champion block count equals
+  `WARD_PLACED`, `WARD_KILLED` or any other ward counter in three or
+  more replays. It cannot: the spawn class addresses the ward, not the
+  player who placed it, so the owner is inside the payload where the
+  counter machinery cannot see it.
+- *Names as cribs.* The class names what it spawns, and a substitution
+  keeps a word's shape, so `SRU_ChaosMinionMelee` should have been
+  findable by its repeats. It is not there, under any offset — the name
+  travels as a hash or an id, not as text. The matches a looser search
+  did return were all short weak patterns like `SRU_Red` appearing 1,313
+  times by chance.
+- *Borrowing the movement table.* Wards do not move, so the hope was
+  they still report once, standing still at zero speed. A few do: of the
+  1,309 spawned net ids only **133** appear in the movement class at
+  all, 59 of them static. Attributing those to the nearest champion
+  covers 18 of 84 wards, 21 %, correlating with the scoreboard at
+  r = +0.57 — the right shape (Maokai leads, as he should) and nowhere
+  near enough to use.
+
+**What is left** is to solve netid 898's own table, which is unrelated
+to the movement class's as every pair of tables in a patch is. The
+payload's shape is already measurable without it: narrow bytes four
+apart say where the float fields are, and a 12-byte run constant across
+339 spawns is a position repeated that many times, which is what a
+minion barracks looks like. That constant is the lever — it is a known
+coordinate appearing hundreds of times, the same kind of handle the
+constant-speed search used on the movement class.
+
 ### Five ways of getting known plaintext that do not work
 
 Reading a class needs its table, and a table needs known plaintext.

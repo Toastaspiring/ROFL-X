@@ -28,6 +28,11 @@ SPELL = {1: "Cleanse", 3: "Exhaust", 4: "Flash", 6: "Ghost", 7: "Heal",
          21: "Barrier", 32: "Mark", 39: "Mark", 54: "Placeholder"}
 FIELDS = ("SUMMONER_SPELL_1", "SUMMONER_SPELL_2",
           "SUMMON_SPELL1_CAST", "SUMMON_SPELL2_CAST", "NUM_DEATHS")
+# Wards are counted several ways, and the distinction matters: WARD_PLACED
+# is every ward, WARD_PLACED_DETECTOR only the control wards among them.
+WARD_FIELDS = ("WARD_PLACED", "WARD_PLACED_DETECTOR", "WARD_KILLED",
+               "VISION_WARDS_BOUGHT_IN_GAME", "SIGHT_WARDS_BOUGHT_IN_GAME",
+               "VISION_SCORE")
 
 
 def main() -> int:
@@ -45,8 +50,10 @@ def main() -> int:
     if not champs:
         print("no players found; is this a `rofl-x summary` dump?")
         return 1
-    vals = {f: re.findall(rf'"{f}":\s*"(-?\d+)"', txt) for f in FIELDS}
-    short = [f for f, v in vals.items() if len(v) != len(champs)]
+    vals = {f: re.findall(rf'"{f}":\s*"(-?\d+)"', txt)
+            for f in FIELDS + WARD_FIELDS}
+    short = [f for f, v in vals.items()
+             if len(v) != len(champs) and f in FIELDS]
     if short:
         print(f"the scoreboard is missing {', '.join(short)} for some players")
         return 1
@@ -61,7 +68,9 @@ def main() -> int:
         deaths = int(vals["NUM_DEATHS"][i])
         print(f"{champ:<14} {name(s1):<10}{c1:>6}   {name(s2):<10}{c2:>6}"
               f"   {deaths:>6}")
-        out[champ] = {"spells": {name(s1): c1, name(s2): c2}, "deaths": deaths}
+        out[champ] = {"spells": {name(s1): c1, name(s2): c2},
+                      "deaths": deaths,
+                      "wards": {f: int(vals[f][i]) for f in WARD_FIELDS}}
 
     json.dump(out, open(args.out, "w", encoding="utf-8"), indent=1)
     print(f"\nwrote {len(out)} players to {args.out}")

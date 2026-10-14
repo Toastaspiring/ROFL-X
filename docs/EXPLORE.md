@@ -878,14 +878,78 @@ so they are not tried again:
   r = +0.57 — the right shape (Maokai leads, as he should) and nowhere
   near enough to use.
 
-**What is left** is to solve netid 898's own table, which is unrelated
-to the movement class's as every pair of tables in a patch is. The
-payload's shape is already measurable without it: narrow bytes four
-apart say where the float fields are, and a 12-byte run constant across
-339 spawns is a position repeated that many times, which is what a
-minion barracks looks like. That constant is the lever — it is a known
-coordinate appearing hundreds of times, the same kind of handle the
-constant-speed search used on the movement class.
+#### The class, confirmed by elimination
+
+The fingerprint would not commit, so the question was asked the other
+way round: which 16.19 class *could* be a spawner at all? A spawner
+addresses a different entity every time, and its payload has to hold the
+struct. Of every class in the replay, exactly one has both properties at
+any volume:
+
+| netid | blocks | distinct entities | payload |
+|---|---|---|---|
+| **898** | **1,309** | **1,309** | **64–77** |
+| 111 | 179 | 179 | 97–126 |
+| 1014 | 42 | 42 | 71 |
+| 205 | 4 | 4 | 93/94 |
+
+That is worth more than the 0.647 the fingerprint gave it. The earlier
+test — one net id per block, handed out in time order — turned out not
+to discriminate at all: netids 942 and 495 pass it too. Payload size is
+what separates them.
+
+#### Where the position is on 16.9, exactly
+
+The layout tool gets 433 blocks of one length and says so: `NOT SETTLED`,
+with 2,495 conflicts in the table it offers. So the layout was taken
+from the wards instead, which are decoded and therefore known.
+
+A substitution is a function, so if a payload byte carries the top byte
+of a coordinate, every ward sharing that top byte must share that
+payload byte. Scanning all offsets at both alignments, **158 of 158
+wards agree** at one place:
+
+    payload[8:12]   x, big-endian float
+    payload[12:16]  z, big-endian float
+
+and the per-offset distinct-value counts confirm the shape — `4, 241,
+219, 220` then `4, 233, 219, 214`, an exponent that can only take a
+handful of values beside three bytes that take hundreds. Those 158 wards
+also hand over 141 cipher bytes of 16.9's spawn table, consistent with
+no contradictions, which places any spawn to about fifty units.
+
+#### On 16.19 the position is not at a fixed offset, and that is the finding
+
+The same signature is not there. Looked for pooled and length by length,
+from the start and from the end, and mirrored in case the class writes
+backwards as the movement class does:
+
+- Pooled, either alignment: no pair of exponent-shaped bytes four apart.
+- Length by length: one candidate, offset 19 in the 68-byte blocks.
+- That candidate fails. The two exponents of a position are not
+  independent — the Rift is a square with its traffic on a diagonal, so
+  16.9's spawns land 36.5 % on (x `0x45`, z `0x46`), 34.0 % on (`0x46`,
+  `0x45`), and so on. No relabelling of offsets 19 and 23 reproduces
+  that shape: the best leaves **66.8 %** total difference, because
+  offset 19 is 85 % a single value where a real x exponent splits about
+  evenly between two. 141 blocks were enough to throw up a coincidence
+  and enough to kill it.
+
+Two guesses that were also wrong and are cheap to repeat: the unit
+*names* are not in the payload as text under any offset, so they travel
+as a hash; and the 12-byte run constant across 339 spawns is not a
+minion barracks, because on 16.9 — where the positions are known —
+minions do not spawn at one point. They are jittered, and the commonest
+exact position there occurs 18 times, not 300.
+
+**What is left.** 16.19's spawn payload has a variable-length field
+ahead of whatever the position is, which is the only thing that explains
+a field being absent at every fixed offset at both ends. The movement
+class on the same patch does exactly that — a reversed buffer,
+right-aligned to the payload end, behind a varint header whose length
+changes block by block — so the next thing to try is parsing 898 that
+way, finding each block's header length first and only then looking for
+the coordinates at a fixed offset *inside* the buffer.
 
 ### Five ways of getting known plaintext that do not work
 

@@ -22,9 +22,10 @@ pub struct Cli {
 pub enum Command {
     /// Decode one replay into JSON. With a format-2 archive (built by
     /// `scripts/build_patch.py`) every packet goes through the game's own
-    /// deserializers and the output carries players, an event timeline,
-    /// per-second positions, wards and a self-check against the replay's
-    /// end-of-game stats. With one of Mowokuma's format-1 archives (15.x)
+    /// deserializers and the output carries players, an event timeline
+    /// (every blow struck included), per-second positions, the movement
+    /// orders of every unit in the game rather than only the champions,
+    /// wards, and a self-check against the replay's end-of-game stats. With one of Mowokuma's format-1 archives (15.x)
     /// the output is her JSON (positions and wards).
     File {
         /// Path to a `.rofl` file.

@@ -1575,6 +1575,48 @@ far along that is, not a smaller ambition.
   constraint on method and it is permanent; the rest of this list is
   just work not done.
 
+## What the decodable side was throwing away
+
+Two things were decoded correctly and then discarded before the JSON was
+written, which made the output look far less complete than the parser
+actually is.
+
+**Damage.** The class is read exactly — summing a champion's blows
+against the enemy team reproduces `TOTAL_DAMAGE_DEALT_TO_CHAMPIONS` for
+**10 of 10 players**, 231,994 against 231,989, which is float rounding —
+but only the *total* was kept. Every individual blow was dropped. They
+are now events: **34,818** of them where a champion is on one end, against
+4,452 events of every other kind combined.
+
+What the fields mean was checked against the scoreboard rather than
+assumed:
+
+- `hit` is the game's hit *result*, not the kind of damage. It takes
+  five values, and **3 is a critical strike**: its largest value per
+  player equals `LARGEST_CRITICAL_STRIKE` for **9 of 10** champions, and
+  reads zero for the seven who never crit. 895 of the game's blows were
+  crits.
+- `effect` names the particular ability or attack, one hash per champion
+  per source — 102 distinct hashes from ten champions. That is how an
+  auto is told from an ability: the hash whose largest value matches
+  `LARGEST_ATTACK_DAMAGE` is that champion's basic attack (Irelia
+  899 against 898, Ashe 786 against 785, Warwick 167 against 166).
+- The physical / magic / true split is **not** one of these fields. No
+  small field reproduces the scoreboard's three columns, so the kind is
+  not being claimed.
+
+**Everything that is not a champion.** The movement class was read for
+all units and kept for ten. The output now carries **172,857 orders
+across 5,746 units** — minions, monsters, pets, every one of them — the
+same 172,857 that were checked earlier against the game's own
+deserializer and matched exactly.
+
+They are stored as the orders themselves, each a moment, a speed and the
+path asked for, not as positions on a grid. A packet is an order to
+walk, so sampling it would decide for the reader what resolution they
+are allowed; walking the orders reconstructs a position at any instant,
+and § "Not every position change is a walk" measures how well.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

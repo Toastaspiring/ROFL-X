@@ -269,6 +269,9 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
     };
 
     let mut events: Vec<Value> = Vec::new();
+    // Every unit's movement orders, champions included, keyed by net id.
+    let mut tracks: std::collections::BTreeMap<u32, Vec<Value>> =
+        std::collections::BTreeMap::new();
     let mut inventory: Vec<[u32; 9]> = vec![[0; 9]; n];
     let mut kda: Vec<[u32; 3]> = vec![[0; 3]; n];
     let mut event_kills = vec![0u32; n];
@@ -331,6 +334,30 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
                     if meta.players[s].team != meta.players[t].team {
                         damage_to_champions[s] += f64::from(d.amount);
                     }
+                }
+                // The class was only ever counted, never reported, so every
+                // blow a champion struck or took was decoded and dropped.
+                // Emitted where a champion is on one end: minion trading
+                // minion is most of the traffic and none of the story.
+                //
+                // `hit` is the game's hit result, not the kind of damage.
+                // 3 is a critical strike: its largest value per player
+                // equals the replay's own LARGEST_CRITICAL_STRIKE for nine
+                // of ten champions, and reads zero for the seven who never
+                // crit. `effect` names the particular ability or attack
+                // that did it, one hash per champion per source -- which is
+                // how an auto can be told from an ability, since the hash
+                // whose largest value matches LARGEST_ATTACK_DAMAGE is that
+                // champion's basic attack.
+                if player_of(d.source).is_some() || player_of(d.target).is_some() {
+                    events.push(json!({
+                        "t": b.t, "type": "damage",
+                        "source": who(d.source), "target": who(d.target),
+                        "amount": d.amount,
+                        "hit": d.hit_type,
+                        "critical": d.hit_type == 3,
+                        "effect": format!("0x{:08x}", d.effect_hash),
+                    }));
                 }
             }
             GamePacket::BuyItem(x) => {
@@ -422,6 +449,22 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
                     if let Some(p) = player_of(path.unit) {
                         motion[p] = Some(Motion::Path { since: b.t, path: path.clone() });
                     }
+                    // Everything that is not a champion was being thrown
+                    // away: minions, monsters, pets and turret shots all
+                    // move through this class and none of them reached the
+                    // output. They are kept as the orders themselves --
+                    // when, how fast, and along which path -- rather than
+                    // as positions sampled on some grid, because a packet
+                    // is an order to walk and sampling it decides for the
+                    // reader what resolution they are allowed.
+                    tracks
+                        .entry(path.unit)
+                        .or_insert_with(Vec::new)
+                        .push(json!({
+                            "t": b.t,
+                            "speed": path.speed,
+                            "path": path.points,
+                        }));
                 }
             }
             GamePacket::SpellCast(c) => {
@@ -535,6 +578,16 @@ pub fn assemble(replay: &Replay<'_>, typed: &[TypedBlock], summary: &DecodeSumma
         "metadata": metadata,
         "players": players,
         "events": events,
+        // Orders, not samples: each is a moment, a speed and the path
+        // asked for, which is what the class actually carries. Walking
+        // them reconstructs a position at any instant.
+        "tracks": tracks.into_iter()
+            .map(|(id, orders)| json!({
+                "unit": format!("0x{id:08x}"),
+                "player": who(id),
+                "orders": orders,
+            }))
+            .collect::<Vec<_>>(),
         "players_state": players_state,
         "wards": wards,
         "vision": vision,

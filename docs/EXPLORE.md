@@ -1617,6 +1617,65 @@ walk, so sampling it would decide for the reader what resolution they
 are allowed; walking the orders reconstructs a position at any instant,
 and § "Not every position change is a walk" measures how well.
 
+### The damage class on a packed patch: found, and not readable
+
+**Which class, settled by behaviour.** The fingerprint only managed
+0.602 for this pair and the exact-counter proof cannot reach a class
+addressed to the victim rather than the player. So it was found a third
+way. A damage packet leaves a signature across the ten players that no
+substitution can hide — it fires more for champions who take more damage
+and more for those who deal more, because fights are mutual. On 16.9,
+where the class is known, that signature is `+0.80` damage taken and
+`+0.35` damage dealt, and scoring every class against it **ranks netid
+652 first of 31**. The same scoring on 16.19 **ranks netid 95 first of
+35**, at `+0.71` damage taken.
+
+(Measured on one replay it looked like the opposite — `−0.77` against
+deaths — and that single game was noise. Averaged over six it is the
+best candidate by the method that validates on the control.)
+
+Three substitution-invariant statistics agree: payload 13–22 bytes
+addressed to a unit on both, length profiles matching to 23 % across
+fifteen buckets, `commonest_8_bytes_share` **0.240 against 0.244**, and
+`commonest_byte_share` **0.059 against 0.058**.
+
+**What the payload is, on the patch that decodes.** The layout tool maps
+only two bytes of it and calls the other fourteen "not in the object",
+because the rest is packed rather than copied. Decoding the payload
+through 16.9's own table — recovered complete, 256 of 256 — and
+comparing against the emulator's values shows what it actually is:
+
+    [varint source][varint target][varint effect hash] + a fixed tail,
+    whose last four bytes are the amount, big-endian
+
+**81,248 of 81,553 lengths (99.6 %)** sit 8 to 10 bytes above what those
+three varints cost, and the amount reads as the last four bytes at 99 %
+to 100 % for every payload length. The block's `param` is the **victim**,
+in 100 % of blocks, not the attacker.
+
+**Why it still cannot be read on 16.19.** The amount is a float, and a
+float's exponent byte is narrow because damage spans only a few octaves.
+Counting the tail bytes of each class settles whether that float is
+there:
+
+| | narrow bytes (≤60 values) | full-entropy bytes (≥250) |
+|---|---|---|
+| 16.9, netid 652 | **one** — end−3, 37 values, 40/26/17 % | three — end−0,1,2 |
+| 16.19, netid 95 | **none** | **five** — end−5…9 |
+
+One narrow byte beside three wide ones is a float. None beside five is
+not. Searched from both ends, at every payload length, and mirrored for
+a class that might write backwards, there is no byte anywhere in 16.19's
+damage payload whose frequencies look like a damage exponent — the
+closest is 0.238 away from 16.9's curve, where a match would be near
+zero.
+
+So the amount is not a byte-aligned float on 16.19. Either it is an
+integer or fixed-point value, which has no exponent to find, or the
+fixed tail is bit-packed and no byte boundary lines up with a field.
+Both readings predict exactly what is seen, and nothing measured here
+separates them.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

@@ -1104,8 +1104,8 @@ Maokai's twenty-two remaining wards with nothing left over: the support
 item's ward, which is why the trinket alone could never have explained
 him. Two ids, 77 of the game's 84 wards.
 
-**What comes out.** 50 of 84 wards placed and located, the rest held up
-by the 80 table entries still missing. Of those 44, **none** falls off
+**What comes out.** 59 of 84 wards placed and located, the rest held up
+by the 62 table entries still missing. Of those 44, **none** falls off
 the map and none lands further from its caster than a cast can reach —
 which is the check that matters, since a wrong table scatters
 coordinates everywhere.
@@ -1120,7 +1120,7 @@ unread with the *middle* of its range instead:
 
 | | before | after |
 |---|---|---|
-| exact to under a unit | 0 of 50 | **26 of 50** |
+| exact to under a unit | 0 of 59 | **36 of 59** |
 | worst uncertainty | 64 units, one-sided | **32 units, centred** |
 
 The page draws a ring at that radius for the ones still on a grid, so a
@@ -1914,12 +1914,41 @@ that their position be on the map and within a cast's reach of the
 caster. Thirty per cent of the new ones being detectably wrong says the
 entries behind them are wrong, and that others will be wrong without
 being detectable — a bad entry that lands on the map passes silently. So
-the strict setting is the one kept, at **176 of 256**.
+the strict setting was kept, at **176 of 256**.
+
+#### A tighter constraint: casts land *on* people
+
+Being within reach of the caster rules out most candidates and rarely
+all but one, because reach is a loose statement — a circle 3,000 units
+across. A sharper one is available for a good share of casts: a spell
+thrown at somebody lands **on** them, and every champion's position is
+already known to a couple of map units. That turns "somewhere in this
+circle" into "on one of these ten points".
+
+Scoring both — in range of the caster for every cast, on a champion for
+the ones aimed at one, the second counting for more because it is exact
+— pins what reach alone could not, and does it *without* the quality
+cost of merely loosening the threshold:
+
+| | entries | wards | exact | failed |
+|---|---|---|---|---|
+| reach alone, strict | 176 | 50 | 26 | 0 |
+| reach alone, loosened | 195 | 55 | 35 | **3** |
+| **reach and champions** | **194** | **59** | **36** | **0** |
+
+Almost the same number of entries as the loosened setting, four more
+wards, and none of the failures. Loosening a threshold buys entries by
+accepting worse evidence; adding a constraint buys them with better.
+
+Pushed further still — 203 entries — two wards fail again, so that is
+where it stops.
 
 A second measure agrees and is worth recording because it is less
 sensitive than it looks: decoding every cast in all twenty replays,
-**9.5 %** of targets land off the map with 167 entries and **10.3 %**
-with 195. That the baseline is 9.5 % at all means either some of the
+**9.5 %** of targets land off the map with 167 entries and **10.5 %**
+with 194. Some of that rise is expected rather than error: the casts
+that become readable are the ones using rare cipher values, and a rare
+coordinate is a coordinate near the edge of the map. That the baseline is 9.5 % at all means either some of the
 original entries are wrong or a cast's target genuinely lies off the
 playable map about one time in ten, and nothing here separates those.
 

@@ -352,9 +352,10 @@ read in some form, **6.3 %** are known to carry nothing an action could
 come from, and **44.5 %** are still unread. What that leaves, with why
 each is where it is:
 
-**1. The cast class's missing table entries.** 89 were missing; 80 are
-now, after a pass of elimination that stops where the ward decode starts
-failing (EXPLORE.md). The
+**1. The cast class's missing table entries.** 89 were missing; **62**
+are now, after elimination on the bijection, on what a cast can reach,
+and on the fact that a cast aimed at a champion lands on one
+(EXPLORE.md). Wards went 49 to 59 of 84, exact ones 23 to 36. The
 most direct lever on the list: it holds back both the 35 wards that
 cannot be placed and the 26 that sit on a ±16 or ±32 grid. More replays
 no longer help — going from 7 to 20 added four entries — so it needs a

@@ -1735,6 +1735,57 @@ a field against a position already known — simply returns nothing here,
 and until something says who these four points belong to, they stay
 unread.
 
+### Classes that need no table at all
+
+A class whose payload never varies is already read. Nothing is hidden in
+a constant — whatever the substitution turns it into, every block says
+the same thing — and everything such a class carries is in the framing:
+which unit it names, and when. Both are plaintext.
+
+Six of them on 16.19, **36,073 blocks, 3.2 % of the replay**, readable
+with no cryptanalysis whatever:
+
+| netid | blocks | entities | what it is |
+|---|---|---|---|
+| 325 | 17,177 | 5,538 | a missile finishing its flight |
+| 69 | 6,368 | 1,813 | leaving a team's vision |
+| 1230 | 4,086 | 3,944 | a unit being created |
+| 159 | 4,086 | 3,944 | the same instant, paired with 1230 |
+| 789 | 3,106 | 21 | something periodic, per champion |
+| 1261 | 1,250 | 24 | an object being attached |
+
+**1230 is a complete birth timeline.** Its 3,944 net ids are a strict
+superset of the spawn class's 1,309, and for all 1,309 it fires at the
+*same instant* as the spawn — median difference 0.00 s, every one inside
+half a second. So the spawn class sees only a third of what is created,
+and this sees the rest. 159 fires with it on all 3,944, to the
+hundredth of a second: they are a pair.
+
+**325 is about missiles, not units.** 16.9 names its counterpart
+`PKT_S2C_SyncMovementCompleteCount_s` on `MissileClient`, and the ids
+bear that out — 5,538 of them, with *no* overlap at all with the spawn
+class's and only 174 with 1230's. They are a separate id space. Their
+flight is not readable: only 291 of their 5,489 movement keys appear in
+the movement class, so what is known is when each projectile ended, not
+where it went.
+
+This takes 16.19 from **46.0 %** of blocks read in some form to
+**49.1 %**.
+
+### A caveat on the movement class's unit key
+
+Finding the missiles turned up a limit in work already done. The
+movement class keys a unit by **two bytes** of its net id, and net ids
+on this patch run past `0x40010000`, so two entities can share a key.
+Counted against the two id spaces now known: **265 keys are claimed by
+both a unit and a missile**, out of the 3,286 the movement class holds.
+
+For champions it does not matter — their ids are `0x400000ae` to `b7`
+and collide with nothing, which is why naming and tracks are exact. For
+the entity dots it means some tracks may braid a unit together with a
+projectile. The entry carries the whole four-byte id, so the key could
+simply be widened; it has not been.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

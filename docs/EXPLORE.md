@@ -1772,19 +1772,28 @@ where it went.
 This takes 16.19 from **46.0 %** of blocks read in some form to
 **49.1 %**.
 
-### A caveat on the movement class's unit key
+### The movement class's unit key, widened
 
 Finding the missiles turned up a limit in work already done. The
-movement class keys a unit by **two bytes** of its net id, and net ids
-on this patch run past `0x40010000`, so two entities can share a key.
-Counted against the two id spaces now known: **265 keys are claimed by
-both a unit and a missile**, out of the 3,286 the movement class holds.
+movement class keyed a unit by **two bytes** of its net id, and net ids
+on this patch run past `0x40010000`, so two entities could share a key
+and have their tracks braided together.
 
-For champions it does not matter — their ids are `0x400000ae` to `b7`
-and collide with nothing, which is why naming and tracks are exact. For
-the entity dots it means some tracks may braid a unit together with a
-projectile. The entry carries the whole four-byte id, so the key could
-simply be widened; it has not been.
+The comment defending two bytes argued that a third would be
+near-constant and "quietly merge units together". That is backwards:
+adding a byte to a key can only ever *split* a group, never merge one.
+The third byte is now in the key, and the fourth is not, because it is
+`0x40` for everything.
+
+What it is worth, measured rather than estimated: **30 tracks come
+apart**, 3,286 units becoming 3,316, with every position accounted for
+either way (84,458 both before and after). An earlier draft of this
+section put it at 265 from the overlap of the two id spaces; that was
+the number of keys that *could* collide, not the number that did.
+
+Champions were never affected — their ids are `0x400000ae` to `b7` and
+collide with nothing, which is why naming and tracks were exact
+throughout.
 
 ## What would make this much stronger
 

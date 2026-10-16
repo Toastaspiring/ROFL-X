@@ -642,7 +642,7 @@ pub type UnitTracks = HashMap<(usize, u8, u8), Vec<(f32, u8, u8)>>;
 pub struct Position {
     pub replay: usize,
     pub t: f32,
-    pub unit: (u8, u8),
+    pub unit: (u8, u8, u8),
     pub x: f32,
     pub z: f32,
     /// True when every coordinate's low byte was in the table, so the
@@ -706,11 +706,18 @@ fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Opt
             return None; // zero waypoints: the format does not allow it
         }
         // Buffer index `start` is the flags' low byte, so the net id
-        // runs from start + 2 and the move speed from start + 6. The
-        // id's low two bytes identify the unit: reading one byte
-        // further would key on bytes that are near-constant across the
-        // game and quietly merge units together.
-        let unit = (at(start + 2), at(start + 3));
+        // runs from start + 2 and the move speed from start + 6.
+        //
+        // Three of the id's four bytes key the unit. Two are not
+        // enough: net ids on a long game run past 0x40010000, and the
+        // third byte is what separates those from the 0x4000 range. It
+        // is nearly constant, which is why it was left out -- but a
+        // near-constant byte can only ever split a key, never merge
+        // one. Measured on a 16.19 replay, the third byte pulls apart
+        // 30 tracks that two bytes had braided together, 3,286 units
+        // becoming 3,316. The fourth byte is 0x40 for everything and is
+        // genuinely worth nothing.
+        let unit = (at(start + 2), at(start + 3), at(start + 4));
         let speed = f32::from_le_bytes([
             read(start + 6)?,
             read(start + 7)?,
@@ -774,7 +781,7 @@ fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Opt
 /// One unit's move order: where it is, how fast it walks, and the path
 /// it was told to walk. The first point is where it is now.
 struct Entry {
-    unit: (u8, u8),
+    unit: (u8, u8, u8),
     speed: f32,
     points: Vec<(i16, i16)>,
     /// False when a coordinate's low byte was not in the table, so the
@@ -2234,7 +2241,7 @@ mod tests {
         // map_x / map_z double the stored value and add the origin.
         assert_eq!((found[0].x, found[0].z), (map_x(100), map_z(-200)));
         assert_eq!((found[1].x, found[1].z), (map_x(1000), map_z(2000)));
-        assert_eq!(found[0].unit, (0x34 ^ SUB, 0x00 ^ SUB));
+        assert_eq!(found[0].unit, (0x34 ^ SUB, 0x00 ^ SUB, 0x00 ^ SUB));
     }
 
     #[test]

@@ -44,7 +44,10 @@ import bisect, collections, glob, json, struct
 
 MIN_SEEN = 10
 TAB = {int(p, 16): int(c, 16) for p, c in json.load(open("table1619.json")).items()}
-key = lambda nid: f"{TAB[nid & 0xFF]:02x}{TAB[(nid >> 8) & 0xFF]:02x}"
+# Three bytes of the net id, matching the key the movement class
+# writes: two were not enough once ids ran past 0x40010000.
+key = lambda nid: (f"{TAB[nid & 0xFF]:02x}{TAB[(nid >> 8) & 0xFF]:02x}"
+                   f"{TAB[(nid >> 16) & 0xFF]:02x}")
 
 pairs = [("pos1sr_t.jsonl", "cast474.jsonl")]
 for p in sorted(glob.glob("pos_r*.jsonl")):

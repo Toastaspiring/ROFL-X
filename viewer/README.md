@@ -92,6 +92,13 @@ python scripts/viewer_wards.py --decoded decoded.json --out wards916.json
 python scripts/viewer_build.py
 ```
 
+`viewer_events.py` reads `viewer_data.json` to know which units are
+champions, and `viewer_build.py` reads the events — so the two lean on
+each other. Starting from nothing, or after anything that changes how a
+unit is keyed, run `viewer_build.py` once before step 5 and again after
+step 7. Skipping that first pass leaves the events looking for units
+under keys the build has not written yet, and the counts come out zero.
+
 Every path above is a default; `--help` on any script lists them. The
 one argument worth knowing is `viewer_build.py --table`: without a
 solved table the low byte of each coordinate is unknown, and the page

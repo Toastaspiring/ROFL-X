@@ -31,7 +31,10 @@ WARD_SIGHT = 900.0
 
 T = {int(c, 16): int(p, 16) for c, p in json.load(open("tab474.json")).items()}
 TAB = {int(p, 16): int(c, 16) for p, c in json.load(open("table1619.json")).items()}
-key = lambda nid: f"{TAB[nid & 0xFF]:02x}{TAB[(nid >> 8) & 0xFF]:02x}"
+# Three bytes of the net id, matching the key the movement class
+# writes: two were not enough once ids ran past 0x40010000.
+key = lambda nid: (f"{TAB[nid & 0xFF]:02x}{TAB[(nid >> 8) & 0xFF]:02x}"
+                   f"{TAB[(nid >> 16) & 0xFF]:02x}")
 data = json.load(open("viewer/viewer_data.json"))["patch_16_19"]["units"]
 named = {k: v for k, v in data.items() if v.get("name")}
 

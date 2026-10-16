@@ -1227,13 +1227,14 @@ fn dump_positions_to(
         let path: Vec<String> =
             p.path.iter().map(|(x, z)| format!("[{x:.1},{z:.1}]")).collect();
         text.push_str(&format!(
-            "{{\"replay\":{},\"t\":{:.3},\"unit\":\"{:02x}{:02x}\",\
+            "{{\"replay\":{},\"t\":{:.3},\"unit\":\"{:02x}{:02x}{:02x}\",\
              \"x\":{:.1},\"z\":{:.1},\"speed\":{:.1},\"path\":[{}],\
              \"accuracy_map_units\":{}}}\n",
             p.replay,
             p.t,
             p.unit.0,
             p.unit.1,
+            p.unit.2,
             p.x,
             p.z,
             p.speed,
@@ -1244,7 +1245,7 @@ fn dump_positions_to(
     std::fs::write(out, text)?;
     eprintln!("wrote {} positions to {}", found.len(), out.display());
 
-    let units: std::collections::HashSet<(u8, u8)> = found.iter().map(|p| p.unit).collect();
+    let units: std::collections::HashSet<(u8, u8, u8)> = found.iter().map(|p| p.unit).collect();
     Ok(Some(serde_json::json!({
         "netid": netid,
         "file": out.display().to_string(),

@@ -1104,8 +1104,8 @@ Maokai's twenty-two remaining wards with nothing left over: the support
 item's ward, which is why the trinket alone could never have explained
 him. Two ids, 77 of the game's 84 wards.
 
-**What comes out.** 44 of 84 wards placed and located, the rest held up
-by the 93 table entries still missing. Of those 44, **none** falls off
+**What comes out.** 49 of 84 wards placed and located, the rest held up
+by the 89 table entries still missing. Of those 44, **none** falls off
 the map and none lands further from its caster than a cast can reach —
 which is the check that matters, since a wrong table scatters
 coordinates everywhere.
@@ -1120,7 +1120,7 @@ unread with the *middle* of its range instead:
 
 | | before | after |
 |---|---|---|
-| exact to under a unit | 0 of 44 | **21 of 44** |
+| exact to under a unit | 0 of 49 | **23 of 49** |
 | worst uncertainty | 64 units, one-sided | **32 units, centred** |
 
 The page draws a ring at that radius for the ones still on a grid, so a
@@ -1839,6 +1839,37 @@ is dead, and the death class gives all 74 death windows exactly — but
 measured inside those windows against outside, every stream keeps its
 rate, **0.92× to 1.00×**. So the broadcast does not pause for death, and
 nothing else yet separates one stream from another.
+
+### More replays, and what they were worth
+
+Twenty replays on this patch were available where seven were being
+used, so the obvious move was to pool them all. It made the table
+**worse**: 20 games gave 105 entries at 43 % agreement where 6 had given
+151 at 63 %.
+
+The reason is not noise in the usual sense. The mantissa vote works
+because a share of casts land at the caster's own feet; a replay whose
+casts are aimed further away contributes more scatter than signal.
+Measured per replay, the x exponent agrees with the caster's octave
+between **79 % and 96 %** depending on the game — the field is at offset
+26 in every one of the twenty, so the layout is fixed and the difference
+is how people played.
+
+The fix is to filter casts rather than replays, using what is already
+known: the three recovered exponent values say whether a cast's target
+shares an octave with its caster on both axes, and if it does the target
+is near them. Keeping only those, all twenty games give **121** entries
+— better than 105, still short of the clean six's 151.
+
+So both were kept and merged, which is also a check. They come from
+different games and different filters, and where they overlap they
+**agree on 112 of 112**. Merging those with the table already committed
+gives **167 entries** after one contradiction is dropped: `0xbf` reads
+`0xeb` in one recovery and `0xf7` in the other, and since nothing says
+which is right, neither is used. 153 of the other 154 shared entries
+agree.
+
+Wards go from 44 of 84 to **49**, and from 21 exact to **23**.
 
 ## What would make this much stronger
 

@@ -40,7 +40,7 @@ Usage:
     rofl-x explore -r <replay> --table table1619.json --positions-netid 1267         --dump-positions pos.jsonl -o meta.json
     python scripts/cast_table.py          # reads every pos_*/cast_* pair it finds
 """
-import bisect, collections, glob, json, struct
+import bisect, collections, glob, json, os, struct, sys
 
 MIN_SEEN = 10
 TAB = {int(p, 16): int(c, 16) for p, c in json.load(open("table1619.json")).items()}
@@ -49,10 +49,17 @@ TAB = {int(p, 16): int(c, 16) for p, c in json.load(open("table1619.json")).item
 key = lambda nid: (f"{TAB[nid & 0xFF]:02x}{TAB[(nid >> 8) & 0xFF]:02x}"
                    f"{TAB[(nid >> 16) & 0xFF]:02x}")
 
-pairs = [("pos1sr_t.jsonl", "cast474.jsonl")]
-for p in sorted(glob.glob("pos_r*.jsonl")):
-    c = p.replace("pos_", "cast_")
-    pairs.append((p, c))
+# Every replay on the patch, since a table belongs to the patch and not
+# to a game: each one adds a few thousand casts, and it is the cumulative
+# count that drags the rare cipher values into view.
+# Every replay on the patch, since a table belongs to the patch and not
+# to a game. A replay whose casts are aimed further from their caster
+# agrees less -- 79% against 96% between the best and worst here -- so
+# the set can be narrowed with the first argument when that matters.
+PATTERN = sys.argv[1] if len(sys.argv) > 1 else "pos_*.jsonl"
+pairs = [(p, p.replace("pos_", "cast_"))
+         for p in sorted(glob.glob(PATTERN))
+         if os.path.exists(p.replace("pos_", "cast_"))]
 
 samples = []
 for pos_path, cast_path in pairs:

@@ -54,6 +54,7 @@ BLINK = 800.0
 UNEXPLAINED = 600.0
 SAME_EVENT = 1.5      # consecutive unexplained steps are one event
 REVIVE = 90.0         # longest a respawn can take
+SHORTEST_RESPAWN = 8.0  # nothing in the game revives faster
 LONGEST_RESPAWN = 90.0  # the game's own ceiling, a little over a minute
 
 
@@ -143,26 +144,33 @@ def main() -> int:
                 if r["t"] > d:
                     break
                 last = r
-            # A champion is down until it stands in its own fountain
-            # again. Taking its next packet instead gives nonsense: the
-            # stream keeps reporting a dead champion, parked outside its
-            # corner of the map, so 55 of this game's 72 timers came out
-            # at 0.03s -- shorter than any respawn can be.
+            # A death is a silence. The champion reports once more
+            # where it fell, then nothing, and the next thing it says is
+            # the respawn -- so the gap is the timer.
             #
-            # Bounded, because the game bounds it: a respawn runs from
-            # about ten seconds early to a little over a minute at the
-            # end of a long game, and never longer. Without the bound
-            # a death whose respawn is missed silently attaches itself
-            # to the champion's next trip home, half an hour later.
+            # Two wrong readings were tried first and are worth naming.
+            # Taking simply the next packet gives that one last report,
+            # 0.03s later: 55 of this game's 72 timers came out that
+            # way. Waiting instead for the champion to stand in its own
+            # fountain fails differently, because a champion that
+            # respawns unseen is parked outside the map corner rather
+            # than reported at the fountain, and those packets are
+            # filtered out upstream -- 33 of 74 deaths then found no
+            # respawn at all.
+            #
+            # The bounds are the game's own: no respawn is quicker than
+            # about ten seconds or slower than a little over a minute.
+            # Without the upper one, a death whose respawn is missed
+            # silently attaches itself to the champion's next trip home
+            # half an hour later.
             back = None
             for r in v:
-                if r["t"] <= d:
+                if r["t"] - d < SHORTEST_RESPAWN:
                     continue
                 if r["t"] - d > LONGEST_RESPAWN:
                     break
-                if math.dist((r["x"], r["z"]), FOUNTAIN[team]) < AT_SPAWN:
-                    back = r
-                    break
+                back = r
+                break
             events.append({"unit": key, "name": name, "team": team, "kind": "death",
                            "t": round(d, 2),
                            "until": round(back["t"], 2) if back else None,

@@ -1104,8 +1104,8 @@ Maokai's twenty-two remaining wards with nothing left over: the support
 item's ward, which is why the trinket alone could never have explained
 him. Two ids, 77 of the game's 84 wards.
 
-**What comes out.** 49 of 84 wards placed and located, the rest held up
-by the 89 table entries still missing. Of those 44, **none** falls off
+**What comes out.** 50 of 84 wards placed and located, the rest held up
+by the 80 table entries still missing. Of those 44, **none** falls off
 the map and none lands further from its caster than a cast can reach —
 which is the check that matters, since a wrong table scatters
 coordinates everywhere.
@@ -1120,7 +1120,7 @@ unread with the *middle* of its range instead:
 
 | | before | after |
 |---|---|---|
-| exact to under a unit | 0 of 49 | **23 of 49** |
+| exact to under a unit | 0 of 50 | **26 of 50** |
 | worst uncertainty | 64 units, one-sided | **32 units, centred** |
 
 The page draws a ring at that radius for the ones still on a grid, so a
@@ -1870,6 +1870,58 @@ which is right, neither is used. 153 of the other 154 shared entries
 agree.
 
 Wards go from 44 of 84 to **49**, and from 21 exact to **23**.
+
+### Finishing the table by elimination, and where to stop
+
+The vote that recovered 167 entries is spent: it works on ciphers common
+enough to out-vote their rivals, and what is left is rare by definition.
+So the last stretch is done by elimination instead, on three things the
+vote never used.
+
+**The bijection.** A substitution is one-to-one, so 167 entries known
+leaves an unknown cipher with **89 candidates, not 256** — and every
+entry recovered takes one more away, which is why this has to be run to
+a fixed point rather than once.
+
+**The reach.** A cast is thrown from somewhere. With the exponent known
+the mantissa decides where in that octave the target sits, so a
+candidate putting it beyond what a spell can reach is not unlikely, it
+is impossible.
+
+**The ward casts.** A ward goes on the ground at the caster's feet,
+within about 650 units where a spell may reach 1,500. They are known by
+their spell id, and each is worth several ordinary casts.
+
+Demanding that a candidate satisfy *every* observation pins nothing: one
+cast thrown across the lane is enough to rule out the true answer.
+Scoring candidates instead, and requiring the winner to clear most
+observations and beat its rival, works.
+
+**Where to stop is the interesting part.** Loosening the threshold keeps
+finding entries, and the ward decode is the test that says when they
+stop being real:
+
+| threshold | entries | wards placed | exact | failed the map or range |
+|---|---|---|---|---|
+| clear 0.95 | 167 | 49 | 23 | 0 |
+| **clear 0.85, margin 2** | **176** | **50** | **26** | **0** |
+| clear 0.85, margin 1 | 185 | 54 | 29 | 1 |
+| clear 0.82, margin 1 | 195 | 55 | 35 | 3 |
+
+The loosest setting looks much the best until the last column is read:
+of the ten wards it adds over the strict one, **three fail** the check
+that their position be on the map and within a cast's reach of the
+caster. Thirty per cent of the new ones being detectably wrong says the
+entries behind them are wrong, and that others will be wrong without
+being detectable — a bad entry that lands on the map passes silently. So
+the strict setting is the one kept, at **176 of 256**.
+
+A second measure agrees and is worth recording because it is less
+sensitive than it looks: decoding every cast in all twenty replays,
+**9.5 %** of targets land off the map with 167 entries and **10.3 %**
+with 195. That the baseline is 9.5 % at all means either some of the
+original entries are wrong or a cast's target genuinely lies off the
+playable map about one time in ten, and nothing here separates those.
 
 ## What would make this much stronger
 

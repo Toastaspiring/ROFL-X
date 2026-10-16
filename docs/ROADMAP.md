@@ -352,7 +352,9 @@ read in some form, **6.3 %** are known to carry nothing an action could
 come from, and **44.5 %** are still unread. What that leaves, with why
 each is where it is:
 
-**1. The cast class's 89 missing table entries.** *In progress.* The
+**1. The cast class's missing table entries.** 89 were missing; 80 are
+now, after a pass of elimination that stops where the ward decode starts
+failing (EXPLORE.md). The
 most direct lever on the list: it holds back both the 35 wards that
 cannot be placed and the 26 that sit on a ±16 or ±32 grid. More replays
 no longer help — going from 7 to 20 added four entries — so it needs a

@@ -104,6 +104,23 @@ one argument worth knowing is `viewer_build.py --table`: without a
 solved table the low byte of each coordinate is unknown, and the page
 says so and draws the error radius rather than pretending.
 
+## The parse itself
+
+The page is a check on the reading, not the point of it.
+`scripts/parse_packed.py` collects everything readable on a packed patch
+into one JSON — the movement orders of every unit, deaths, recalls,
+wards, unit creations, missile completions and vision changes — with
+each entry saying whether it was **read** from the file, **inferred**
+from shape, or **modelled** because the file does not carry it at all.
+
+```bash
+python scripts/parse_packed.py --out parsed_16_19.json
+```
+
+It also states what is *not* in it, which matters as much: damage,
+items, levels and ability identities are not readable on a packed patch
+today, and `docs/EXPLORE.md` says for each how far it got.
+
 ## Checking it without looking
 
 `scripts/sanity_check.py` asserts what the game itself guarantees —

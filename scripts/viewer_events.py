@@ -54,6 +54,7 @@ BLINK = 800.0
 UNEXPLAINED = 600.0
 SAME_EVENT = 1.5      # consecutive unexplained steps are one event
 REVIVE = 90.0         # longest a respawn can take
+LONGEST_RESPAWN = 90.0  # the game's own ceiling, a little over a minute
 
 
 def along(path, dist):
@@ -136,17 +137,37 @@ def main() -> int:
         # death until its next packet, and that reappearance is a respawn,
         # not a walk.
         for d in ds:
-            nxt = next((r for r in v if r["t"] > d), None)
             # Where it fell: the last position it reported while still alive.
             last = None
             for r in v:
                 if r["t"] > d:
                     break
                 last = r
+            # A champion is down until it stands in its own fountain
+            # again. Taking its next packet instead gives nonsense: the
+            # stream keeps reporting a dead champion, parked outside its
+            # corner of the map, so 55 of this game's 72 timers came out
+            # at 0.03s -- shorter than any respawn can be.
+            #
+            # Bounded, because the game bounds it: a respawn runs from
+            # about ten seconds early to a little over a minute at the
+            # end of a long game, and never longer. Without the bound
+            # a death whose respawn is missed silently attaches itself
+            # to the champion's next trip home, half an hour later.
+            back = None
+            for r in v:
+                if r["t"] <= d:
+                    continue
+                if r["t"] - d > LONGEST_RESPAWN:
+                    break
+                if math.dist((r["x"], r["z"]), FOUNTAIN[team]) < AT_SPAWN:
+                    back = r
+                    break
             events.append({"unit": key, "name": name, "team": team, "kind": "death",
-                           "t": round(d, 2), "until": round(nxt["t"], 2) if nxt else None,
+                           "t": round(d, 2),
+                           "until": round(back["t"], 2) if back else None,
                            "at": [round(last["x"]), round(last["z"])] if last else None,
-                           "to": [round(nxt["x"]), round(nxt["z"])] if nxt else None})
+                           "to": [round(back["x"]), round(back["z"])] if back else None})
 
         raw = []
         for a, b in zip(v, v[1:]):

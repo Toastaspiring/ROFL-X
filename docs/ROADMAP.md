@@ -344,3 +344,55 @@ no exact arithmetic three separate ways, nor the affine structure,
 which one class of 23 has. The next boundary is reached when some
 other source of known plaintext appears, or when the remaining error
 is shown to be irreducible from the file alone.
+
+## Phase 8, what is left on 16.19, in the order it is worth doing
+
+Measured on the sample replay: **49.1 %** of its 1,140,285 blocks are
+read in some form, **6.3 %** are known to carry nothing an action could
+come from, and **44.5 %** are still unread. What that leaves, with why
+each is where it is:
+
+**1. The cast class's 89 missing table entries.** *In progress.* The
+most direct lever on the list: it holds back both the 35 wards that
+cannot be placed and the 26 that sit on a ±16 or ±32 grid. More replays
+no longer help — going from 7 to 20 added four entries — so it needs a
+different constraint rather than more data.
+
+**2. Damage, netid 95, 4.9 %.** The class is settled by a signature
+method that picks the right one on the control patch. Reading the amount
+is blocked for a stated reason: a float's exponent byte is narrow, and
+there is no narrow byte anywhere in that payload, at either alignment or
+any length. Either the amount is an integer, or the fixed tail is
+bit-packed. Nothing measured separates those, and value ranges alone
+will not: that lane needs a block whose amount is independently known —
+a killing blow against a health already read, say.
+
+**3. Netids 77 and 587, 6.4 %.** Payloads up to 7,516 bytes addressed to
+the game. A payload that large is a buffer, which is what the movement
+class turned out to be, so the same reading may apply: a varint header
+and a reversed, right-aligned entry stream.
+
+**4. Missiles, netids 135 and 138, 3.1 %.** Creation and dimension.
+Netid 325 already gives when each projectile ends, with no table at all,
+so these two would complete the picture. Their ids live in their own
+space, disjoint from units'.
+
+**5. Netid 751, 2.9 %.** Ten equal streams and a float, almost certainly
+the ten champions on a round-robin. Which stream is which champion is
+unsolved — the obvious test fails, every stream holding its rate through
+that champion's death windows at 0.92× to 1.00×.
+
+**6. The facing class, netid 910.** Read to an axis but not along it:
+geometry fixes the magnitudes, and nothing yet fixes the signs beyond a
+54–68 % lean per cipher.
+
+**7. The 212 positions that are off the map for no reason**, 0.25 % of
+them, which are residual table error rather than the stream declining
+to report a unit.
+
+Not on this list, because it is a different kind of problem: damage,
+items, levels and which ability a cast was all need known plaintext that
+nothing outside the file pins down. Positions yielded because the map
+constrains them, wards because Riot counts them, and a facing because a
+unit vector has length one. These have no such handle, and finding one
+is an idea rather than an amount of work.

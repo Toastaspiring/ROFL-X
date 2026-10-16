@@ -1795,6 +1795,51 @@ Champions were never affected — their ids are `0x400000ae` to `b7` and
 collide with nothing, which is why naming and tracks were exact
 throughout.
 
+### What the big unread classes actually carry
+
+A class need not be decoded to be *accounted for*. Counting how many
+distinct payloads each one ever sends separates three kinds, and the
+first two need no table at all:
+
+| netid | blocks | distinct payloads | what that makes it |
+|---|---|---|---|
+| 325, 1230 | 21,263 | **1** | a timeline; all the content is the unit and the time |
+| 69, 789 | 9,474 | **2** | the same, with one bit |
+| **289** | **72,252** | **38** | a labelled timeline — the largest unread class |
+| 613 | 6,795 | 61 | an enum |
+| 751, 98, 159 | 56,091 | 1,400–3,600 | real values |
+| 668, 77, 474, 1267, … | — | tens of thousands | real values |
+
+**289 is the biggest unread class on the patch, and it is a metronome.**
+Its 72,252 blocks address no unit at all — the sender is 0 on every one
+— and they cycle in a fixed order: six two-byte payloads at **exactly
+6,021 each**, with the three-byte payloads summing to exactly the same
+36,126. Each stream fires every 0.27 s from the first second to the
+last. Its 16.9 counterpart is netid 707, which `docs/PACKETS.md` already
+describes as "three small enums (6, 2 and 3 values) and no net id at
+all", and the observed 38 payloads are those 6 × 2 × 3 = 36 combinations
+plus two stragglers.
+
+That is worth stating plainly: **6.3 % of the replay can never
+contribute an action**, whatever is done to it. No unit, no position, no
+magnitude — three small enums on a fixed clock. Knowing which traffic is
+inert is part of knowing how complete a parse is.
+
+**751 is ten equal streams and a float.** Its payload's second byte
+takes exactly **ten values, each 10 % of blocks**, each firing about
+twice a second for the whole game, with a four-byte float after it whose
+exponent is 94 % one octave. Ten is what a game has ten of, and 16.9's
+counterpart (netid 406) is characterised as "a champion net id and a
+float" — so these are almost certainly the ten champions on a
+round-robin.
+
+Which stream is which champion is **not** settled. The obvious test
+fails: a broadcast about a champion should go quiet while that champion
+is dead, and the death class gives all 74 death windows exactly — but
+measured inside those windows against outside, every stream keeps its
+rate, **0.92× to 1.00×**. So the broadcast does not pause for death, and
+nothing else yet separates one stream from another.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

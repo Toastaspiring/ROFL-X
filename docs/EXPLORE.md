@@ -1676,6 +1676,65 @@ fixed tail is bit-packed and no byte boundary lines up with a field.
 Both readings predict exactly what is seen, and nothing measured here
 separates them.
 
+### A direction, read from geometry alone
+
+`PKT_S2C_FaceDirection_s` is netid **910** on 16.19 (fingerprint 0.96,
+confident). Its 17-byte payload holds three big-endian floats — a narrow
+exponent byte then three bytes taking every value, three times over — at
+offsets **1–4, 5–8 and 9–12**, followed by four narrow bytes.
+
+What makes this one different from every other class here is that it
+needs no known plaintext at all. A facing is a **unit vector**, so its
+two ground components are the cosine and sine of one angle, and that
+fixes the shape of their top byte before a single packet is opened:
+±1 is commonest at about a third each, the next octave an eighth, and so
+on down — twenty values in all.
+
+| | commonest | next | then |
+|---|---|---|---|
+| a unit vector, in theory | 33 % / 33 % | 13 % / 13 % | 3 % / 3 % |
+| offset 1, observed | 36 % / 33 % | 8 % / 8 % | 5 % / 4 % |
+| offset 9, observed | 35 % / 32 % | 12 % / 6 % | 6 % / 4 % |
+
+Offsets 1 and 9 also **share their alphabet** — 12 of 17 cipher values
+in common, the same top two — which one table demands of two components
+of one vector and which two unrelated fields would not produce. Offset 5
+is the vertical: 31 values, all of them small magnitudes, as a facing
+that lies nearly flat must be.
+
+Matching the ranks gives **16 entries** of the class's table, and two
+checks say the magnitudes are right:
+
+- **99.9 %** of blocks carry a ground component of at least 0.5. Every
+  unit vector must; a wrong table need not.
+- Against the unit's own movement orders, the decoded quadrant agrees
+  more and more as the two are coupled more tightly — **36.1 %** within
+  two seconds, 40.7 % within one, 48.6 % within a half, **61.8 %** within
+  two tenths, against 25 % for chance. A unit turns to face where it has
+  just been told to go, and that is exactly the shape of a real decode.
+
+The **signs are not settled**. Magnitude comes from geometry, but which
+of a pair is positive has to come from the game, and the movement orders
+only lean 54 % to 68 % per cipher on 253 tightly-coupled blocks. So the
+facing is read to an axis, not yet to a direction along it.
+
+### The basic-attack class: four coordinates, owner unknown
+
+`PKT_Basic_Attack_Pos_Minion_s` is netid **1126**, and its 32-byte
+payload carries **four** coordinate fields — at 4–7, 12–15, 24–27 and
+28–31 — each a float whose exponent byte takes exactly **three** values,
+which on a map 15,000 units across is the signature of a map coordinate
+and of almost nothing else.
+
+Whose coordinates they are is not known. Scored against the attacker's
+own position, the best field agrees 66.8 % of the time; scored against
+the nearest champion instead, 68.1 %. Both sit at the base rate for a
+byte whose commonest value covers two thirds of the map, so neither
+reading is supported. The technique that cracked the cast class — score
+a field against a position already known — simply returns nothing here,
+and until something says who these four points belong to, they stay
+unread.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

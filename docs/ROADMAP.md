@@ -375,10 +375,12 @@ the game. A payload that large is a buffer, which is what the movement
 class turned out to be, so the same reading may apply: a varint header
 and a reversed, right-aligned entry stream.
 
-**4. Missiles, netids 135 and 138, 3.1 %.** Creation and dimension.
-Netid 325 already gives when each projectile ends, with no table at all,
-so these two would complete the picture. Their ids live in their own
-space, disjoint from units'.
+**4. Missiles.** *Done, as far as it goes.* Netid 138 creates a missile
+and 325 ends it, both in plaintext, sharing 5,538 ids of 6,102 with a
+flight time between them — median 0.50 s. Netid 135 turned out to be
+something else, sharing no id with either. What is *not* done is joining
+a missile to the cast that threw it: matching on time beats shuffled
+times by only 2.2×, which is not enough to name a thrower.
 
 **5. Netid 751, 2.9 %.** Ten equal streams and a float, almost certainly
 the ten champions on a round-robin. Which stream is which champion is

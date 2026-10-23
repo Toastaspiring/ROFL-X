@@ -68,6 +68,8 @@ def main() -> int:
                     help="the unit-creation class; its payload is constant")
     ap.add_argument("--missiles", default="n325.jsonl",
                     help="missiles finishing their flight; payload constant")
+    ap.add_argument("--missiles-born", default="n138.jsonl",
+                    help="missiles being created; names them in plaintext too")
     ap.add_argument("--unseen", default="n69.jsonl",
                     help="leaving a team's vision; payload is one bit")
     ap.add_argument("--viewer-data", default="viewer/viewer_data.json",
@@ -117,9 +119,36 @@ def main() -> int:
     for r in load_jsonl(args.creations):
         events.append({"t": round(r["t"], 3), "type": "unit_created",
                        "unit": r["param"], "source": "read"})
+    # A projectile is created by one class and ended by another, both
+    # naming it in plaintext, so the pair needs no table: 5,538 of the
+    # sample game's 6,102 missiles have both ends, and the gap between
+    # them is a flight time -- a median of half a second, a tenth of
+    # them under 0.2s and a tenth over 1.0s.
+    #
+    # Which cast threw which missile is *not* joined here. Casts are
+    # frequent enough that a missile falls shortly after one by chance:
+    # matching on time beats shuffled times by only 2.2x at its best and
+    # 1.2x at a half-second window, which is not enough to name a
+    # thrower.
+    done = {}
     for r in load_jsonl(args.missiles):
-        events.append({"t": round(r["t"], 3), "type": "missile_finished",
-                       "missile": r["param"], "source": "read"})
+        done.setdefault(r["param"], round(r["t"], 3))
+    # The creating class fires about three times per missile, so the
+    # first block is the birth and the rest are repeats.
+    seen = set()
+    for r in load_jsonl(args.missiles_born):
+        if r["param"] in seen:
+            continue
+        seen.add(r["param"])
+        t = round(r["t"], 3)
+        ended = done.pop(r["param"], None)
+        events.append({"t": t, "type": "missile",
+                       "missile": r["param"], "ended": ended,
+                       "flight_s": round(ended - t, 3) if ended else None,
+                       "source": "read"})
+    for mid, t in done.items():
+        events.append({"t": t, "type": "missile_finished",
+                       "missile": mid, "source": "read"})
     for r in load_jsonl(args.unseen):
         events.append({"t": round(r["t"], 3), "type": "left_vision",
                        "unit": r["param"], "source": "read"})

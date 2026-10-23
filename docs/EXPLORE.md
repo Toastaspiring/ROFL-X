@@ -1952,6 +1952,38 @@ coordinate is a coordinate near the edge of the map. That the baseline is 9.5 % 
 original entries are wrong or a cast's target genuinely lies off the
 playable map about one time in ten, and nothing here separates those.
 
+### Projectiles, from launch to landing, with no table
+
+Two classes name a missile in plaintext and nothing else: **netid 138**
+creates one and **netid 325** ends it. Both have constant or near-constant
+payloads, so all they carry is which missile and when — which is exactly
+enough.
+
+They share **5,538 ids of 6,102**, and 325 always comes after 138 by a
+sensible amount: a median of **0.50 s**, a tenth under 0.20 and a tenth
+over 1.00. That is a flight time, and it makes the pair a projectile
+rather than two timestamps. 16.9 names 325's counterpart
+`PKT_S2C_SyncMovementCompleteCount_s` on `MissileClient`, which agrees.
+
+Netid 135 is *not* part of this: it shares no id at all with 325, and
+fires 14 times per id against 2.9, so it is something else that happens
+to concern missiles.
+
+**Which cast threw which missile is not joined, and the attempt is worth
+recording because it looked like it worked.** A missile is created in
+the instant after the cast that made it, so matching each one to the
+champion cast just before it should close the chain from spell to
+impact. It appears to: 55 % of missiles pair inside 0.3 s, 77 % inside
+0.6 s, and the missiles-per-cast ratios even look like the champions'
+kits — Ahri at 1.97, who throws an orb that returns, against Cho'Gath at
+0.80, whose abilities are not projectiles.
+
+But champions cast 1.81 times a second between them, so a missile
+dropped at a random moment lands shortly after one anyway. Against
+shuffled times the join beats chance by only **2.2× at a 0.05 s window
+and 1.2× at 0.6 s**. That is not enough to name a thrower, so the parse
+emits the projectile and leaves the caster unsaid.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

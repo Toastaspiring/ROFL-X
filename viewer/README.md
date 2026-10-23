@@ -27,14 +27,18 @@ beside it holds a finished 16.9 game and a finished 16.19 one.
 - **Recalls**, inferred from their shape: a silence that starts away from
   base, ends at the fountain, has no death to account for it, and covers
   more ground than the champion could have walked meanwhile.
-- **Wards**, on a patch with an archive, each one appearing when it is
-  placed and gone when it dies — a trinket lasts about 105 s, a stealth
-  ward 148 s, and a control ward until something kills it. The icon
-  fades as the ward ages, which is most of what a ward timer is for.
+- **Wards**, on both patches, each one appearing when it is placed and
+  gone when it dies. The icon fades as the ward ages, which is most of
+  what a ward timer is for.
 
-Wards are drawn only for the control patch. On a packed patch the class
-that carries them is identified (netid 898 on 16.19) but not readable —
-`docs/EXPLORE.md` says exactly how far that got and what blocks it.
+On a patch with an archive the ward is read outright, duration included:
+a trinket lasts about 105 s, a stealth ward 148 s, and a control ward
+until something kills it. On a packed patch it comes from the cast class
+instead — placing a ward is a cast, and the cast carries where it was
+aimed — which gives **59 of the sample game's 84**, 36 of them exact to
+under a map unit and the rest drawn with a ring showing how far they
+could be out. Their *duration* is not read there, so the page shows the
+game's own figure and says it is a model.
 
 Teleports are **not** drawn. The scoreboard says the sample game held
 two; 323 jumps in it are unexplained by the packet reporting them, and

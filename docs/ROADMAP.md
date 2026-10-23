@@ -407,7 +407,12 @@ table is locally right and regionally displaced, which is why every
 check in sanity_check.py passes -- they all test differences -- while
 absolute positions in one part of the map sit tens of units out. There
 is no handful of wrong entries to correct; it needs a constraint that
-pins an absolute coordinate.
+pins an absolute coordinate. One now exists and has been used to
+*measure* the error: a champion's closest approach to its own fountain
+over a game is 388 units on the control patch and 690 on 16.19, two
+distributions that do not overlap, so the table displaces a position
+near the spawn by about 300 units. Correcting it is still open, the
+displacement being regional rather than uniform.
 
 Not on this list, because it is a different kind of problem: damage,
 items, levels and which ability a cast was all need known plaintext that

@@ -2082,6 +2082,47 @@ a constraint that pins an absolute coordinate rather than a relative
 one, which is the same thing the stop point in `ROADMAP.md` § Phase 7
 asks for.
 
+#### Measuring the displacement, which needed an anchor from outside
+
+Two anchors were tried.
+
+**The cast class does not work, and the reason is worth stating.** It
+reads a coordinate as a float through its own table, and a ward is cast
+at the caster's own feet, so a ward cast looks like the same point read
+two independent ways. It is not independent: that table's mantissa
+entries were recovered *by matching a target's mantissa to its caster's*,
+taken from the movement class. Whatever the movement table is wrong by,
+the cast table was fitted to agree with. Comparing them measures
+nothing.
+
+**The fountain does work, with the control patch supplying the floor.**
+Over a game a champion recalls many times and stands in its own
+fountain, so its closest reported approach to that point is the size of
+the spawn pad plus whatever the table displaces it by. Running the same
+measurement on both patches separates the two, because 16.9's table is
+exact:
+
+| | closest approach | at that moment |
+|---|---|---|
+| 16.9, table exact | median **388** units (355–536) | x +280, z +158 |
+| 16.19, table searched | median **690** units (520–778) | x +512, z +342 |
+
+The 388 is geometry — champions do not stand on a single point, and the
+spawn coordinate used here is itself measured from the minimap rather
+than given. What matters is that the two distributions do not overlap:
+every one of 16.19's ten champions gets less close than any of 16.9's.
+
+So the 16.19 table displaces a position near the spawn by about **300
+map units**, and in a consistent direction, roughly `(+230, +180)`
+beyond the control's own offset. That is the first absolute measurement
+of this table's error. Every figure before it — median 4 units, 10 ms
+continuity, speeds reading as speeds — measures differences, and a
+displaced table passes all of them.
+
+It is a measurement, not a correction: the displacement is regional, so
+subtracting one offset everywhere would trade a known error near the
+spawn for an unknown one elsewhere.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

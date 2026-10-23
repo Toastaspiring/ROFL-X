@@ -2123,6 +2123,49 @@ It is a measurement, not a correction: the displacement is regional, so
 subtracting one offset everywhere would trade a known error near the
 spawn for an unknown one elsewhere.
 
+#### A displacement map, from the camps
+
+The fountain is one anchor. The jungle gives fourteen more, spread over
+the whole Rift, and better behaved: a monster sits at its camp and
+barely moves, so the cluster of positions reported there *is* that camp,
+wherever the table puts it. The control patch absorbs whatever is wrong
+with the camp coordinates themselves — they come from a separate project
+rather than from the game, and on 16.9 they are out by as much as 297
+units — so the difference between the two patches is this table's error
+at that spot:
+
+| camp | 16.9 exact | 16.19 searched | displacement |
+|---|---|---|---|
+| b_krugs | −16, −191 | +112, −125 | **144** |
+| b_raptors | +115, −297 | +171, −167 | **142** |
+| r_wolves | +0, −1 | +30, −103 | 106 |
+| r_raptors | +38, +198 | +50, +288 | 91 |
+| … | | | |
+| b_gromp | +72, −18 | +64, −48 | 31 |
+| dragon | −114, −52 | −108, −44 | **10** |
+
+Eleven camps measured on both patches: displacement **median 82 units,
+from 10 to 144**. So "regional" is now a map rather than a word, and a
+reader can tell how far to trust an absolute position depending on where
+it is.
+
+**Turning that into corrections does not work, and the reason is
+structural.** Each camp names one entry — a coordinate is built from one
+low byte, and a displacement of *d* units means that byte decoded *d/2*
+too high — which gives twenty entries to correct, by 4 to 65 steps. The
+table is a bijection, so each correction is a swap, and a swap can hurt
+as easily as help; the only scorer that needs no ground truth is the
+count of positions that leave the map.
+
+That scorer cannot see these swaps. **All twenty were tried and none
+changed it**, because the camps sit well inside the Rift while the
+off-map positions come from its edges, which are built from different
+low bytes entirely. Fitting on one region and scoring on another
+measures nothing, and no amount of care with the swaps changes that.
+
+Correcting the table needs anchors *at the edges* — where the errors
+show — and the map has few things there whose position is known.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

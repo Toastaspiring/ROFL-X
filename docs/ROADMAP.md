@@ -411,8 +411,13 @@ pins an absolute coordinate. One now exists and has been used to
 *measure* the error: a champion's closest approach to its own fountain
 over a game is 388 units on the control patch and 690 on 16.19, two
 distributions that do not overlap, so the table displaces a position
-near the spawn by about 300 units. Correcting it is still open, the
-displacement being regional rather than uniform.
+near the spawn by about 300 units. The camps turn that into a map: eleven of them,
+measured against the control, put the displacement between 10 and 144
+units depending on where you stand, median 82. Correcting it is still
+open -- each camp names one table entry, but all twenty corrections
+scored neutral, because the camps sit mid-map while the off-map
+positions come from the edges, built from different entries. It needs
+anchors at the edges.
 
 Not on this list, because it is a different kind of problem: damage,
 items, levels and which ability a cast was all need known plaintext that

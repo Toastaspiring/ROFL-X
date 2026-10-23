@@ -397,9 +397,17 @@ that champion's death windows at 0.92× to 1.00×.
 geometry fixes the magnitudes, and nothing yet fixes the signs beyond a
 54–68 % lean per cipher.
 
-**7. The 212 positions that are off the map for no reason**, 0.25 % of
-them, which are residual table error rather than the stream declining
-to report a unit.
+**7. The 212 positions that are off the map for no reason.** *Diagnosed,
+not fixed.* They are table error -- the control patch, whose table is
+exact, puts 0 of 172,857 outside the map -- and they implicate 107 of
+the 256 low bytes, wrong by at least 44 steps at the median. But the
+error is regional rather than scattered: 31 of the 32 entries between
+low bytes 32 and 63 are caught, against 5 to 13 per 32 elsewhere. The
+table is locally right and regionally displaced, which is why every
+check in sanity_check.py passes -- they all test differences -- while
+absolute positions in one part of the map sit tens of units out. There
+is no handful of wrong entries to correct; it needs a constraint that
+pins an absolute coordinate.
 
 Not on this list, because it is a different kind of problem: damage,
 items, levels and which ability a cast was all need known plaintext that

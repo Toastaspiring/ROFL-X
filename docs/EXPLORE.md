@@ -1274,7 +1274,9 @@ minimising the same cost is a measurable proxy rather than a hope.
 
 So a position reads to a **median of 4 map units, nine times in ten
 within 10, and never worse than 32** — every one of the 256 entries is
-within 16 steps of right. A champion's hitbox is about 65 units, so
+within 16 steps of right. That is measured here, on the control patch;
+§ "What the low byte's accuracy figure does and does not say" below
+measures how far 16.19 departs from it. A champion's hitbox is about 65 units, so
 that is trajectory accuracy, not lane-level.
 
 What it still is *not* is a decode. The table is accurate and **not
@@ -2021,6 +2023,64 @@ That is where it stops. The next step is the record format rather than
 the field offsets, and the crib is waiting: at each of those 27
 instants, ten champions stood at positions this project already reads to
 a couple of map units.
+
+### What the low byte's accuracy figure does and does not say
+
+The figure quoted for the low-byte search — *a median of 4 map units,
+nine times in ten within 10, never worse than 32, every one of the 256
+entries within 16 steps of right* — is measured **on 16.9**, by scoring
+the search's answer against the table the game's own decoder hands over.
+On 16.19 there is no such table, so that figure describes the method on
+a patch where the answer is known. It is not a promise about this one,
+and this section is about how far the two differ.
+
+**The map catches what nothing else does.** With an exact table, no
+position leaves Summoner's Rift: **0 of 16.9's 172,857**. With the
+searched table, **212 of 16.19's 84,458 do**, across **107 distinct low
+bytes**. The control rules out the easy explanation — the bounds are not
+drawn too tight — so those are table error, and each overshoot is a
+floor on how wrong its entry is: at least a median of 44 steps, and 122
+at worst, where the control-patch figure says 16.
+
+**But the positions are not noisy, which is the interesting part.**
+Taking packet pairs about one unit less than a twentieth of a second
+apart, where nothing has had time to move, the step between them is
+almost all table error. The two patches are indistinguishable:
+
+| | median | 90th | 99th | over 40 units |
+|---|---|---|---|---|
+| 16.9, table exact | 0.0 | 17.1 | 46.2 | 2.4 % |
+| 16.19, table searched | 0.0 | 16.1 | 42.4 | 1.3 % |
+
+An entry wrong by 44 steps displaces its coordinate by 88 units, and if
+107 entries were wrong independently that table would be visibly worse
+here. It is not.
+
+**The resolution is that the error is regional, not scattered.** The
+search keeps *locality* — that is the property it optimises — so
+neighbouring plaintexts end up in neighbouring places and are displaced
+together. Grouping the entries the map catches by where they sit shows
+it plainly:
+
+| low byte | entries caught |
+|---|---|
+| 0–31 | 9 of 32 |
+| **32–63** | **31 of 32** |
+| **64–95** | **22 of 32** |
+| 96–255 | 5 to 13 of each 32 |
+
+So the table is **locally right and regionally displaced**. Differences
+between nearby coordinates come out correct, which is why motion is
+continuous, why speeds read as speeds and why minion waves arrive on
+time — every check in `sanity_check.py` is a check on differences. What
+suffers is the *absolute* position, in one part of the map, by tens of
+units.
+
+That also says why the 212 will not be fixed by correcting a few
+entries: there is no handful of wrong ones to correct. Closing it needs
+a constraint that pins an absolute coordinate rather than a relative
+one, which is the same thing the stop point in `ROADMAP.md` § Phase 7
+asks for.
 
 ## What would make this much stronger
 

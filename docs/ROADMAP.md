@@ -370,10 +370,16 @@ bit-packed. Nothing measured separates those, and value ranges alone
 will not: that lane needs a block whose amount is independently known —
 a killing blow against a health already read, say.
 
-**3. Netids 77 and 587, 6.4 %.** Payloads up to 7,516 bytes addressed to
-the game. A payload that large is a buffer, which is what the movement
-class turned out to be, so the same reading may apply: a varint header
-and a reversed, right-aligned entry stream.
+**3. The keyframes, inside netid 77.** *Identified, not read.* Twenty-
+seven of its blocks are 5 to 7.5 KB where the median is 39, spaced 60.1
+seconds apart, and the file header says `lastKeyFrameId: 27`. They are
+full state snapshots, which makes them the highest-value target left: a
+snapshot holds everything at once, and the ten champions' positions at
+those instants are already known, so the crib is free. They compress to
+43%, so there is structure under the substitution; the payload repeats
+every 41 bytes, so it is a list of entity records. But no byte of that
+template holds a fixed field, so the records are variable length and the
+next step is their format, not their offsets. Netid 587 is untouched.
 
 **4. Missiles.** *Done, as far as it goes.* Netid 138 creates a missile
 and 325 ends it, both in plaintext, sharing 5,538 ids of 6,102 with a

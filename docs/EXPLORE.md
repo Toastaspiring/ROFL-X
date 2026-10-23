@@ -1984,6 +1984,44 @@ shuffled times the join beats chance by only **2.2× at a 0.05 s window
 and 1.2× at 0.6 s**. That is not enough to name a thrower, so the parse
 emits the projectile and leaves the caster unsaid.
 
+### The keyframes, found inside netid 77
+
+Netid 77 is 5.1 % of the replay and looked like one class. It is not. Its
+first payload byte is the same on all 58,389 blocks, its sender is 0,
+and its blocks arrive in bursts at a single instant — eleven of them at
+4,822 instants, six at another 870. That is a container, not a message.
+
+Twenty-seven of those blocks are enormous: 5,381 to 7,532 bytes where
+the median block is 39. They are spaced **60.1 seconds apart**, min
+59.8, max 60.2, from the first second of the game to the last. The
+file's own header says **`lastKeyFrameId: 27`**.
+
+So those 27 are the replay's **keyframes** — a full snapshot of the game
+state, once a minute. That matters more than its share of the traffic:
+a snapshot holds everything at once, and the ten champions' positions at
+those instants are already known from the movement class, which is known
+plaintext handed over for free.
+
+**How far that got.** A keyframe compresses to 43–47 % of its size,
+which rules out the easy disappointment: it is not already compressed or
+encrypted, there is real structure under the substitution. The payload
+repeats every **41 bytes** — 17.8 % of bytes match at that distance
+against 0.4 % for chance, with a harmonic at 82 — so it is a list of
+entity records, about 171 of them in a 7 KB frame, growing from 131 at
+the first keyframe to 148 by the third as the game fills with units.
+
+But no byte of that 41-byte template holds a fixed field. Every position
+takes 180 to 205 distinct values, and trying every period and phase on a
+single frame, the quietest byte anywhere still takes 52. A coordinate's
+exponent takes three or four. So the records are **variable length**,
+the way the spawn and damage classes are, and nothing lands at a fixed
+offset.
+
+That is where it stops. The next step is the record format rather than
+the field offsets, and the crib is waiting: at each of those 27
+instants, ten champions stood at positions this project already reads to
+a couple of map units.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

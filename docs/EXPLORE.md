@@ -2166,6 +2166,44 @@ measures nothing, and no amount of care with the swaps changes that.
 Correcting the table needs anchors *at the edges* — where the errors
 show — and the map has few things there whose position is known.
 
+#### Anchors at the edges, and three numbers that do not compare
+
+The lanes are terrain, so they serve: top runs along the left of the map
+and bottom along the foot of it, and a lane's centre is the median of
+everything in its corridor — tens of thousands of positions, not a
+handful.
+
+| corridor | 16.9 exact | 16.19 | shift |
+|---|---|---|---|
+| top, x | 1,278 | 1,262 | **−16** |
+| bottom, z | 1,312 | 1,308 | −4 |
+| upper right arm, z | 13,554 | 13,582 | +28 |
+| lower right arm, x | 13,664 | 13,604 | −60 |
+
+Which reverses the expectation that sent us looking: the edges are the
+*accurate* part, within sixty units, and it is the middle of the map
+that drifts.
+
+**Three measurements now exist and they disagree — 16 units at the
+lanes, 82 at the camps, 290 at the spawn — and the disagreement is the
+method, not the map.** A lane's median runs over a corridor thousands of
+units long, so it averages across most of the table and errors of
+opposite sign cancel: it measures *bias*, and finds almost none. A
+camp's cluster is a couple of hundred units across, so it averages over
+only a few entries and much less cancels: it measures *typical
+magnitude*. The spawn figure is a closest approach, a minimum, and
+minima are not averages at all.
+
+The spawn figure was checked rather than assumed, because a minimum also
+falls as a sample grows and 16.9 contributed twice as many positions.
+Thinning it to 16.19's size moves it from 388 to **404**, range 388–441
+over seven draws, against 16.19's 690. Sample size accounts for about
+sixteen units of a three-hundred-unit gap, so that one stands.
+
+The usable figure for how far an absolute position may be out is the
+camps': **median 82 units, up to 144**. The lanes say the table has no
+systematic lean, and the spawn says the corners are its worst region.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

@@ -2236,6 +2236,39 @@ Nothing was fitted to get that. The method was worked out on a 27-minute
 game and applied unchanged to a 40-minute one on a later patch, and it
 named the right class and the right count.
 
+#### Where the transfer stops: identification generalises, layout does not
+
+The movement class transfers just as cleanly. Described only by what a
+substitution cannot hide — a batch addressed to the game, a long and
+very variable payload, a few percent of traffic — 16.20's **netid 61**
+is picked out unambiguously: payload **18–352 bytes against 18–352**,
+`commonest_8_bytes_share` **0.43 against 0.43**, share 3.08 % against
+3.22 %. Its miss against 16.19's shape is 0.024 where the next candidate
+is 0.549, a gap of more than twenty times.
+
+**But no position comes out of it, and the reason is a real change
+rather than a missing step.** The parser needs the first entry's start,
+and on 16.19 the payload's end announces it. Reading back from there,
+the distinct-value counts run `21, 3, 256, 163, 2, 1, …` — the byte five
+from the end takes **exactly one value**, because it is `T(0x40)`, the
+top byte every net id shares. That is what anchors the whole parse.
+
+On 16.20 the same reading gives `127, 128, 152, 256, 256, 256, …`. No
+constant, no narrow byte, no marker at all. The entry buffer is no
+longer right-aligned to the end of the payload the way it was, so the
+anchor search returns nothing and the parse yields zero positions rather
+than wrong ones.
+
+So the two halves of this project generalise differently. **Which class
+is which** is carried by statistics a substitution cannot disturb, and
+those transfer across patches untouched — four classes and the keyframes
+named on 16.20 with nothing written. **How a payload is laid out** does
+not: it is re-decided per patch, and 16.20 moved the movement buffer.
+Reading positions there starts again from the layout, not from the
+table.
+
+
+
 ### The facing signs: two methods, neither settles it
 
 Section "A direction, read from geometry alone" leaves the signs open,

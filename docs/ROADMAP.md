@@ -426,8 +426,17 @@ constrains them, wards because Riot counts them, and a facing because a
 unit vector has length one. These have no such handle, and finding one
 is an idea rather than an amount of work.
 
-**Validated on a third patch.** 16.20 was opened with nothing new
-written: the classes announce themselves by shape, and the keyframe
-prediction made on 16.19 holds exactly -- netid 1052's 70 large blocks
-fall into 40 moments a median of 59.9 seconds apart, where the file's
-header says `lastKeyFrameId: 40`.
+**Validated on a third patch, and bounded.** 16.20 was opened with
+nothing new written: the classes announce themselves by shape, and the
+keyframe prediction made on 16.19 holds exactly -- netid 1052's 70 large
+blocks fall into 40 moments a median of 59.9 seconds apart, where the
+file's header says `lastKeyFrameId: 40`. The movement class is just as
+clearly netid 61, on a payload range and byte-share identical to
+16.19's.
+
+But positions do not follow. The parse is anchored on the payload's end,
+where 16.19 puts a byte taking exactly one value -- `T(0x40)`, the top
+byte of every net id -- and 16.20 puts nothing of the kind. The entry
+buffer is no longer right-aligned there, so the anchor search returns
+nothing and no position is read rather than a wrong one. Which class is
+which transfers between patches; how a payload is laid out does not.

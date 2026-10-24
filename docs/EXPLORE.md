@@ -2204,6 +2204,61 @@ The usable figure for how far an absolute position may be out is the
 camps': **median 82 units, up to 144**. The lanes say the table has no
 systematic lean, and the spawn says the corners are its worst region.
 
+### Does any of this generalise? A test on 16.20
+
+Everything above was worked out on one patch, which is the usual way to
+fool yourself. 16.20 is a patch this project had never opened, and it
+makes a falsifiable prediction available: the keyframes should be the
+large payloads of one game-addressed class, spaced a minute apart, and
+there should be as many of them as the file's own header says.
+
+It explores from the file alone with nothing new written — 1,821,184
+blocks, ten champions named, net ids starting at the same `0x400000ae`.
+The classes announce themselves by shape:
+
+| what | 16.19 | 16.20 | payload | addresses |
+|---|---|---|---|---|
+| visibility | 539, 42.3 % | **723**, 44.3 % | 2 | a unit |
+| damage | 95, 4.9 % | **150**, 4.2 % | 13–22 | a unit |
+| the three-enum metronome | 289, 6.3 % | **755**, 5.9 % | 2/3 | the game |
+| — | 668, 4.2 % | **584**, 5.9 % | 1/3/4 | the game |
+| the keyframe container | 77, 5.1 % | **1052**, 3.2 % | 22–5,457 | the game |
+
+**The prediction holds exactly.** Netid 1052 carries **70** blocks over
+4,000 bytes, and they fall into **40 moments** — 34 moments of one block
+and 6 of six, a snapshot too big for one block being continued — spaced
+a median of **59.9 s** apart, min 59.8, max 60.2, from 0.3 s to
+2,340.8 s of a 2,394 s game.
+
+The file's header says **`lastKeyFrameId: 40`**.
+
+Nothing was fitted to get that. The method was worked out on a 27-minute
+game and applied unchanged to a 40-minute one on a later patch, and it
+named the right class and the right count.
+
+### The facing signs: two methods, neither settles it
+
+Section "A direction, read from geometry alone" leaves the signs open,
+and two further attempts have not closed them.
+
+**Turning smoothly does not discriminate.** A unit swings its facing
+round rather than flipping to the opposite and back, so an assignment
+producing near-reversals between consecutive facings should be wrong.
+There are eight magnitude pairs and so 256 assignments, small enough to
+try all. Every one of them scores **6.76 %** of turns past 150 degrees —
+identical to two decimal places. Flipping a pair negates that component
+in every facing that uses it, so consecutive facings sharing a cipher
+turn by the same angle either way, and the measure cannot see the
+change.
+
+**The movement orders lean but do not decide**, at 54 % to 68 % per
+cipher on 253 tightly-coupled blocks, as recorded earlier.
+
+So the facing stays read to an axis and not along it, and the thing that
+would settle it has to distinguish a direction from its opposite —
+which neither a unit vector's geometry nor the smoothness of a turn
+does.
+
 ## What would make this much stronger
 
 More patches with both a decodable binary *and* replays. The self-test

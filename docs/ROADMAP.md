@@ -463,9 +463,18 @@ size rather than 14 with something added, and every probe above was
 reading half of one. That also explains the 28 those probes kept
 producing and this document kept ignoring.
 
-Anchored on the commonest 4-gram, cc 12 db 76, the 28-byte entry shows
-seven columns holding essentially one value, and the marker cc 12 db
-recurs nine bytes later as its exact reverse. Neither is explained yet.
+The period is confirmed twice over: the commonest 4-gram recurs at a gap
+of exactly 28 in 84% of the cases where it recurs at all. But it is not
+a per-entry field -- on payloads over 200 bytes it appears once per 171,
+where 16.19's per-entry pair appears once per 21.6 -- so a profile
+anchored on it describes about one entry in seven. The tidy 12-byte
+palindrome it showed does not survive a larger sample: anchored on any
+two 0xdb exactly 28 apart, over 84,081 blocks, only three narrow columns
+remain. Two of them, at offsets 8 and 20, are effectively two-valued --
+0xcc or 0x12 in 97% and 99% of entries -- which is what a flags high
+byte looks like, and would make 0x12 the cipher for 2 rather than the
+move speed's exponent. Two fields twelve apart in a twenty-eight byte
+record is not yet a layout.
 
 A variable-length net id would
 produce all five, but that is a hypothesis the measurements fit rather

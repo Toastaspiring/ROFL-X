@@ -2766,21 +2766,40 @@ the gaps between `0xdb` appearances are 28 in 25 % of cases, and the gaps
 between the pair that looked promising in the shortest payloads are 28
 in 60 %.
 
-Anchored on the commonest 4-gram in the class, `cc 12 db 76`, a 28-byte
-entry shows real structure where a 14-byte reading showed none:
+The period is confirmed from a second direction: the commonest 4-gram in
+the class, `cc 12 db 76`, recurs at a gap of exactly 28 in **84 %** of
+the cases where it recurs at all.
 
-```
-offset   0  1  2  3 | 4  5  6  7 | 8  9 10 11 | ... 17 ... 19
-byte    cc 12 db 76 |cc cc cc cc | ?  db 12 cc |    cc     0b
-share  (anchor)     |81 100 49 100|   100 96 99|   100     97
-```
+**But it is not a per-entry field, and a profile anchored on it misled
+me.** On payloads over 200 bytes it appears once per 171 bytes, where
+16.19's per-entry net id pair appears once per 21.6 — so it marks about
+one entry in seven, and what it marks is a particular value rather than
+a field every entry carries. The profile taken from it, over 9,257
+blocks, showed a tidy 12-byte palindrome: offsets 0↔11, 1↔10, 2↔9, 3↔8,
+4↔7 and 5↔6 all pairing, with seven columns apparently holding one
+value. **Most of that does not survive a larger sample.** Anchored
+instead on any two `0xdb` exactly 28 apart — the same field of
+consecutive entries, whichever field it is — over 84,081 blocks, the
+narrow columns at offsets 2, 12, 16 and 24 wash out and only three
+remain. The palindrome is a property of the subset the motif selects,
+not of entries in general, and it is recorded here as that.
 
-Offsets 5, 7, 9, 10, 11, 17 and 19 each hold essentially one value. And
-the three-byte marker `cc 12 db` recurs nine bytes later **as its exact
-reverse**, `db 12 cc`. That is not explained here. A field written once
-each way round would do it, and so would two sub-records of opposite
-orientation, but one observation of a palindrome is not evidence for
-either, and nothing yet reads the entry.
+What does survive is sharper than it looks:
+
+| offset | distinct | commonest | note |
+| --- | --- | --- | --- |
+| 8 | 209 | `0x12` 50 %, `0xcc` 47 % | eight values cover 99 % |
+| 20 | 150 | `0xcc` 57 %, `0x12` 42 % | eight values cover 99 % |
+| 26 | 209 | `0xcc` 92 %, `0xa0` 6 % | eight values cover 99 % |
+
+Offsets 8 and 20 are **effectively two-valued**, taking `0xcc` or `0x12`
+in 97 % and 99 % of entries with a long thin tail, and they sit twelve
+bytes apart. A two-valued byte is what the flags' high byte is on 16.19,
+where the format allows it only 0 or 2 — so `{0xcc, 0x12}` is plausibly
+`{T(0x00), T(0x02)}`, which would make `0x12` the cipher for 2 and not
+the move speed's exponent after all. That is a reading, not a result:
+two fields twelve apart inside a twenty-eight byte record is not a
+layout, and nothing here yet reads an entry.
 
 A variable-length encoding of the net id would produce all five of
 those, since every field after it would then sit at an offset that

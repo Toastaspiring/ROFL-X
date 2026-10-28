@@ -426,6 +426,29 @@ constrains them, wards because Riot counts them, and a facing because a
 unit vector has length one. These have no such handle, and finding one
 is an idea rather than an amount of work.
 
+**And on a fourth, where it stops.** 16.21 would not open at all until
+its chunk record was found to be 18 bytes rather than 17 -- one byte
+inserted before the body, 0x04 in all 1,018 chunks across ten replays --
+which ROFL-X now measures rather than assumes. Its movement class is
+netid 657, named by the same substitution-invariant statistics that
+named 16.20's: a miss of 0.021 against the next candidate's 0.540, a
+factor of 25, on an identical payload range. The three bytes the
+frequency ranking gives come out in the same order as on every other
+patch.
+
+The entry layout does not transfer, and this time not by being reversed.
+Five tests say so and the last is the sharpest: entries tile the buffer,
+so a field every entry carries appears once per entry, and 16.19's net
+id pair is absent from 2.7% of blocks with 40% of its gaps exactly 14 --
+a single-waypoint entry's length -- where 16.21's best candidate is
+absent from 64.7% with scattered gaps. A variable-length net id would
+produce all five, but that is a hypothesis the measurements fit rather
+than a finding.
+
+So across four patches: the class identification transfers every time,
+and the layout never does. 16.20's change was recoverable from the
+format's own constraints; 16.21's is not, by any of them yet.
+
 **Validated on a third patch, and bounded.** 16.20 was opened with
 nothing new written: the classes announce themselves by shape, and the
 keyframe prediction made on 16.19 holds exactly -- netid 1052's 70 large

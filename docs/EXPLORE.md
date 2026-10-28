@@ -2652,6 +2652,80 @@ mirrored profile did here.
 
 
 
+### A fourth patch: 16.21, where the entry itself changed
+
+16.21 would not open at all. All ten replays failed at the transport
+layer with chunk ids in the hundreds of millions, and the cause is one
+byte: a chunk record's header is 18 bytes there where it is 17 through
+16.20, the new one sitting between `compressed_len` and the body and
+carrying `0x04` in all 1,018 chunks measured. `docs/ROFL_FORMAT.md` has
+it. The size is measured rather than keyed off the patch string, by
+walking the region at each candidate and keeping the one that consumes
+it exactly.
+
+**Which class is which transferred again, and cleanly.** Scored against
+16.20's movement fingerprint — addressed to the game and to no one
+entity, 3.08 % of blocks, commonest byte 19.3 %, commonest eight 42.8 %,
+payload 18–352 — 16.21's **netid 657** misses by 0.021 where the next
+candidate misses by 0.540, a factor of **25**, and its payload range is
+identical. That makes four patches on which a class is named by
+statistics a substitution cannot disturb.
+
+The three bytes the frequency ranking gives came out too, in the same
+order as on every other patch: the commonest byte in the class, then one
+at about 5.4 %, then one in about 98 % of blocks at about 5 %.
+
+| rank | 16.19 | 16.20 | 16.21 |
+| --- | --- | --- | --- |
+| commonest, ~20 % of bytes | `0x42` | `0x80` | `0xcc` |
+| second, 5.4 % | `0x29` | `0x88` | `0xdb` |
+| 98 % of blocks, ~5 % | `0xcb` | `0xe8` | `0x12` |
+
+**But the entry layout does not transfer, and this time not by being
+reversed.** On 16.20 the fix was a direction. 16.21 answers no offset
+question at all:
+
+- the first two bytes are not adjacent. The nearest `0xcc` to a `0xdb`
+  is two bytes before it in 68 % of cases, where 16.19 and 16.20 put the
+  net id's zero byte directly beside its `0x40` top.
+- profiling from the payload's end is flat: every index from 0 to 19
+  holds all 256 values with `0xcc` at 17–26 %, where 16.19 gives one
+  value at index 5, two at index 1 and three at index 9.
+- anchoring on the move speed's exponent fails. On 16.19 each `0xcb`
+  puts `T(0x00)` at −8 in 97 % of cases and `T(0x40)` at −4 in 96 %; on
+  16.21 the best offsets reach 48 %.
+- the column-narrowness fingerprint, which needs no offsets at all,
+  aligns 16.20 to 16.19 at **87 %** with its narrow columns landing
+  exactly where 16.19's sit. 16.21 reaches **73 %** with no shift
+  standing out.
+- **no byte pair recurs once per entry.** This is the sharpest of them.
+  Entries tile the buffer, so a field every entry carries appears once
+  per entry: 16.19's net id pair is absent from 2.7 % of blocks with
+  40 % of its gaps exactly 14 — a single-waypoint entry's length — and
+  16.20's from 7.5 % with gaps 14, 18, 19 in the same proportions.
+  16.21's best candidate is absent from **64.7 %** of blocks with
+  scattered gaps, and the pair that looks promising in its shortest
+  payloads turns out to be absent from 95.8 % of them, so it is a header
+  field and not an entry field.
+
+A variable-length encoding of the net id would produce all five of
+those, since every field after it would then sit at an offset that
+depends on the id's value. That is the hypothesis the measurements fit,
+**not a finding** — confirming it needs a reading that assumes no fixed
+offsets anywhere, which nothing here does yet. 16.21 also moved a byte
+in the chunk record, so a serialization change across the patch is at
+least consistent.
+
+`scripts/entry_fingerprint.py` runs the last two tests, which are the
+ones that need no anchor.
+
+So the tally across four patches: **the class identification transfers
+every time** — four classes and the keyframes on 16.20, netid 657 on
+16.21, all from statistics a byte substitution cannot touch. **The
+layout transfers never.** 16.20 reversed its buffer and was recoverable
+from the format's own constraints; 16.21 changed the entry and is not
+recoverable by any of them.
+
 ### The facing signs: two methods, neither settles it
 
 Section "A direction, read from geometry alone" leaves the signs open,

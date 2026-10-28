@@ -77,9 +77,14 @@ def universal(pays):
     for p in pays:
         present.update(set(p))
         overall.update(p)
-    everywhere = [b for b, k in present.items() if k == len(pays)]
+    # Present in *almost* every block. Pooling several games is enough
+    # for one of them to hold a block without a zero net id byte, and
+    # the third-placed byte sits near 98%, so 99% separates the two that
+    # matter without being brittle.
+    floor = len(pays) * 0.99
+    everywhere = [b for b, k in present.items() if k >= floor]
     everywhere.sort(key=lambda b: -overall[b])
-    return everywhere, present, overall
+    return everywhere[:2], present, overall
 
 
 def heads(pays, zero, top, forward):
@@ -156,8 +161,9 @@ def main() -> int:
             print(f"      {b:#04x} in {k / len(pays):7.2%} of blocks, "
                   f"{overall[b] / sum(overall.values()):6.2%} of bytes")
         if len(everywhere) != 2:
-            print(f"   !! expected two, got {len(everywhere)} -- the pair "
-                  f"signature below is not reliable")
+            print(f"   !! expected two bytes in 99% of blocks, got "
+                  f"{len(everywhere)} -- the pair signature is not reliable")
+            continue
         zero, top = (everywhere + [None, None])[:2]
         print(f"   taking T(0x00) = {zero:#04x}, T(0x40) = {top:#04x} "
               f"by frequency")

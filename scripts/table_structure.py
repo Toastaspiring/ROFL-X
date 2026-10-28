@@ -84,9 +84,10 @@ def universal(pays):
     for p in pays:
         present.update(set(p))
         overall.update(p)
-    both = sorted((b for b, k in present.items() if k == len(pays)),
+    floor = len(pays) * 0.99
+    both = sorted((b for b, k in present.items() if k >= floor),
                   key=lambda b: -overall[b])
-    return both, present, overall
+    return both[:2], present, overall
 
 
 def heads(p, zero, top, forward):

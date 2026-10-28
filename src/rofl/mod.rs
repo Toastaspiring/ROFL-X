@@ -35,6 +35,9 @@ pub struct Replay<'a> {
     pub chunks_start: usize,
     /// Byte offset at which the chunks region ends (right before the signature).
     pub chunks_end: usize,
+    /// Bytes of chunk-record header this file uses, measured at parse
+    /// time because 16.21 made it one longer and says so nowhere.
+    pub record_size: usize,
 }
 
 impl<'a> Replay<'a> {
@@ -78,6 +81,12 @@ impl<'a> Replay<'a> {
         let signature = Signature::from_slice(&buffer[sig_start..sig_end])
             .expect("signature size already validated above");
 
+        // How long a chunk record's header is changed in 16.21, and the
+        // file does not say, so it is measured: see
+        // `chunk::detect_record_size`.
+        let record_size = chunk::detect_record_size(buffer, chunks_start, sig_start)
+            .ok_or(RoflError::ChunkBoundsExceeded { chunk_id: 0 })?;
+
         Ok(Self {
             buffer,
             header,
@@ -85,11 +94,17 @@ impl<'a> Replay<'a> {
             signature,
             chunks_start,
             chunks_end: sig_start,
+            record_size,
         })
     }
 
     /// Iterator over `ChunkRecord`s in file order, across all streams.
     pub fn chunks(&self) -> chunk::ChunkIterator<'a> {
-        chunk::ChunkIterator::new(self.buffer, self.chunks_start, self.chunks_end)
+        chunk::ChunkIterator::new(
+            self.buffer,
+            self.chunks_start,
+            self.chunks_end,
+            self.record_size,
+        )
     }
 }

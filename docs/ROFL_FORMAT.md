@@ -143,7 +143,29 @@ singletons accounting for the gap to 71).
 | 0x09   | 4    | `uncompressed_len` u32 LE | UPSTREAM + VERIFIED |
 | 0x0D   | 4    | `compressed_len` u32 LE   | UPSTREAM + VERIFIED |
 
-Header size is **exactly 17 (`0x11`) bytes**.
+Header size is 17 (`0x11`) bytes **through 16.20**.
+
+**16.21 made it 18.** One byte is inserted between `compressed_len` and
+the body, and it carries `0x04` in every chunk measured — 1,018 of them
+across ten games. The five fields before it are unchanged and still read
+correctly, which is what makes the change nasty: a parser that assumes
+17 reads the first record plausibly (id 1, type 2, `chunk_id_2`
+`0x03000000`, two sane lengths) and then starts the next one a byte
+early, inside the zstd frame. The chunk ids it reports after that run to
+hundreds of millions.
+
+Nothing in the file announces the size, so ROFL-X measures it:
+`chunk::detect_record_size` walks the region at each candidate size and
+takes the one that consumes it exactly. The wrong size is rejected
+almost at once, because a record claiming compression whose body does
+not begin with the zstd magic `28 B5 2F FD` cannot be a record. Measured
+both ways on both patches: 17 walks 16.20 exactly (122 chunks) and fails
+on 16.21's first record; 18 walks every one of the ten 16.21 replays
+exactly (73 to 130 chunks) and fails on 16.20's first record. A file
+that neither size fits is reported rather than guessed at.
+
+The byte's meaning is not known. A constant is consistent with a format
+or compression-method tag, but one value gives nothing to test.
 
 ### ChunkRecord body
 

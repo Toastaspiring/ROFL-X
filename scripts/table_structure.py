@@ -58,10 +58,24 @@ CHAIN_MIN = 15
 EXPECT = {2: (14, 14), 3: (15, 15), 4: (17, 19), 5: (18, 20)}
 
 
-def payloads(path):
+#: Two packets further apart than this are not consecutive sightings of
+#: a unit, so the step between them is not a step of one. `cli.rs` uses
+#: the same figure for the same reason.
+WAYPOINT_GAP_S = 3.0
+
+
+def records(path):
+    """Each block as (replay, timestamp, payload)."""
     with open(path, encoding="utf-8") as f:
         for line in f:
-            yield bytes.fromhex(json.loads(line)["payload"])
+            r = json.loads(line)
+            yield (r.get("replay", ""), float(r.get("t", 0.0)),
+                   bytes.fromhex(r["payload"]))
+
+
+def payloads(path):
+    for _, _, p in records(path):
+        yield p
 
 
 def universal(pays):
@@ -107,11 +121,11 @@ def from_stride(pays, zero, top, forward):
     return out
 
 
-def from_chain(pays, zero, top, forward, known):
+def from_chain(recs, zero, top, forward, known):
     """The coordinate alphabet, walked outward and checked against `known`."""
     units = collections.defaultdict(list)
     flags_one = known.get(2, (None,))[0]
-    for order, p in enumerate(pays):
+    for replay, t, p in recs:
         n = len(p)
         hs = heads(p, zero, top, forward)
         if not hs:
@@ -123,12 +137,16 @@ def from_chain(pays, zero, top, forward, known):
         # a bitmap byte shifts anything longer.
         if at(0) != flags_one or at(13) is None:
             continue
-        units[(at(2), at(3))].append((order, at(11), at(13)))
+        units[(replay, at(2), at(3))].append((t, at(11), at(13)))
 
     pairs = []
     for v in units.values():
         v.sort()
         for a, b in zip(v, v[1:]):
+            # A long silence is a unit that went away and came back, and
+            # the byte may have moved any distance meanwhile.
+            if b[0] - a[0] > WAYPOINT_GAP_S:
+                continue
             pairs.extend(((a[1], b[1]), (a[2], b[2])))
     adjacent = collections.defaultdict(collections.Counter)
     unchanged = 0
@@ -203,7 +221,8 @@ def main() -> int:
     ap.add_argument("--out", help="write the recovered table here")
     args = ap.parse_args()
 
-    pays = list(payloads(args.dump))
+    recs = list(records(args.dump))
+    pays = [p for _, _, p in recs]
     both, present, overall = universal(pays)
     print(f"{len(pays)} blocks, {sum(map(len, pays)):,} bytes")
     if len(both) != 2:
@@ -229,7 +248,7 @@ def main() -> int:
         print(f"   T({plain}) = {f:#04x}   {share:.1%} of {tot} entries have "
               f"the length the format demands{mark}")
 
-    best, npairs, unchanged, nunits = from_chain(pays, zero, top,
+    best, npairs, unchanged, nunits = from_chain(recs, zero, top,
                                                  args.forward, known)
     print(f"   chain: {nunits} units, {npairs} pairs, the high byte unchanged "
           f"in {unchanged:.1%} of them")

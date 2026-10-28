@@ -2398,6 +2398,44 @@ over-read: 16.19's solved table satisfies it **35 times in 256**, or
 16.20's table, not of how Riot builds them. Nothing here transfers to
 16.21 except the method.
 
+One correction to the figures above: the chain was first run over the
+dump in file order, having overlooked that the dump carries each block's
+timestamp. With the three-second gap filter `cli.rs` uses — two sightings
+further apart than that are not consecutive, so the step between them is
+not a step of one — the high byte comes out unchanged in **86.5 %** of
+pairs rather than 73 %, 16.19 moves from 76.3 % to 89.6 %, and the
+runner-up candidate for `T(1)` drops from one reproduced answer to zero.
+The chain still reaches 27 entries, which is the exhaustion argument
+below rather than a shortage of evidence.
+
+#### Two routes tried for the rest of `L`, and where they stop
+
+The move speed is a four-byte float in the entry head, and a speed the
+game publishes is a known plaintext. Conditioning on the top three bits,
+which the law fixes whatever `L` does, the commonest speed patterns
+accept 400, 350, 375, 345 and 325 and yield four further groups —
+`L(16) = 16`, `L(22) = 22`, `L(23) = 26`, `L(25) = 24` — alongside
+re-confirming `L(0)` and `L(8)` on 16,574 and 14,369 entries. All ten
+values are then distinct, as a bijection demands, which is a real check
+and not a weak one.
+
+**They are not recorded as solved, because the step that would confirm
+them does not.** Which speed a pattern is remains a guess where two
+candidates share the same top bits, and the obvious arbiter — that a
+unit with correctly-read coordinates walks rather than teleports — turns
+out to be unable to answer. Held to a half-second window, the
+single-waypoint entries this reads are overwhelmingly stationary units
+re-announcing the same spot: the median, 75th and 90th percentile step
+are all 0.0 for the solved 16.19 table, for a partial 16.20 one, and for
+a 16.19 table with the low byte deliberately permuted. Only the tail
+separates them, 0.1 % of steps over 1,000 units against 0.9 %, on too few
+pairs to carry four table entries. A test that cannot fail the permuted
+control cannot pass anything else either.
+
+What would settle it is parsing every entry in a block rather than the
+first, which is what `explore.rs` does and what needs more of `L` to
+begin with. That is the circle to break next.
+
 What blocks a position on 16.20 is now a specific, small thing: 27 of
 `L`'s 32 groups. And the chain cannot supply them, which is provable
 rather than discouraging. A coordinate's high byte only takes values

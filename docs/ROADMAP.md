@@ -451,8 +451,29 @@ writes the entry buffer forwards where 16.19 writes it backwards.** Read
 that way the profiles agree column for column, including the two whose
 proportions a substitution cannot touch.
 
-So three table entries come free and the direction is settled; the chain
-that recovers the coordinate alphabet still has to be re-run against the
-forward layout before a position comes out. Which class is which
-transfers between patches, and a layout can be won back from the
-format's constraints -- but it is won back, not inherited.
+With the direction settled the format gives up six table entries before
+any chain is walked, because the flags byte fixes an entry's length when
+the waypoint count is one -- 14 bytes for flags 2, 15 for flags 3 -- and
+the distance between heads measures it. Run against 16.19 as a control
+the method names T(0x00), T(0x40), T(1), T(2), T(3) and T(4) and all six
+match the solved table. On 16.20 the chain then reproduces all three of
+the stride's answers where the next candidate reproduces one.
+
+Those 27 entries turn out not to be shapeless: every one satisfies
+cipher = (low3(p+4) << 5) | L(high5(p+4)), a three-bit rotation composed
+with a 32-entry map, which **cuts the table from 256 unknowns to 32**. It
+predicts out of sample too -- the move speed's exponent, which the chain
+never saw. The tempting conclusion, that L is the identity and the whole
+scheme is a bare rotation, is wrong: built out and parsed it puts 6.4% of
+entries on the map where 16.19's solved table puts 96.00%. And 16.19's
+own table satisfies the law 13.7% of the time against 12.5% by chance, so
+this is 16.20's table, not Riot's scheme. Nothing transfers but the
+method.
+
+What blocks a 16.20 position is now 27 of L's 32 groups, and the chain
+provably cannot supply them: an on-map coordinate's high byte only takes
+values whose group is one of the five already found. The rest must come
+from the speed float's mantissa, the net id's low byte, or a unit's own
+continuity. Which class is which transfers between patches, and a layout
+can be won back from the format's constraints -- but it is won back, not
+inherited.

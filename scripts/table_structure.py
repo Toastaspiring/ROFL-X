@@ -1,165 +1,272 @@
 #!/usr/bin/env python3
-"""What shape is a class's substitution, and can it be fitted from a few pairs?
+"""Recover a movement table from the format, and look for structure in it.
 
-`docs/DECODING.md` establishes that a payload is its plaintext run
-through one 256-entry byte substitution per class. That says nothing
-about how the substitution itself is built, and it turns out not to be
-built the same way for every class.
+Three routes, none of which needs a decodable patch, and each checking
+the ones before it.
 
-Measured on 16.9, the cast class's table is **affine over the bits**:
-every entry is `T(0) XOR perm(plaintext)`, where `perm` permutes the
-eight bit positions. Five other classes' tables fit nothing of the
-kind. The difference matters enormously, because an affine table is not
-256 free choices but 16 bits of structure:
+**The universal bytes.** Every movement block holds at least one entry
+and every net id ends `0x40`, so `T(0x40)` appears somewhere in every
+block whatever the alignment. Exactly two bytes do that, and the
+frequency ranking separates them: the net id's zero byte is the
+commonest byte in the class by a wide margin. That gives `T(0x00)` and
+`T(0x40)` with nothing assumed.
 
-  * nine pairs whose plaintext differences are linearly independent
-    determine all 256 entries outright, and
-  * the whole family has only 8! * 256 = 10,321,920 members, so it can
-    be enumerated against whatever few constraints a packed patch
-    offers -- a range, an enum, a parse that has to come out exact.
+**The entry stride.** The flags byte is the waypoint count doubled plus
+a bit saying an extra byte follows the head, which fixes the entry's
+length outright when the count is one: head 10, the extra byte if the
+bit is set, then two bytes per axis. So `T(2)` is the flags value whose
+entries are 14 bytes long and `T(3)` the one whose entries are 15, with
+no freedom anywhere, and `T(4)` and `T(5)` follow from the looser
+17..20 that two waypoints allow. Heads are located by the pair above, so
+this needs no table either.
 
-So on a patch with no binary, the first question about a class is not
-"what are its 256 entries" but "is it affine", and that question can be
-answered from a handful of pairs.
+**The chain.** A unit rarely crosses a 256-unit boundary, so a
+coordinate's high byte is usually unchanged between packets and changes
+by one when it changes at all. The cipher bytes seen turning into one
+another therefore lay the alphabet out in order. The stride has already
+read three entries off the format, so the walk has three independent
+answers to reproduce rather than one.
 
-Usage, on the output of `rofl-x decode --netid N --layout`:
+Then the table is tested for structure, because a generated permutation
+is not always shapeless. On 16.20 every entry satisfies
 
-    rofl-x decode -r <replay> --netid 985 --layout > layout.txt
-    python scripts/table_structure.py layout.txt
-    python scripts/table_structure.py layout.txt --fit 9
+    cipher = (low3(p + 4) << 5) | L(high5(p + 4))
 
-`--fit k` holds back all but `k` pairs and reports how much of the rest
-the fit predicts, which is the honest measure of "nine pairs are
-enough".
+-- the plaintext's low three bits rotated into the cipher's top three,
+and its high five put through a 32-entry map. That reduces the table
+from 256 unknowns to 32. 16.19's solved table does not satisfy it, so it
+is a property of the patch rather than of the scheme.
+
+Usage, on a dump of one movement class (`rofl-x explore --dump-netid <n>
+--dump <file>`), optionally against a patch whose table is solved:
+
+    python scripts/table_structure.py --dump mv1620.jsonl --forward \
+        --check table1619.json --out table1620.json
 """
 from __future__ import annotations
 
 import argparse
-import re
-import sys
+import collections
+import json
 
-ROW = re.compile(r"^    ([0-9a-f]{2})  ((?:[0-9a-f-]{2} ?){16})$", re.M)
-
-
-def parse_tables(text: str) -> list[dict[int, int]]:
-    """Every `plaintext -> payload byte` table printed in a layout report."""
-    tables, current, last_base = [], {}, -1
-    for base, cells in ROW.findall(text):
-        b = int(base, 16)
-        if b <= last_base and current:
-            tables.append(current)
-            current = {}
-        last_base = b
-        for i, cell in enumerate(cells.split()):
-            if cell != "--":
-                current[b + i] = int(cell, 16)
-    if current:
-        tables.append(current)
-    return tables
+ENTRY_HEAD = 10
+#: Times a pair of cipher bytes must be seen changing into one another
+#: before the step is believed to be one. `explore.rs` uses the same.
+CHAIN_MIN = 15
+#: What each flags value must measure, for a count of one or of two.
+#: A single waypoint is exact; two allow a bitmap and short axes.
+EXPECT = {2: (14, 14), 3: (15, 15), 4: (17, 19), 5: (18, 20)}
 
 
-def fit_affine(table: dict[int, int], pairs: dict[int, int] | None = None):
-    """Fit `T(p) = T(0) XOR sum of basis images` and score it on `table`.
-
-    The basis comes from `pairs` when given -- that is how a fit from a
-    few known entries is tested -- and otherwise from the table itself.
-    Returns None when the basis cannot be formed, which is itself worth
-    reporting: it means the pairs on hand do not span the byte.
-    """
-    src = pairs if pairs is not None else table
-    if 0 not in src or any((1 << k) not in src for k in range(8)):
-        return None
-    t0 = src[0]
-    basis = [src[1 << k] ^ t0 for k in range(8)]
-    # A permutation of the bit positions is the special case seen in the
-    # wild; a general invertible matrix would also be affine.
-    is_perm = all(b.bit_count() == 1 for b in basis) and len(set(basis)) == 8
-
-    def predict(p: int) -> int:
-        out = t0
-        for k in range(8):
-            if p >> k & 1:
-                out ^= basis[k]
-        return out
-
-    ok = sum(1 for p, c in table.items() if predict(p) == c)
-    return ok, len(table), is_perm, t0, basis, predict
+def payloads(path):
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            yield bytes.fromhex(json.loads(line)["payload"])
 
 
-def other_shapes(table: dict[int, int]) -> list[tuple[str, int]]:
-    """The structures worth ruling out before calling a table arbitrary."""
-    n = len(table)
-    out = []
-    best = 0
-    for a in range(1, 256, 2):          # odd multipliers are the invertible ones
-        for b in range(256):
-            best = max(best, sum(1 for p, c in table.items() if (a * p + b) & 0xFF == c))
-    out.append(("affine mod 256", best))
-    rev = lambda x: int(f"{x:08b}"[::-1], 2)
-    rot = lambda x, r: ((x << r) | (x >> (8 - r))) & 0xFF
-    for name, f in (("rotate, XOR k", rot), ("bit-reverse, rotate, XOR k",
-                                             lambda x, r: rot(rev(x), r))):
-        best = 0
-        for r in range(8):
-            for k in range(256):
-                best = max(best, sum(1 for p, c in table.items() if f(p, r) ^ k == c))
-        out.append((name, best))
-    out.append(("identity-like (fixed points)", sum(1 for p, c in table.items() if p == c)))
-    return [(name, score) for name, score in out]
+def universal(pays):
+    """`T(0x00)` and `T(0x40)`: present in every block, ranked by count."""
+    present, overall = collections.Counter(), collections.Counter()
+    for p in pays:
+        present.update(set(p))
+        overall.update(p)
+    both = sorted((b for b, k in present.items() if k == len(pays)),
+                  key=lambda b: -overall[b])
+    return both, present, overall
+
+
+def heads(p, zero, top, forward):
+    """Offsets of entry heads, found by the adjacent net id pair."""
+    n = len(p)
+    a, b = (zero, top) if forward else (top, zero)
+    spots = [i for i in range(n - 1) if p[i] == a and p[i + 1] == b]
+    if forward:
+        return sorted(i - 4 for i in spots if i >= 4)
+    return sorted(d for d in (n - 6 - i for i in spots) if d >= 0)
+
+
+def from_stride(pays, zero, top, forward):
+    """`T(2)`..`T(5)`, from lengths the format does not let vary."""
+    seen = collections.defaultdict(collections.Counter)
+    for p in pays:
+        n = len(p)
+        hs = heads(p, zero, top, forward)
+        at = (lambda h: p[h]) if forward else (lambda h: p[n - 1 - h])
+        for a, b in zip(hs, hs[1:]):
+            if 0 <= (a if forward else n - 1 - a) < n:
+                seen[at(a)][b - a] += 1
+    out = {}
+    for f, dist in seen.items():
+        tot = sum(dist.values())
+        if tot < 200:
+            continue
+        for plain, (lo, hi) in EXPECT.items():
+            share = sum(k for d, k in dist.items() if lo <= d <= hi) / tot
+            if share >= 0.90 and plain not in out:
+                out[plain] = (f, share, tot)
+    return out
+
+
+def from_chain(pays, zero, top, forward, known):
+    """The coordinate alphabet, walked outward and checked against `known`."""
+    units = collections.defaultdict(list)
+    flags_one = known.get(2, (None,))[0]
+    for order, p in enumerate(pays):
+        n = len(p)
+        hs = heads(p, zero, top, forward)
+        if not hs:
+            continue
+        h = min(hs) if forward else min(hs)
+        at = (lambda j: p[h + j] if h + j < n else None) if forward else \
+             (lambda j: p[n - 1 - h - j] if 0 <= n - 1 - h - j else None)
+        # Only a single waypoint puts the coordinates at a fixed place;
+        # a bitmap byte shifts anything longer.
+        if at(0) != flags_one or at(13) is None:
+            continue
+        units[(at(2), at(3))].append((order, at(11), at(13)))
+
+    pairs = []
+    for v in units.values():
+        v.sort()
+        for a, b in zip(v, v[1:]):
+            pairs.extend(((a[1], b[1]), (a[2], b[2])))
+    adjacent = collections.defaultdict(collections.Counter)
+    unchanged = 0
+    for a, b in pairs:
+        if a == b:
+            unchanged += 1
+            continue
+        adjacent[a][b] += 1
+        adjacent[b][a] += 1
+
+    def walk(step):
+        table, taken = {0: zero}, {zero}
+        for first, up in ((step, True), (None, False)):
+            if first is not None:
+                if adjacent[zero][first] < CHAIN_MIN:
+                    continue
+                cur = first
+            else:
+                cand = [(k, c) for c, k in adjacent[zero].items()
+                        if c not in taken and k >= CHAIN_MIN]
+                if not cand:
+                    continue
+                cur = max(cand)[1]
+            prev, value = zero, 1 if up else -1
+            while cur not in taken:
+                taken.add(cur)
+                table[value & 0xFF] = cur
+                cand = [(k, c) for c, k in adjacent[cur].items()
+                        if c != prev and c not in taken and k >= CHAIN_MIN]
+                if not cand:
+                    break
+                prev, cur = cur, max(cand)[1]
+                value += 1 if up else -1
+        return table
+
+    want = {k: v[0] for k, v in known.items()}
+    best = []
+    for step, k in adjacent[zero].items():
+        if k < CHAIN_MIN:
+            continue
+        t = walk(step)
+        best.append((sum(1 for a, b in want.items() if t.get(a) == b),
+                     len(t), step, k, t))
+    best.sort(reverse=True)
+    return best, len(pairs), unchanged / max(len(pairs), 1), len(units)
+
+
+def structure(table):
+    """Test `cipher = (low3(p+4) << 5) | L(high5(p+4))` and return L."""
+    L, bad = {}, []
+    for p, c in table.items():
+        q = (p + 4) & 0xFF
+        if (c & 0xE0) != (q & 7) << 5:
+            bad.append(p)
+            continue
+        L.setdefault(q >> 3, set()).add(c & 0x1F)
+    return L, bad
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("layout", help="output of `decode --netid N --layout`")
-    ap.add_argument("--fit", action="store_true",
-                    help="fit from only T(0) and the eight single-bit plaintexts, "
-                         "then predict the other 247 -- the honest test of "
-                         "whether nine pairs are enough")
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dump", required=True, help="one movement class, jsonl")
+    ap.add_argument("--forward", action="store_true",
+                    help="the buffer runs forwards (16.20); default backwards")
+    ap.add_argument("--check",
+                    help="a solved table. Entry-by-entry confirmation "
+                         "only when it is the same patch, which T(0x00) "
+                         "decides; otherwise it serves the structural "
+                         "comparison alone")
+    ap.add_argument("--out", help="write the recovered table here")
     args = ap.parse_args()
 
-    text = open(args.layout, encoding="utf-8").read()
-    tables = parse_tables(text)
-    if not tables:
-        print("no table in that report: the class's fields were not pinned down")
+    pays = list(payloads(args.dump))
+    both, present, overall = universal(pays)
+    print(f"{len(pays)} blocks, {sum(map(len, pays)):,} bytes")
+    if len(both) != 2:
+        print(f"   !! {len(both)} bytes present in every block, expected two")
         return 1
-    netid = re.search(r"netid (\d+)", text)
-    print(f"netid {netid.group(1) if netid else '?'}: "
-          f"{len(tables)} table(s) in the report")
+    zero, top = both
+    print(f"   T(0x00) = {zero:#04x} ({overall[zero] / sum(overall.values()):.1%} "
+          f"of bytes), T(0x40) = {top:#04x}")
 
-    for i, table in enumerate(tables):
-        print(f"\ntable {i + 1}: {len(table)} of 256 entries")
-        a = fit_affine(table)
-        if a is None:
-            print("  cannot test affinity: the table lacks T(0) or a power-of-two entry")
-            continue
-        ok, total, is_perm, t0, basis, _ = a
-        print(f"  affine over the bits : {ok} of {total}"
-              f"{'  -- EXACT' if ok == total else ''}")
-        print(f"  T(0) = 0x{t0:02x}, bit images "
-              f"{' '.join(f'0x{b:02x}' for b in basis)}")
-        print(f"  a permutation of the bit positions: {is_perm}")
-        if ok != total:
-            print("  so not affine; other shapes, for comparison:")
-            for name, score in other_shapes(table):
-                print(f"    {name:<30} {score} of {total}")
-            continue
-        if args.fit:
-            # Nine pairs can only determine the map if their plaintext
-            # differences span the byte, so the spanning set is the one
-            # to test: zero and the eight single bits.
-            wanted = [0] + [1 << k for k in range(8)]
-            pairs = {p: table[p] for p in wanted if p in table}
-            b = fit_affine(table, pairs)
-            if b is None:
-                print(f"  fit from {len(pairs)} pairs: the table is missing one of"
-                      " them, so the byte is not spanned")
-            else:
-                *_, predict = b
-                rest = {p: c for p, c in table.items() if p not in pairs}
-                right = sum(1 for p, c in rest.items() if predict(p) == c)
-                print(f"  fit from {len(pairs)} pairs (zero and the single bits):"
-                      f" predicts {right} of {len(rest)} held-out entries")
+    known = from_stride(pays, zero, top, args.forward)
+    truth = ({int(k, 16): int(v, 16)
+              for k, v in json.load(open(args.check, encoding="utf-8")).items()}
+             if args.check else None)
+    # A table from another patch is unrelated entry by entry -- the
+    # substitution is re-decided per patch -- so it may only be used for
+    # the structural comparison at the end. `T(0x00)` says which it is.
+    same_patch = truth is not None and truth.get(0) == zero
+    for plain, (f, share, tot) in sorted(known.items()):
+        mark = ""
+        if same_patch:
+            mark = ("  confirmed" if truth.get(plain) == f
+                    else f"  !! solved table says {truth.get(plain):#04x}")
+        print(f"   T({plain}) = {f:#04x}   {share:.1%} of {tot} entries have "
+              f"the length the format demands{mark}")
+
+    best, npairs, unchanged, nunits = from_chain(pays, zero, top,
+                                                 args.forward, known)
+    print(f"   chain: {nunits} units, {npairs} pairs, the high byte unchanged "
+          f"in {unchanged:.1%} of them")
+    if not best:
+        print("   !! no attested step; the walk cannot start")
+        return 1
+    agree, size, step, obs, table = best[0]
+    runner = best[1][0] if len(best) > 1 else -1
+    if same_patch and truth.get(1) is not None:
+        print(f"   the solved table says T(1) = {truth[1]:#04x}"
+              + ("  confirmed" if truth[1] == step else "  !! differs"))
+    print(f"   T(1) = {step:#04x} ({obs} observations): {size} entries, "
+          f"{agree}/{len(known)} known reproduced; next best {runner}")
+    if agree < len(known):
+        print("   !! the walk does not reproduce what the stride read")
+
+    L, bad = structure(table)
+    ok = len(table) - len(bad)
+    print(f"\nstructure: {ok}/{len(table)} entries satisfy "
+          f"cipher = (low3(p+4) << 5) | L(high5(p+4))")
+    if ok == len(table) and all(len(v) == 1 for v in L.values()):
+        print("   L is single-valued on every group it covers: "
+              + ", ".join(f"L({k})={list(v)[0]}" for k, v in sorted(L.items())))
+        ident = sum(1 for k, v in L.items() if list(v)[0] == k)
+        print(f"   {ident} of {len(L)} are fixed points -- but L is not the "
+              f"identity, so the\n   table is not a bare rotation and the "
+              f"remaining {32 - len(L)} groups are open")
+    if truth:
+        fit = sum(1 for p, c in truth.items()
+                  if (c & 0xE0) == (((p + 4) & 7) << 5))
+        print(f"   the solved table fits the same law {fit}/256 "
+              f"({fit / 256:.1%}); chance gives 12.5%")
+
+    if args.out:
+        json.dump({f"{k:02x}": f"{v:02x}" for k, v in sorted(table.items())},
+                  open(args.out, "w", encoding="utf-8"), indent=0)
+        print(f"wrote {args.out}")
     return 0
 
 

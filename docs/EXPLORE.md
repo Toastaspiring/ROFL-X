@@ -2334,10 +2334,81 @@ parser already sweeps. Read backwards the same offset is scattered over
 
 That hands over three table entries for 16.20's movement class with
 nothing assumed: `T(0x00) = 0x80`, `T(0x40) = 0x88`, and the move
-speed's exponent `0xe8` where 16.19 has `0xcb`. What is still missing is
-the chain, and so the coordinates: the recovery walks the alphabet
-through pairs of consecutive high bytes, and that has to be re-run
-against the forward layout before a position comes out.
+speed's exponent `0xe8` where 16.19 has `0xcb`.
+
+#### Six entries off the format, and a check that the chain must pass
+
+With the direction settled, more comes out of the format before any
+chain is walked. The flags byte is the waypoint count doubled plus a bit
+saying an extra byte follows the head, and that fixes an entry's length
+outright when the count is one: head ten, the extra byte if the bit is
+set, then two bytes per axis — 14 bytes for flags 2 and 15 for flags 3,
+with no freedom anywhere. Two waypoints add a bitmap byte and allow
+short axes, giving 17 to 19. Heads are found by the pair above, so the
+distance between consecutive heads is an entry's length and needs no
+table either.
+
+16.19 is the control, and it passes outright: the lengths name `T(2)`,
+`T(3)` and `T(4)` as `0xd1`, `0xf8` and `0x94`, which is exactly what
+`table1619.json` holds, with 95.7–97.8 % of entries at the mandated
+length. The chain then returns `T(1) = 0x07`, again what the solved
+table says. Six entries, recovered from a patch as though it were
+unsolved.
+
+On 16.20 the same run gives `T(2) = 0xc0`, `T(3) = 0xe0`, `T(4) = 0x03`
+at 91.6–95.7 %, and the chain returns `T(1) = 0xa0` — reproducing all
+three of the stride's answers where the next-best candidate reproduces
+one. That is a far stronger check than 16.19's walk ever had, which had
+only the flags high byte to test against.
+
+#### The table is not shapeless
+
+Sorted by plaintext, the 27 entries the chain reached run `0x00, 0x20,
+0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0`, then `0x03, 0x23, 0x43, 0x63,
+0x83, 0xa3, 0xc3, 0xe3`, then `0x02, 0x22`. Every one of them satisfies
+
+    cipher = (low3(p + 4) << 5) | L(high5(p + 4))
+
+— the plaintext's low three bits rotated into the cipher's top three,
+its high five put through a 32-entry map `L`. All 27 fit, and `L` comes
+out single-valued on every group they cover. **That reduces the table
+from 256 unknowns to 32.**
+
+It also predicts out of sample, which is the only reason to believe it.
+The move speed's exponent was never seen by the chain; the law says the
+top three bits of `T(0x43)` must be `0xe0`, and the measured byte `0xe8`
+has exactly that, pinning `L(8) = 8`. Three of the five groups known are
+fixed points — `L(0) = 0`, `L(2) = 2`, `L(8) = 8`, `L(30) = 30` — so the
+obvious guess is that `L` is the identity and the whole scheme is a bare
+rotation of `p + 4`. That guess predicts `T(0x00) = 0x80`,
+`T(0x40) = 0x88` and `T(0x43) = 0xe8`, all three correct and all three
+derived independently.
+
+**It is still wrong.** Built out to 256 entries and run through the
+parser, the rotation gets 2.0 % of blocks to parse and 6.4 % of what it
+reads onto the map. The same parser reading 16.19 backwards with its
+solved table gets **77.4 %** and **96.00 %** of 87,977 entries, on 3,316
+units — so the parser is sound and the table is what failed. `L(1) = 3`
+and `L(31) = 1` stand, on 44,879 entries' worth of stride evidence, and
+`L` is a real substitution.
+
+One more thing is worth stating, because it stops the law being
+over-read: 16.19's solved table satisfies it **35 times in 256**, or
+13.7 %, where chance alone gives 12.5 %. The structure is a property of
+16.20's table, not of how Riot builds them. Nothing here transfers to
+16.21 except the method.
+
+What blocks a position on 16.20 is now a specific, small thing: 27 of
+`L`'s 32 groups. And the chain cannot supply them, which is provable
+rather than discouraging. A coordinate's high byte only takes values
+that keep the unit on the map — `v` runs −4179..4321, so the byte is
+`0x00`..`0x10` or `0xEF`..`0xFF` — and those have `high5(p + 4)` in
+`{0, 1, 2, 30, 31}`, which is precisely the five groups the chain found.
+It is exhausted. The remaining 27 have to come from bytes whose
+plaintext is constrained some other way: the speed float's mantissa, the
+net id's low byte, or the continuity of a unit's own path, where the high
+byte is already readable and the low byte's bottom three bits come free
+from the rotation.
 
 So the two halves of this project generalise differently. **Which class
 is which** is carried by statistics a substitution cannot disturb, and

@@ -45,6 +45,37 @@ two; 323 jumps in it are unexplained by the packet reporting them, and
 nothing separates those two from the ability dashes and table error in
 the rest. Drawing a guess would be worse than drawing nothing.
 
+## 16.20, read with a partial table
+
+The page carries a third dataset. 16.20's client ships packed, so there
+is no archive and no decoder; its positions come from the format's own
+constraints and the game's published move speeds, through a table that
+is 128 of 256 entries. `docs/EXPLORE.md` is the account.
+
+```bash
+rofl-x explore -r <16.20>.rofl --positions-netid 61     --forward --partial --table tab1620_mv.json     --dump-positions pos1620.jsonl -o e1620.json
+python scripts/viewer_build.py --only 16.20     --p20-positions pos1620.jsonl --p20-meta e1620.json     --p20-table tab1620_mv.json
+```
+
+`--only` merges one patch into an existing `viewer_data.json` and leaves
+the others alone, which is what you want when one patch's dumps are to
+hand and another's are not: a full rebuild would drop what the file
+already holds.
+
+Two flags carry what the file does not say. `--forward` because which
+way round a movement class writes its entry buffer is re-decided per
+patch, and `--partial` because the strict read demands that a payload
+parse to exactly its own length, which a table with holes can never
+manage — one unreadable byte among a dozen entries fails the block.
+
+What comes out is **28,867 positions over 2,948 units, one entry off the
+map**, and all ten champions named by net id rather than by shape: the
+table reaches their id bytes, so the page looks them up in the champion
+run the explorer found. The sixteen open groups of `L` are why only
+7,621 of the other units' positions read — a coordinate the table cannot
+reach is dropped rather than guessed, so what is drawn is right and
+there is simply less of it.
+
 ## Art
 
 The objective icons in `obj/` come from

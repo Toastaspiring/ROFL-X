@@ -210,7 +210,25 @@ def main() -> int:
     g.add_argument("--regions", default="base_vision.json")
     g.add_argument("--events", default="events1619.json")
 
+    g = ap.add_argument_group(
+        "16.20, read with a partial table and a forward buffer")
+    g.add_argument("--p20-positions", default="pos1620.jsonl",
+                   help="`explore --forward --partial --dump-positions`")
+    g.add_argument("--p20-meta", default="e1620_fwd.json")
+    g.add_argument("--p20-table", default="tab1620_mv.json",
+                   help="128 of 256 entries; the rest of the alphabet is "
+                        "16 open groups of L, so some coordinates do not read")
+    g.add_argument("--p20-label",
+                   default="16.20 — packed, forward buffer, 16 of 32 groups")
+
     ap.add_argument("--out", default="viewer/viewer_data.json")
+    ap.add_argument("--only", action="append", default=[],
+                    choices=["16.9", "16.19", "16.20"],
+                    help="build only these patches and merge them into an "
+                         "existing --out, leaving the others as they are. "
+                         "Use it when a patch's inputs are to hand and "
+                         "another's are not, so a rebuild would drop data "
+                         "the file already holds; repeatable")
     args = ap.parse_args()
 
     if not os.path.exists(args.table):
@@ -218,23 +236,48 @@ def main() -> int:
               f"so positions carry ±256 map units")
         args.table = None
 
-    tab9 = {int(p, 16): int(c, 16) for p, c in
-            json.load(open(args.control_table, encoding="utf-8")).items()}
-    anchor = int(json.load(open(args.meta, encoding="utf-8"))
-                 ["waypoint_table"]["anchor"], 16)
+    want = set(args.only) or {"16.9", "16.19", "16.20"}
+    data = {}
+    if args.only and os.path.exists(args.out):
+        data = json.load(open(args.out, encoding="utf-8"))
+        print(f"merging into {args.out}, which already holds "
+              f"{sorted(data)}")
 
-    data = {
-        "patch_16_9": build(args.control_positions, args.control_meta,
-                            args.control_table, tab9[0x00],
-                            args.control_label, "exact", extras=False,
-                            wards=args.control_wards),
-        "patch_16_19": build(args.positions, args.meta, args.table, anchor,
-                             args.label,
-                             "high byte exact, low byte searched" if args.table
-                             else "high byte exact, low byte unknown: "
-                                  "±256 map units",
-                             extras=True, wards=args.wards),
-    }
+    if "16.9" in want:
+        tab9 = {int(p, 16): int(c, 16) for p, c in
+                json.load(open(args.control_table, encoding="utf-8")).items()}
+        data["patch_16_9"] = build(
+            args.control_positions, args.control_meta, args.control_table,
+            tab9[0x00], args.control_label, "exact", extras=False,
+            wards=args.control_wards)
+    if "16.19" in want:
+        anchor = int(json.load(open(args.meta, encoding="utf-8"))
+                     ["waypoint_table"]["anchor"], 16)
+        data["patch_16_19"] = build(
+            args.positions, args.meta, args.table, anchor, args.label,
+            "high byte exact, low byte searched" if args.table
+            else "high byte exact, low byte unknown: ±256 map units",
+            extras=True, wards=args.wards)
+    # 16.20 only when its dumps are present, since they need a patch
+    # whose client ships packed and a table recovered for it.
+    if ("16.20" in want and os.path.exists(args.p20_positions)
+            and os.path.exists(args.p20_meta)
+            and os.path.exists(args.p20_table)):
+        tab20 = {int(a, 16): int(c, 16) for a, c in
+                 json.load(open(args.p20_table, encoding="utf-8")).items()}
+        # The chain never solved on 16.20, so there is no `waypoint_table`
+        # to read the anchor from; the table itself carries it as T(0x00).
+        data["patch_16_20"] = build(
+            args.p20_positions, args.p20_meta, args.p20_table, tab20[0x00],
+            args.p20_label,
+            "exact where the table reaches the low byte; 16 of 32 groups "
+            "of L are open, so the rest of a unit's coordinates do not read "
+            "at all rather than reading wrongly",
+            extras=False, wards=None)
+    elif "16.20" in want:
+        print(f"no 16.20 dumps ({args.p20_positions}), so that patch is "
+              f"left out")
+
     for k, v in data.items():
         named = sum(1 for u in v["units"].values() if u["name"])
         print(f"{k}: {named}/10 named, {len(v['entities'])} entity dots "

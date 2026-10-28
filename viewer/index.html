@@ -1,3 +1,6 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rift Position Check</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -117,6 +120,7 @@ code { font-family: var(--mono); font-size: 0.95em; color: var(--fg); }
         <div class="seg" role="group" aria-label="Patch">
           <button id="p9" aria-pressed="false">16.9 control</button>
           <button id="p19" aria-pressed="true">16.19 under test</button>
+          <button id="p20" aria-pressed="false">16.20 partial</button>
         </div>
         <div class="seg" role="group" aria-label="View">
           <button id="vPlay" aria-pressed="false">Playback</button>
@@ -881,6 +885,7 @@ function setPatch(p) {
   patch = p;
   $("p9").setAttribute("aria-pressed", String(p === "patch_16_9"));
   $("p19").setAttribute("aria-pressed", String(p === "patch_16_19"));
+  $("p20").setAttribute("aria-pressed", String(p === "patch_16_20"));
   picked = null;
   t = firstMoment();
   $("scrub").max = span();
@@ -922,6 +927,9 @@ $("scrub").oninput = (e) => {
 };
 $("p9").onclick = () => setPatch("patch_16_9");
 $("p19").onclick = () => setPatch("patch_16_19");
+// 16.20 ships only when its dumps were present at build time, so the
+// button disables itself rather than switching to nothing.
+$("p20").onclick = () => { if (data && data.patch_16_20) setPatch("patch_16_20"); };
 $("vPlay").onclick = () => setMode("play");
 $("vAll").onclick = () => setMode("all");
 $("showEnts").onchange = render;

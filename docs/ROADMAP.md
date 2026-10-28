@@ -434,9 +434,25 @@ file's header says `lastKeyFrameId: 40`. The movement class is just as
 clearly netid 61, on a payload range and byte-share identical to
 16.19's.
 
-But positions do not follow. The parse is anchored on the payload's end,
-where 16.19 puts a byte taking exactly one value -- `T(0x40)`, the top
-byte of every net id -- and 16.20 puts nothing of the kind. The entry
-buffer is no longer right-aligned there, so the anchor search returns
-nothing and no position is read rather than a wrong one. Which class is
-which transfers between patches; how a payload is laid out does not.
+Positions did not follow at first. The parse is anchored on the
+payload's end, where 16.19 puts a byte taking exactly one value --
+`T(0x40)`, the top byte of every net id -- and 16.20 puts nothing of the
+kind, at that offset or any other, from either end.
+
+The layout turned out to be recoverable without a table, from the
+format's own constraints. Every block holds an entry and every net id
+ends `0x40`, so `T(0x40)` must appear somewhere in every block whatever
+the alignment: both patches have exactly two such bytes, and their whole
+ranking matches slot for slot, which names `T(0x00)` and `T(0x40)` on
+16.20 as `0x80` and `0x88`. Locating a head by that adjacent pair then
+showed the entry head mirrored -- the shares at buffer index 1 and index
+9 traded places, and the head is ten bytes, so those two reflect. **16.20
+writes the entry buffer forwards where 16.19 writes it backwards.** Read
+that way the profiles agree column for column, including the two whose
+proportions a substitution cannot touch.
+
+So three table entries come free and the direction is settled; the chain
+that recovers the coordinate alphabet still has to be re-run against the
+forward layout before a position comes out. Which class is which
+transfers between patches, and a layout can be won back from the
+format's constraints -- but it is won back, not inherited.

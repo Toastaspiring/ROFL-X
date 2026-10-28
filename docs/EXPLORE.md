@@ -2259,13 +2259,94 @@ longer right-aligned to the end of the payload the way it was, so the
 anchor search returns nothing and the parse yields zero positions rather
 than wrong ones.
 
+#### What moved: the buffer is written the other way round
+
+The obvious guess is that the format is unchanged and something is
+written *after* the buffer, pushing it off the end. That is cheap to
+test, because the anchor search asks for two things at once: the byte at
+`[-6]` takes exactly one value, being `T(0x40)`, and the byte at `[-5]`
+is one value in nearly every block, being the net id's zero byte. Shift
+the whole reading left and see whether both come back.
+
+Neither does, at any shift from 0 to 16. On 16.19 shift 0 is the only
+offset where both hold and it is unmistakable — `[-6]` one value, `[-5]`
+97.1 % one value, every other shift scattered. On 16.20 `[-6]` takes
+**all 256 values at every shift**, and reading forward from the payload
+start finds no constant either. Every unit in the game has a net id
+ending `0x40`, so if the first entry sat at any fixed distance from
+either end, some offset would collapse to one value. None does. It is
+not a shift.
+
+What settles it is a question that needs no alignment. Every movement
+block holds at least one entry, so whatever byte `T(0x40)` is, it must
+appear *somewhere* in essentially every block — true wherever the buffer
+sits. Asking which byte values do that gives a sharp answer: both
+patches have **exactly two** bytes present in all of their blocks, and
+the whole ranking lines up slot for slot.
+
+| present in | 16.19 | 16.20 |
+| --- | --- | --- |
+| every block, commonest overall | `0x42` = `T(0x00)` | `0x80` |
+| every block, second (5.4 % both) | `0x29` = `T(0x40)` | `0x88` |
+| 98.4 % / 97.9 % of blocks | `0xcb` | `0xe8` |
+| then 83.9 / 84.8, 80.4 / 83.3, 62.9 / 72.1 % | | |
+
+`T(0x40)` sits immediately beside the net id's zero byte in the entry
+head, so that adjacent pair is a signature that locates a head without
+any alignment at all. On 16.19 it must put the head flush with the
+payload end, and it does — in **100 %** of the blocks where it finds one,
+which is 97.2 % of them. On 16.20 it places a head in 92.0 % of blocks,
+so the entries are there and still substituted.
+
+But the head it placed failed its own check. The format allows the
+flags' high byte only 0 or 2, so buffer index 1 should read `T(0x00)`;
+read backwards on 16.20 it gives `0xe8` in 92.3 % of blocks, which cannot
+be `T(0x00)` when index 4 reads `0x80`. The giveaway was that the two
+narrow columns had traded shares — index 1 and index 9 run 99.6 / 92.7 on
+16.19 against 92.3 / 99.8 on 16.20. An entry head is ten bytes, so 1 and
+9 are reflections of each other about it, and a mirrored field order is
+what reading a forward-written buffer backwards produces.
+
+Read forwards, the constrained columns fall into place:
+
+| buffer index | 16.19 backwards | 16.20 forwards |
+| --- | --- | --- |
+| 1, flags high, 0 or 2 only | 99.6 % `0x42` = `T(0x00)` | **99.3 % `0x80`** |
+| 9, move speed's top byte | 92.7 % `0xcb`, 35 values | 89.8 % `0xe8`, 90 values |
+| 3 | 75 % `0x42` | 83 % `0x80` |
+| 0, waypoint count doubled | 49 % / 28 % | 57 % / 23 % |
+| 7 | 35 % / 32 % | 36 % / 21 % |
+
+The decisive line is the first: index 1 now reads the same byte index 4
+does, which is what `T(0x00)` for a zero flags byte requires, and at
+almost exactly 16.19's share. Taken together the two narrow columns miss
+16.19 by 0.033 read forwards against 0.144 read backwards, a factor of
+4.4. Indices 0 and 7 are proportions of waypoint shapes rather than byte
+values, so a substitution cannot change them; they are similar in shape
+but not tight, and are supporting rather than deciding.
+
+**So 16.20 writes its entry buffer forwards where 16.19 writes it
+backwards** — not a moved offset, a reversed direction. Read that way the
+header in front of it is 2–4 bytes in 99.6 % of blocks (3 in 54 %, 2 in
+38 %, 4 in 8 %) and inside 1..12 in 99.73 %, the range the existing
+parser already sweeps. Read backwards the same offset is scattered over
+6–16 with no mode, which is what a wrong direction looks like.
+
+That hands over three table entries for 16.20's movement class with
+nothing assumed: `T(0x00) = 0x80`, `T(0x40) = 0x88`, and the move
+speed's exponent `0xe8` where 16.19 has `0xcb`. What is still missing is
+the chain, and so the coordinates: the recovery walks the alphabet
+through pairs of consecutive high bytes, and that has to be re-run
+against the forward layout before a position comes out.
+
 So the two halves of this project generalise differently. **Which class
 is which** is carried by statistics a substitution cannot disturb, and
 those transfer across patches untouched — four classes and the keyframes
 named on 16.20 with nothing written. **How a payload is laid out** does
-not: it is re-decided per patch, and 16.20 moved the movement buffer.
-Reading positions there starts again from the layout, not from the
-table.
+not: it is re-decided per patch, and 16.20 reversed the movement buffer.
+But the layout is recoverable from the format's own constraints rather
+than from a table, which is what the two universal bytes and the
+mirrored profile did here.
 
 
 

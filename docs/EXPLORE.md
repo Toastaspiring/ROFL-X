@@ -2803,11 +2803,62 @@ layout, and nothing here yet reads an entry.
 
 A variable-length encoding of the net id would produce all five of
 those, since every field after it would then sit at an offset that
-depends on the id's value. That is the hypothesis the measurements fit,
-**not a finding** — confirming it needs a reading that assumes no fixed
-offsets anywhere, which nothing here does yet. 16.21 also moved a byte
-in the chunk record, so a serialization change across the patch is at
-least consistent.
+depends on the id's value. It was the hypothesis the measurements fit,
+and **it was wrong** — see below. It was a reasonable answer to the
+wrong question.
+
+#### The class was wrong: 16.21 reports movement per unit
+
+Every negative above is about netid 657, and netid 657 is not where
+16.21 reports movement.
+
+The fingerprint sent me there and was not wrong about what it measured:
+657 is a long variable payload addressed to the game, 3.12 % of blocks,
+commonest byte 20.2 %, commonest eight 41.6 %, payload 18–352 — a 25×
+better match to 16.20's movement class than anything else in the file.
+What a fingerprint cannot see is that the class's *job* changed.
+
+**`netid 1031` is the one.** It addresses a unit rather than the game,
+carries 13 to 23 bytes instead of a batch, has 3,525 distinct entities
+in one game, and its busiest parameters are the champions:
+
+| class | distinct params | its busiest ten | blocks addressing a champion |
+| --- | --- | --- | --- |
+| 1031 | 3,525 | **9 of 10 are champion net ids** | 11.6 % |
+| 206 | 1,607 | **10 of 10** | 47.1 % |
+| 334 | 11 | — | 0.0 % |
+| **657** | **1**, `0x00000000` | — | 0.0 % |
+
+A block's parameter is framing, and **framing is not obfuscated** — only
+payloads are. So on 16.21 a unit's net id is already in the clear, and
+the reason no probe found one inside netid 657's payload is that there
+is none to find. 657 does carry a batch addressed to the game, exactly
+as its fingerprint says; what it batches is no longer units bearing ids.
+
+#### What netid 1031 looks like
+
+The unit comes free, so only the payload's own fields remain. Its common
+lengths are 13, 15, 17 and 19, **stepping by two**, which is what 16.19
+does when a waypoint after the first is a one-byte signed step per axis.
+13 bytes is the base case.
+
+Taking one champion's 13-byte blocks in time order and asking how often
+each byte is unchanged from the block before:
+
+```
+position   0   1   2   3   4   5   6   7   8   9  10  11  12
+unchanged 25  21   3  46 100  71  33  33 100 100 100 100 100  %
+```
+
+Offsets 4 and 8 to 12 never move for a given unit, so they are that
+unit's own attributes. Offset 2 changes in all but 3 % of blocks, which
+is what a coordinate's low byte does, and offsets 3 and 5, at 46 % and
+71 %, are what high bytes do. Offset 8 is `0x34` in **99 %** of all
+13-byte payloads whoever sent them, so it is a constant of the format.
+
+That is a description and not a reading. Two readings of 16.21's
+internals have already dissolved on more data, so this one stays a
+description until something independent confirms it.
 
 `scripts/entry_fingerprint.py` runs the last two tests, which are the
 ones that need no anchor.

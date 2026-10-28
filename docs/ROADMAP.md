@@ -476,9 +476,14 @@ byte looks like, and would make 0x12 the cipher for 2 rather than the
 move speed's exponent. Two fields twelve apart in a twenty-eight byte
 record is not yet a layout.
 
-A variable-length net id would
-produce all five, but that is a hypothesis the measurements fit rather
-than a finding.
+The class was wrong. netid 657 is a batch addressed to the game, which
+is what its fingerprint said, but on 16.21 movement is reported per
+unit: netid 1031 addresses a unit, carries 13 to 23 bytes, has 3,525
+distinct entities, and nine of its ten busiest parameters are champion
+net ids. A block's parameter is framing and framing is not obfuscated,
+so the net id is already in the clear -- which is why no probe found one
+inside 657's payload, and retires the variable-length-id hypothesis as a
+good answer to the wrong question.
 
 So across four patches: the class identification transfers every time,
 and the layout never does. 16.20's change was recoverable from the

@@ -472,8 +472,19 @@ method.
 
 What blocks a 16.20 position is now 27 of L's 32 groups, and the chain
 provably cannot supply them: an on-map coordinate's high byte only takes
-values whose group is one of the five already found. The rest must come
-from the speed float's mantissa, the net id's low byte, or a unit's own
-continuity. Which class is which transfers between patches, and a layout
+values whose group is one of the five already found. Five further routes
+have been tried and all five are closed, each by its own measurement --
+sequential net ids (the known p mod 8 steps by one 8.4% of the time
+against 12.5% by chance), standing units (not structures, so no map
+constant; it contradicted a settled group), position pairing across
+patches (eleven groups of which five claim a value another already
+holds), small waypoint steps (only 56.3% of 82,945 steps are within 40,
+so the premise is false) and move speeds (four groups, bijection-
+consistent but unconfirmable). docs/EXPLORE.md records each with its
+numbers so none is retried.
+
+What is left to try is the thing on-map cannot do and continuity could if
+it had the samples: read every entry in a block rather than the first,
+which needs more of L to begin with. Which class is which transfers between patches, and a layout
 can be won back from the format's constraints -- but it is won back, not
 inherited.

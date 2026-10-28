@@ -2436,6 +2436,62 @@ What would settle it is parsing every entry in a block rather than the
 first, which is what `explore.rs` does and what needs more of `L` to
 begin with. That is the circle to break next.
 
+#### Four more routes to `L`, and why each is closed
+
+None of these produced a group worth keeping. They are recorded because
+each looked sound beforehand and the measurement is what killed it.
+
+**Net ids being handed out in order.** The law gives `p mod 8` free for
+every cipher byte, so if ids are allocated sequentially then sorting a
+256-id block's units by first appearance must make that known `p mod 8`
+step by one. Measured on the three densest blocks — 120, 92 and 69 ids —
+the `+1` share is **8.4 %, 8.8 % and 7.4 %** against 12.5 % by chance. It
+is at or below chance, because a wave of six minions spawns in the same
+instant and the tie breaks arbitrarily.
+
+**Units that are standing still.** Their speed field is four zero bytes,
+which is easy to select, and the hope was structures — map constants
+identical in every game. They are not structures: the 52 distinct
+standing positions 16.19 reports sit mid-map, at (8746, 8160) and
+(11026, 6996), so they are units that stopped where they happened to be
+and transfer nothing. The attempt offered `L(30) = 28` where the chain
+had already settled 30, and that contradiction is the whole verdict.
+
+**Pairing the commonest positions across patches.** 16.19 has one
+location 190 distinct units report; 16.20's busiest has thirteen. The
+orderings are not comparable. Targeting single positions instead does
+better — of a position's four bytes, two or three have computable 16.20
+ciphers and the law fixes the top three bits of the rest, so each
+candidate predicts 22 to 27 bits — and it yields eleven groups that
+cannot all be true: **five claim an `L` value another group already
+holds**, which a bijection forbids, and all three groups it shares with
+the move-speed route disagree with it. Two units standing within 512 map
+units of each other share their high bytes, and the remaining top-bit
+constraint is one chance in eight, which is not enough.
+
+**A one-byte waypoint step being a small number.** This would bite the
+low byte, which is the one thing on-map cannot judge — a wrong low byte
+moves a unit by at most 510 map units, which is still on the map. But
+the premise is false. Measured on 16.19 with its solved table and a full
+parse, of 82,945 steps only **56.3 %** are within ±40 and 19.7 % within
+±8, with +21, −27 and +49 among the commonest. A path's steps are not
+small, so their frequency cannot rank `L`.
+
+One correction to go with them. An earlier attempt to arbitrate the
+candidates by on-map share was reported here as decisive and was not:
+with a partial table almost no block parses to its exact length, so the
+rows rested on 6 and 22 entries, and one of them was not even a bijection
+— mixing the firm groups with the identity makes `L(1) = 3` collide with
+`L(3) = 3`. The arbitration was inconclusive, and the reason it cannot
+work is the one above: on-map is a test of the high byte.
+
+So the firm position is unchanged at six groups, and it is firm. The
+stride was re-examined for the ambiguity that would undermine it — it
+picks the first flags value that fits, which would be luck if several
+fitted — and on both patches **exactly one** candidate fits each of
+`T(2)`, `T(3)` and `T(4)`, with 16.19's three all confirmed against its
+solved table. `T(4) = 0x03`, and so `L(1) = 3`, stands.
+
 What blocks a position on 16.20 is now a specific, small thing: 27 of
 `L`'s 32 groups. And the chain cannot supply them, which is provable
 rather than discouraging. A coordinate's high byte only takes values

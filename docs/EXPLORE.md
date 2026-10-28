@@ -2681,6 +2681,37 @@ at about 5.4 %, then one in about 98 % of blocks at about 5 %.
 | second, 5.4 % | `0x29` | `0x88` | `0xdb` |
 | 98 % of blocks, ~5 % | `0xcb` | `0xe8` | `0x12` |
 
+**The net ids are not four raw bytes, and this is what shows it.** The
+explorer names the champions as a run of ten consecutive net ids —
+`0x400000ae`..`0x400000b7` on both 16.20 and 16.21 — found from the
+longest-lived consecutive run of netids, with no table and no payload
+decoded. In the entry head the id's third byte is zero for any id below
+`0x10000` and its fourth is the `0x40` every id ends with, so the
+sequence `(X, T(0x00), T(0x00), T(0x40))` picks out exactly the units
+whose id is `0x400000XX`, and `X` is `T(XX)`.
+
+On 16.20 that gives **ten frequent values covering 100 % of 48,450
+occurrences**, nineteen distinct in all with the other nine rare: the
+ten champions, isolated. On 16.21 the same pattern gives **256 distinct
+values with the ten commonest covering 56 %**, and the two most frequent
+are the anchor bytes themselves. That is noise, not ten champions.
+
+#### A held-out check that 16.20's table passes exactly
+
+The 16.20 figure above is worth more than a control, because the ten
+ciphers it produces were never used to build that table — it came from
+move speeds and the entry stride. So the law plus `L(22)` and `L(23)`
+*predicts* them:
+
+| champion's low byte | group | `L(g)` | predicted | observed |
+| --- | --- | --- | --- | --- |
+| `0xae`..`0xb3` | 22 | 22 | `0x56 0x76 0x96 0xb6 0xd6 0xf6` | all seen |
+| `0xb4`..`0xb7` | 23 | 25 | `0x19 0x39 0x59 0x79` | all seen |
+
+**Ten of ten, and the predicted set equals the observed set.** Nothing
+was fitted: the ids come from a consecutive-run search, the ciphers from
+a byte pattern, the table from speeds. `scripts/champion_ids.py` runs it.
+
 **But the entry layout does not transfer, and this time not by being
 reversed.** On 16.20 the fix was a direction. 16.21 answers no offset
 question at all:

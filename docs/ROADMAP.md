@@ -436,6 +436,20 @@ factor of 25, on an identical payload range. The three bytes the
 frequency ranking gives come out in the same order as on every other
 patch.
 
+The champions settle two things at once. The explorer names them as ten
+consecutive net ids -- 0x400000ae..0x400000b7 on both patches -- from
+the longest-lived consecutive run, using no table. The head stores an id
+as four bytes whose third is zero and fourth is 0x40, so the sequence
+(X, T(0), T(0), T(0x40)) isolates the units with ids 0x400000XX. On
+16.20 that is ten frequent values covering 100% of 48,450 occurrences;
+on 16.21 it is 256 values covering 56%, which is noise, so 16.21 does
+not store its net ids as four raw bytes.
+
+And on 16.20 those ten ciphers are held out -- the table came from move
+speeds and the entry stride and never saw a net id -- so the law plus
+L(22) and L(23) predicts them. All ten are right and the predicted set
+equals the observed set. scripts/champion_ids.py runs it.
+
 The entry layout does not transfer, and this time not by being reversed.
 Five tests say so and the last is the sharpest: entries tile the buffer,
 so a field every entry carries appears once per entry, and 16.19's net

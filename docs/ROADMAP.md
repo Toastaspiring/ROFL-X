@@ -455,7 +455,19 @@ Five tests say so and the last is the sharpest: entries tile the buffer,
 so a field every entry carries appears once per entry, and 16.19's net
 id pair is absent from 2.7% of blocks with 40% of its gaps exactly 14 --
 a single-waypoint entry's length -- where 16.21's best candidate is
-absent from 64.7% with scattered gaps. A variable-length net id would
+absent from 64.7% with scattered gaps. And the entry is 28 bytes, not 14. Autocorrelation says so without
+assuming any field: 16.19 and 16.20 peak at lag 14 (2.97x and 2.71x the
+baseline) with the harmonic at 28, while 16.21 peaks at 28 (2.82x) and
+its lag 14 sits below baseline at 0.42x. So the entry is a different
+size rather than 14 with something added, and every probe above was
+reading half of one. That also explains the 28 those probes kept
+producing and this document kept ignoring.
+
+Anchored on the commonest 4-gram, cc 12 db 76, the 28-byte entry shows
+seven columns holding essentially one value, and the marker cc 12 db
+recurs nine bytes later as its exact reverse. Neither is explained yet.
+
+A variable-length net id would
 produce all five, but that is a hypothesis the measurements fit rather
 than a finding.
 

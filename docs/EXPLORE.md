@@ -2739,6 +2739,49 @@ question at all:
   payloads turns out to be absent from 95.8 % of them, so it is a header
   field and not an entry field.
 
+#### What the entry actually is: 28 bytes, not 14
+
+All of the above assumed, without saying so, that the entry is about the
+size it is on 16.19 — a ten-byte head and two 16-bit coordinates, 14
+bytes for a single waypoint. Autocorrelation settles it without
+assuming any field at all. A buffer of similar records repeats, because
+the same field of two neighbouring entries holds similar values, so
+bytes exactly one record apart agree more often than chance.
+
+| patch | strongest lag | against baseline | its half |
+| --- | --- | --- | --- |
+| 16.19 | **14** | 2.97× | 7 at 0.37× |
+| 16.20 | **14** | 2.71× | 7 at 0.39× |
+| 16.21 | **28** | 2.82× | **14 at 0.42×** |
+
+16.19 and 16.20 come out at 14, which is what their format documents,
+each with the harmonic at 28 that a real period produces. **16.21 comes
+out at 28, and its lag 14 sits *below* baseline** — so the entry is not
+14 bytes with something added, it is a different size, and every probe
+above was reading half of one. `scripts/entry_stride.py` is the tool,
+and the 14-byte patches are the control that makes it trustworthy.
+
+That also explains a number this section kept producing and ignoring:
+the gaps between `0xdb` appearances are 28 in 25 % of cases, and the gaps
+between the pair that looked promising in the shortest payloads are 28
+in 60 %.
+
+Anchored on the commonest 4-gram in the class, `cc 12 db 76`, a 28-byte
+entry shows real structure where a 14-byte reading showed none:
+
+```
+offset   0  1  2  3 | 4  5  6  7 | 8  9 10 11 | ... 17 ... 19
+byte    cc 12 db 76 |cc cc cc cc | ?  db 12 cc |    cc     0b
+share  (anchor)     |81 100 49 100|   100 96 99|   100     97
+```
+
+Offsets 5, 7, 9, 10, 11, 17 and 19 each hold essentially one value. And
+the three-byte marker `cc 12 db` recurs nine bytes later **as its exact
+reverse**, `db 12 cc`. That is not explained here. A field written once
+each way round would do it, and so would two sub-records of opposite
+orientation, but one observation of a palindrome is not evidence for
+either, and nothing yet reads the entry.
+
 A variable-length encoding of the net id would produce all five of
 those, since every field after it would then sit at an offset that
 depends on the id's value. That is the hypothesis the measurements fit,

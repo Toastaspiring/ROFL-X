@@ -2436,6 +2436,64 @@ What would settle it is parsing every entry in a block rather than the
 first, which is what `explore.rs` does and what needs more of `L` to
 begin with. That is the circle to break next.
 
+#### Positions on 16.20
+
+The move speeds settled it. The entry head carries a four-byte float,
+and a speed the game reports is known plaintext, so each pattern
+constrains `L` — but only with one constraint the first attempt lacked.
+That attempt filtered on the cipher's top three bits, which the law
+fixes whatever `L` does, and accepted the commonest pattern
+`80 90 98 e8` as 400 units a second. It cannot be: 400.0 packs to
+`00 00 c8 43`, which needs the plaintext `0x00` to encipher as `0x80` at
+one position and `0x90` at another. **Injectivity inside a single
+pattern** is what rejects it, and its absence is why those four groups
+disagreed with every other route.
+
+The candidate speeds also have to be measured rather than invented. A
+made-up grid returned 492.5 and 506; 16.19 decodes fully, and its own
+distribution is the list — 292 values, led by **350.000 at 34.8 %** of
+first entries, which is what a minion walks, then 394.000, 380.953 and
+430.953, the five commonest covering 85 %.
+
+One group is argued outside the solver. For a pattern whose mantissa is
+zero below its top byte — ciphers `0x80, 0x80, X, 0xe8` — the float
+works out to exactly twice that byte above 256, so every such pattern
+carries a whole speed and the byte is the speed halved. 16.20's
+commonest pattern of that shape is `808076e8` with 1,228 entries; 350/2
+is 175, whose group is 22 and whose low three bits must appear as
+`0x60`, and `0x76` does. So `L(22) = 22`, with no grid in the argument.
+
+Seeded with that and propagated to a fixed point — busiest patterns
+first, because a group settled on a busy pattern is what turns a quiet
+one from ambiguous into forced — the solver reaches **19 of 32 groups**.
+Two more follow from scoring the open pairs on whether they make the
+patterns they unlock come out whole: `L(7) = 11` at 94 % of 217 entries
+with a margin of 0.77, and `L(29) = 4` at 54 % with a margin of 0.25,
+which is thin and is marked as such. **21 of 32.**
+
+The check is positions, which the speed solver never looked at:
+
+| | 16.19, solved table | 16.20, 21 groups |
+| --- | --- | --- |
+| coordinates read | 87,977 entries | 73,209 of 167,293 (43.8 %) |
+| **on Summoner's Rift** | **96.00 %** | **99.91 %** (65 off) |
+| distinct units | 3,316 | 4,271 |
+| step within half a second | — | median 51, 75th 187, 90th 333 |
+| steps over 600 units | — | 0.64 % |
+
+A coordinate is two bytes scaled onto a 15,000-unit square, so a wrong
+table does not give slightly wrong positions — the bare rotation put
+6.4 % on the map. Reading 73,144 of 73,209 onto it, with half-second
+steps whose median is 51 map units where a champion walking 350 covers
+175, is not something a wrong table does.
+
+So **16.20 positions are read**, on a patch whose client ships packed,
+with a table recovered from the format and the game's own published
+speeds. Eleven groups remain open — 4, 5, 9, 10, 11, 12, 13, 17, 20, 26,
+28 — which is why 43.8 % of coordinates read rather than all of them.
+The table is in `tab1620_mv.json`, 168 of 256 entries, with the group
+structure in `tab1620_mv_L.json`.
+
 #### Four more routes to `L`, and why each is closed
 
 None of these produced a group worth keeping. They are recorded because

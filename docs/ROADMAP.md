@@ -483,8 +483,27 @@ so the premise is false) and move speeds (four groups, bijection-
 consistent but unconfirmable). docs/EXPLORE.md records each with its
 numbers so none is retried.
 
-What is left to try is the thing on-map cannot do and continuity could if
-it had the samples: read every entry in a block rather than the first,
-which needs more of L to begin with. Which class is which transfers between patches, and a layout
+The move speeds then broke it open. The entry head carries a four-byte
+float, and a speed the game reports is known plaintext; the constraint
+the first attempt lacked is injectivity inside one pattern, which is
+what rejects reading the commonest pattern as 400 u/s -- 400.0 packs to
+00 00 c8 43, needing plaintext 0x00 to encipher two different ways. With
+candidates measured off 16.19 rather than invented, and L(22)=22 argued
+from a minion's 350 u/s, propagation reaches 19 of 32 groups; scoring
+the open pairs on whether they make speeds come out whole adds two more.
+
+**21 of 32, and 16.20 positions now read.** The check is positions,
+which the speed solver never saw: 73,209 of 167,293 coordinates read
+fully and 73,144 of them land on Summoner's Rift -- 99.91%, against
+96.00% for 16.19's solved table and 6.4% for the bare rotation. 4,271
+units, and half-second steps with a median of 51 map units where a
+champion walking 350 covers 175.
+
+Eleven groups stay open (4, 5, 9, 10, 11, 12, 13, 17, 20, 26, 28), which
+is why 43.8% of coordinates read rather than all. The table is in
+tab1620_mv.json. Two things would close the rest: speeds that 16.19 does
+not happen to contain, which more 16.20 replays would supply by giving
+more patterns; and reading every entry in a block rather than the first,
+which needs most of L to work and is now within reach. Which class is which transfers between patches, and a layout
 can be won back from the format's constraints -- but it is won back, not
 inherited.

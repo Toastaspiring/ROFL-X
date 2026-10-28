@@ -2530,6 +2530,37 @@ the game's published speeds, with nothing unpacked. But the table is
 128 of 256 entries, not 168, and sixteen groups are open: 3, 4, 5, 9,
 10, 11, 12, 13, 15, 17, 18, 19, 20, 26, 28, 29.
 
+`rofl-x` reads it now, rather than a scratch script. Two things had to
+be given to it, because neither is in the file: `--forward`, since which
+way round a class writes its entry buffer is re-decided per patch, and
+`--partial`, because the strict read demands that exactly one header
+length make the entries fill a payload exactly and a table with holes
+never can — one unreadable byte among a dozen entries fails the block,
+and on 128 of 256 entries that was every block but one. With `--partial`
+the first entry is located from the net id bytes the format fixes and the
+walk stops where an entry cannot be sized, which is a weaker guarantee
+and is labelled as one in the report.
+
+```bash
+rofl-x explore -r <16.20 replay>.rofl --positions-netid 61     --forward --partial --table tab1620_mv.json     --dump-positions pos1620.jsonl -o e1620.json
+```
+
+That gives **28,867 positions over 2,948 units from two games, with one
+entry off the map**, each carrying the whole path its packet ordered
+rather than only a point — which is why it is fewer than the 78,628
+first-waypoint readings above, since a path needs every one of its
+waypoints to decode.
+
+And `scripts/sanity_check.py`, which was written for 16.9 and 16.19 and
+knows nothing about any of this, passes **6 of 6** on it: nothing off the
+map, the stated speed reads as a speed (median 384), two steps in 8,183
+outrun the unit's own speed, minions arrive in waves in 40 of about 79
+windows, ten units stand out as champions with the tenth busiest 16×
+ahead of the eleventh, and motion is continuous — 2,352,179 samples,
+median step 0.00, 99.9th percentile 17 map units, and of 759 steps
+beyond a flash's 600 not one is unexplained by a recall, respawn or blink
+the packets themselves report.
+
 `scripts/check_1620_table.py` is the test, and it exists because on-map
 was trusted when it could not answer. It also runs incrementally, which
 is how the three bad groups were found.

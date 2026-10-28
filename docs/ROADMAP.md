@@ -513,6 +513,15 @@ games, 99.98% on the Rift, 7,057 units, 90th percentile 134.5 and 99th
 213.9 against the yardstick's 129.1 and 221.1. tab1620_mv.json holds the
 128 entries that follow, and scripts/check_1620_table.py is the test.
 
+rofl-x reads 16.20 itself now, with --forward for the buffer direction
+and --partial because a table with holes can never make a whole payload
+parse. That yields 28,867 positions over 2,948 units from the two games
+with one entry off the map, each carrying its packet's whole path. And
+scripts/sanity_check.py, which knows nothing about 16.20, passes 6 of 6
+on it -- including motion continuous over 2,352,179 samples with a
+99.9th percentile step of 17 map units and not one of the 759 jumps past
+600 unexplained by a recall, respawn or blink the packets report.
+
 Sixteen groups stay open (3, 4, 5, 9, 10, 11, 12, 13, 15, 17, 18, 19,
 20, 26, 28, 29). More 16.20 replays would help, but not by widening the
 candidate speeds: all twenty 16.19 replays raise that set from 292

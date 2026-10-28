@@ -681,17 +681,27 @@ fn map_z(v: i16) -> f32 {
 /// bits per waypoint. The coordinates themselves are not read here,
 /// only located.
 ///
-/// The payload is the entry buffer written back to front behind a
-/// header of varints, so buffer index `j` is `payload[len - 1 - j]`,
-/// and the header's length is not known in advance — the caller tries
-/// each one and keeps the length that parses exactly.
-fn parse_entries(payload: &[u8], header: usize, plain: &BTreeMap<u8, u8>) -> Option<Vec<Entry>> {
+/// The payload is the entry buffer behind a header of varints, and
+/// which way round the buffer runs is decided per patch — see [`Layout`]
+/// — so the caller says. The header's length is not known in advance
+/// either; the caller tries each one and keeps the length that parses
+/// exactly. Either way the entries occupy `len - header` bytes, so the
+/// bound on buffer indices is the same.
+fn parse_entries(
+    payload: &[u8],
+    header: usize,
+    plain: &BTreeMap<u8, u8>,
+    layout: Layout,
+) -> Option<Vec<Entry>> {
     let n = payload.len();
     let limit = n.checked_sub(header)?;
     if limit == 0 {
         return None;
     }
-    let at = |j: usize| payload[n - 1 - j];
+    let at = |j: usize| match layout {
+        Layout::Backward => payload[n - 1 - j],
+        Layout::Forward => payload[header + j],
+    };
     let read = |j: usize| plain.get(&at(j)).copied();
     let mut j = 0usize;
     let mut out = Vec::new();
@@ -794,6 +804,25 @@ struct Entry {
 const ENTRY_HEAD: usize = 10;
 /// Header lengths tried when looking for the one that parses exactly.
 const HEADER_MAX: usize = 12;
+
+/// Which way round a movement class writes its entry buffer.
+///
+/// 16.9 and 16.19 write it back to front and flush with the payload's
+/// end, so buffer index `j` is `payload[len - 1 - j]`; 16.20 writes it
+/// in order behind the header, so index `j` is `payload[header + j]`.
+/// Nothing in the file says which, and the choice is re-made per patch.
+/// `docs/EXPLORE.md` recovers it from the entry head's own field order:
+/// read the wrong way round, a ten-byte head appears mirrored, and the
+/// two bytes the format constrains — the flags' high byte, which is only
+/// ever 0 or 2, and the move speed's exponent — trade places.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Layout {
+    /// Reversed and right-aligned to the payload's end: 16.9, 16.19.
+    #[default]
+    Backward,
+    /// In order, immediately after the header: 16.20.
+    Forward,
+}
 /// What counts as on the map, with room for the fringes a unit can
 /// stand on. The same bound `packet::handlers::waypoints` applies.
 const ON_MAP: std::ops::Range<f32> = -1000.0..16000.0;
@@ -811,7 +840,11 @@ const ON_MAP: std::ops::Range<f32> = -1000.0..16000.0;
 /// map. Those two together are the check on the table: a wrong one
 /// either fails to parse or parses into nonsense, and both are counted
 /// rather than hidden.
-pub fn positions(blocks: &[(usize, f32, Vec<u8>)], plain: &BTreeMap<u8, u8>) -> Positions {
+pub fn positions(
+    blocks: &[(usize, f32, Vec<u8>)],
+    plain: &BTreeMap<u8, u8>,
+    layout: Layout,
+) -> Positions {
     let mut out = Vec::new();
     let (mut parsed, mut seen, mut off_map) = (0u64, 0u64, 0u64);
     for (replay, t, payload) in blocks {
@@ -821,7 +854,7 @@ pub fn positions(blocks: &[(usize, f32, Vec<u8>)], plain: &BTreeMap<u8, u8>) -> 
         let mut hit: Option<Vec<Entry>> = None;
         let mut hits = 0usize;
         for header in 1..=HEADER_MAX {
-            if let Some(entries) = parse_entries(payload, header, plain) {
+            if let Some(entries) = parse_entries(payload, header, plain, layout) {
                 hits += 1;
                 hit = Some(entries);
             }
@@ -858,7 +891,203 @@ pub fn positions(blocks: &[(usize, f32, Vec<u8>)], plain: &BTreeMap<u8, u8>) -> 
             });
         }
     }
-    Positions { found: out, parsed, seen, off_map }
+    Positions { found: out, parsed, seen, off_map, depth: 0.0 }
+}
+
+/// Read positions when the table is too partial for a whole block to parse.
+///
+/// [`positions`] demands that exactly one header length make the entries
+/// fill the payload exactly. That is the strongest check available and a
+/// complete table meets it — 77 % of 16.19's blocks — but a table with
+/// holes cannot: one unreadable byte anywhere in a block of a dozen
+/// entries fails the block, and against 16.20's 128 of 256 entries that
+/// is every block but one.
+///
+/// So the first entry is located rather than searched for. Its net id
+/// supplies two bytes the format fixes — the zero byte of any id below
+/// `0x10000`, and the `0x40` every id ends with — and they are adjacent
+/// in the head, so the pair finds it with no header sweep. The walk then
+/// runs until an entry cannot be sized and stops, keeping what it
+/// passed, because an entry's length needs only its flags byte and
+/// bitmap and those are small numbers a partial table usually holds.
+///
+/// **The guarantee is weaker and the caller is told how much.** `parsed`
+/// counts blocks that yielded at least one entry and `depth` the entries
+/// read per block, so a walk that dies on the first entry shows up
+/// instead of passing for a clean read. What it cannot do is notice that
+/// it stopped early for the wrong reason, so the output is checked by
+/// `scripts/check_1620_table.py` rather than by this function.
+pub fn positions_partial(
+    blocks: &[(usize, f32, Vec<u8>)],
+    plain: &BTreeMap<u8, u8>,
+    layout: Layout,
+) -> Positions {
+    // The two anchors come out of the table itself: whichever cipher
+    // stands for 0, and whichever stands for 0x40.
+    let cipher_of = |p: u8| plain.iter().find(|(_, v)| **v == p).map(|(c, _)| *c);
+    let (Some(zero), Some(top)) = (cipher_of(0x00), cipher_of(0x40)) else {
+        return Positions {
+            found: Vec::new(),
+            parsed: 0,
+            seen: blocks.len() as u64,
+            off_map: 0,
+            depth: 0.0,
+        };
+    };
+
+    let mut out = Vec::new();
+    let (mut parsed, mut off_map, mut entries) = (0u64, 0u64, 0u64);
+    for (replay, t, payload) in blocks {
+        let n = payload.len();
+        if n < ENTRY_HEAD + 4 {
+            continue;
+        }
+        // In a forward buffer the zero byte precedes the 0x40; read
+        // backwards the pair arrives the other way round.
+        let (first, second) = match layout {
+            Layout::Forward => (zero, top),
+            Layout::Backward => (top, zero),
+        };
+        let start = (0..n - 1)
+            .filter(|i| payload[*i] == first && payload[i + 1] == second)
+            .filter_map(|i| match layout {
+                // the net id's zero byte is buffer index 4
+                Layout::Forward => i.checked_sub(4),
+                Layout::Backward => (n - 1).checked_sub(i + TOP_IN_HEAD),
+            })
+            .min();
+        let Some(header) = start else { continue };
+        let Some(got) = parse_entries_prefix(payload, header, plain, layout) else {
+            continue;
+        };
+        if got.is_empty() {
+            continue;
+        }
+        parsed += 1;
+        entries += got.len() as u64;
+        for e in got {
+            let path: Vec<(f32, f32)> =
+                e.points.iter().map(|(x, z)| (map_x(*x), map_z(*z))).collect();
+            if path.iter().any(|(x, z)| !ON_MAP.contains(x) || !ON_MAP.contains(z)) {
+                off_map += 1;
+                continue;
+            }
+            let Some(&(x, z)) = path.first() else { continue };
+            out.push(Position {
+                replay: *replay,
+                t: *t,
+                unit: e.unit,
+                x,
+                z,
+                exact: e.exact,
+                speed: e.speed,
+                path,
+            });
+        }
+    }
+    let depth = if parsed == 0 { 0.0 } else { entries as f64 / parsed as f64 };
+    Positions { found: out, parsed, seen: blocks.len() as u64, off_map, depth }
+}
+
+/// Buffer index of the net id's `0x40` top byte within an entry head.
+const TOP_IN_HEAD: usize = 5;
+
+/// As [`parse_entries`], but stopping where an entry cannot be sized
+/// rather than failing the block. Returns the entries it got through.
+fn parse_entries_prefix(
+    payload: &[u8],
+    header: usize,
+    plain: &BTreeMap<u8, u8>,
+    layout: Layout,
+) -> Option<Vec<Entry>> {
+    let n = payload.len();
+    let limit = n.checked_sub(header)?;
+    let at = |j: usize| match layout {
+        Layout::Backward => payload.get(n.checked_sub(1)?.checked_sub(j)?).copied(),
+        Layout::Forward => payload.get(header + j).copied(),
+    };
+    let read = |j: usize| at(j).and_then(|c| plain.get(&c).copied());
+    let mut j = 0usize;
+    let mut out = Vec::new();
+    while j + ENTRY_HEAD <= limit {
+        let Some(flags) = read(j) else { break };
+        let count = usize::from(flags >> 1);
+        if count == 0 {
+            break;
+        }
+        let Some(b2) = at(j + 2) else { break };
+        let Some(b3) = at(j + 3) else { break };
+        let Some(b4) = at(j + 4) else { break };
+        let unit = (b2, b3, b4);
+        let speed = match (read(j + 6), read(j + 7), read(j + 8), read(j + 9)) {
+            (Some(a), Some(b), Some(c), Some(d)) => f32::from_le_bytes([a, b, c, d]),
+            _ => break,
+        };
+        let mut k = j + ENTRY_HEAD + usize::from(flags & 1);
+        let mut bitmap: Vec<u8> = Vec::new();
+        if count > 1 {
+            let width = ((count - 2) >> 2) + 1;
+            if k + width > limit {
+                break;
+            }
+            let mut bad = false;
+            for b in 0..width {
+                match read(k + b) {
+                    Some(v) => bitmap.push(v),
+                    None => {
+                        bad = true;
+                        break;
+                    }
+                }
+            }
+            if bad {
+                break;
+            }
+            k += width;
+        }
+        let is_delta = |i: usize| -> bool {
+            bitmap.get(i >> 3).is_some_and(|b| b & (1 << (i & 7)) != 0)
+        };
+        let mut points: Vec<(i16, i16)> = Vec::with_capacity(count);
+        let mut here = [0i16; 2];
+        let mut exact = true;
+        let mut bad = false;
+        for i in 0..count {
+            for (axis, value) in here.iter_mut().enumerate() {
+                if i > 0 && is_delta(2 * (i - 1) + axis) {
+                    match read(k) {
+                        Some(step) => *value = value.wrapping_add(i16::from(step as i8)),
+                        None => bad = true,
+                    }
+                    k += 1;
+                } else {
+                    if k + 2 > limit {
+                        bad = true;
+                        break;
+                    }
+                    let Some(high) = read(k + 1) else {
+                        bad = true;
+                        break;
+                    };
+                    let low = read(k);
+                    exact &= low.is_some();
+                    *value = i16::from_le_bytes([low.unwrap_or(0x80), high]);
+                    k += 2;
+                }
+            }
+            if bad || k > limit {
+                bad = true;
+                break;
+            }
+            points.push((here[0], here[1]));
+        }
+        if bad {
+            break;
+        }
+        out.push(Entry { unit, speed, points, exact });
+        j = k;
+    }
+    Some(out)
 }
 
 /// What [`positions`] read, and what it had to throw away.
@@ -870,6 +1099,10 @@ pub struct Positions {
     /// Entries that parsed but put a unit off the map, so the parse was
     /// wrong however well it fitted.
     pub off_map: u64,
+    /// Entries read per block that gave any, which only
+    /// [`positions_partial`] can be short of a block's worth. Zero from
+    /// [`positions`], where a block either parses whole or is dropped.
+    pub depth: f64,
 }
 
 /// Build the chain outward from `anchor`, whose plaintext is 0, with
@@ -2200,6 +2433,18 @@ mod tests {
     /// against itself: entries into a buffer, the buffer substituted
     /// and written back to front, behind a header.
     fn movement_payload(entries: &[(u32, Vec<(i16, i16)>)], header: usize, sub: u8) -> Vec<u8> {
+        movement_payload_laid_out(entries, header, sub, Layout::Backward)
+    }
+
+    /// The same, written the way `layout` says. Only the direction of
+    /// the buffer differs: the entries, the substitution and the header
+    /// are identical, which is what `docs/EXPLORE.md` found on 16.20.
+    fn movement_payload_laid_out(
+        entries: &[(u32, Vec<(i16, i16)>)],
+        header: usize,
+        sub: u8,
+        layout: Layout,
+    ) -> Vec<u8> {
         let mut buf: Vec<u8> = Vec::new();
         for (unit, points) in entries {
             let flags = u16::try_from(points.len()).unwrap() << 1;
@@ -2218,8 +2463,51 @@ mod tests {
         // A substitution is any permutation; XOR with a constant is one,
         // and keeps the test's table easy to state.
         let mut payload: Vec<u8> = std::iter::repeat_n(0xAAu8, header).collect();
-        payload.extend(buf.iter().rev().map(|b| b ^ sub));
+        match layout {
+            Layout::Backward => payload.extend(buf.iter().rev().map(|b| b ^ sub)),
+            Layout::Forward => payload.extend(buf.iter().map(|b| b ^ sub)),
+        }
         payload
+    }
+
+    /// A forward buffer reads with the same parser, given the layout.
+    ///
+    /// This is 16.20's shape. The point of the test is that nothing but
+    /// the direction changes -- the same entries, the same header, the
+    /// same substitution -- so a parser told the wrong direction must
+    /// fail rather than return something plausible.
+    #[test]
+    fn a_forward_buffer_reads_the_same_entries() {
+        const SUB: u8 = 0x5C;
+        let entries = vec![
+            (0x4000_0034u32, vec![(100i16, -200i16)]),
+            (0x4000_0035, vec![(1000, 2000), (1100, 2100)]),
+        ];
+        let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c ^ SUB)).collect();
+        let payload = movement_payload_laid_out(&entries, 3, SUB, Layout::Forward);
+
+        let got = positions(&[(0, 7.5, payload.clone())], &plain, Layout::Forward);
+        assert_eq!((got.parsed, got.seen), (1, 1), "the payload must parse exactly");
+        assert_eq!(got.off_map, 0);
+        assert_eq!(got.found.len(), 2, "one position per entry");
+        assert_eq!(
+            (got.found[0].x, got.found[0].z),
+            (map_x(100), map_z(-200)),
+            "the first entry's first waypoint"
+        );
+        assert_eq!((got.found[1].x, got.found[1].z), (map_x(1000), map_z(2000)));
+        assert!(got.found.iter().all(|p| p.exact));
+
+        // Read the other way round it must not quietly succeed: a
+        // mirrored entry head puts the waypoint count where the move
+        // speed was, so the parse has to come apart.
+        let wrong = positions(&[(0, 7.5, payload)], &plain, Layout::Backward);
+        assert!(
+            wrong.found.is_empty() || wrong.off_map > 0,
+            "a forward buffer read backwards must fail, not return positions:              got {} positions, {} off the map",
+            wrong.found.len(),
+            wrong.off_map
+        );
     }
 
     #[test]
@@ -2232,7 +2520,7 @@ mod tests {
         let payload = movement_payload(&entries, 3, SUB);
         let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c ^ SUB)).collect();
 
-        let got = positions(&[(0, 12.5, payload)], &plain);
+        let got = positions(&[(0, 12.5, payload)], &plain, Layout::Backward);
         let found = &got.found;
         assert_eq!((got.parsed, got.seen), (1, 1), "the payload must parse exactly");
         assert_eq!(got.off_map, 0, "every point here is on the map");
@@ -2251,7 +2539,7 @@ mod tests {
         // The identity is the wrong table here, so the entry stream
         // cannot parse to its own length. Silence is the right answer.
         let plain: BTreeMap<u8, u8> = (0..=255u8).map(|c| (c, c)).collect();
-        let got = positions(&[(0, 1.0, payload)], &plain);
+        let got = positions(&[(0, 1.0, payload)], &plain, Layout::Backward);
         assert_eq!(got.parsed, 0);
         assert!(got.found.is_empty());
     }
@@ -2269,7 +2557,7 @@ mod tests {
             .map(|c| (c, c ^ SUB))
             .filter(|(_, p)| *p != 0x34 && *p != 0x78)
             .collect();
-        let got = positions(&[(0, 1.0, payload)], &plain);
+        let got = positions(&[(0, 1.0, payload)], &plain, Layout::Backward);
         let found = &got.found;
         assert_eq!(got.parsed, 1);
         assert_eq!(found.len(), 1);

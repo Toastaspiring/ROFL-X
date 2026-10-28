@@ -229,6 +229,27 @@ pub enum Command {
         #[arg(long)]
         positions_netid: Option<u16>,
 
+        /// Read what a partial table allows instead of demanding that
+        /// every block parse to exactly its own length. The strict read
+        /// is the better check and is what a complete table permits; a
+        /// table with holes fails every block, because one unreadable
+        /// byte among a dozen entries fails all of them. This locates
+        /// the first entry from the net id bytes the format fixes and
+        /// walks until an entry cannot be sized. The report says how
+        /// many entries per block it managed, so a walk that dies at
+        /// the first one is visible.
+        #[arg(long)]
+        partial: bool,
+
+        /// Read the entry buffer forwards rather than back to front.
+        /// Which way round a movement class writes it is re-decided per
+        /// patch: 16.9 and 16.19 reverse it and align it with the
+        /// payload's end, 16.20 writes it in order behind the header.
+        /// Nothing in the file says which, so it is given here;
+        /// `docs/EXPLORE.md` says how 16.20's was found.
+        #[arg(long)]
+        forward: bool,
+
         /// Output JSON path. Without it, a text report goes to stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -285,6 +306,8 @@ pub fn run(cli: Cli) -> Result<()> {
             dump_positions,
             table,
             positions_netid,
+            forward,
+            partial,
             output,
         } => match dump_netid {
             Some(netid) => self::dump_netid(&replays, netid, &dump),
@@ -298,6 +321,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     positions: dump_positions.as_deref(),
                     table: table.as_deref(),
                     positions_netid,
+                    layout: if forward {
+                        crate::explore::Layout::Forward
+                    } else {
+                        crate::explore::Layout::Backward
+                    },
+                    partial,
                     report: output.as_deref(),
                 },
             ),
@@ -578,6 +607,10 @@ struct ExploreOutputs<'a> {
     positions: Option<&'a Path>,
     /// `--table`: extra substitution entries for the movement class.
     table: Option<&'a Path>,
+    /// `--forward`: which way round the entry buffer runs.
+    layout: crate::explore::Layout,
+    /// `--partial`: read what the table allows rather than whole blocks.
+    partial: bool,
     /// `--positions-netid`: read positions from this class instead of
     /// the one the shape test picks.
     positions_netid: Option<u16>,
@@ -597,6 +630,8 @@ fn explore(
         positions: dump_positions,
         table,
         positions_netid,
+        layout,
+        partial,
         report: output,
     } = outs;
     use crate::explore::{
@@ -666,7 +701,15 @@ fn explore(
     let waypoints = solve_waypoints(replays)?;
     let emitted = match dump_positions {
         Some(path) => {
-            dump_positions_to(replays, waypoints.as_ref(), table, positions_netid, path)?
+            dump_positions_to(
+                replays,
+                waypoints.as_ref(),
+                table,
+                positions_netid,
+                layout,
+                partial,
+                path,
+            )?
         }
         None => None,
     };
@@ -1164,9 +1207,11 @@ fn dump_positions_to(
     waypoints: Option<&Value>,
     extra: Option<&Path>,
     only: Option<u16>,
+    layout: crate::explore::Layout,
+    partial: bool,
     out: &Path,
 ) -> Result<Option<Value>> {
-    use crate::explore::{blocks_of, positions};
+    use crate::explore::{blocks_of, positions, positions_partial};
 
     // The chain is used when it solved, and when it solved the class
     // being read: a table recovered for one class says nothing about
@@ -1214,7 +1259,11 @@ fn dump_positions_to(
             blocks.push((i, t, payload));
         }
     }
-    let got = positions(&blocks, &plain);
+    let got = if partial {
+        positions_partial(&blocks, &plain, layout)
+    } else {
+        positions(&blocks, &plain, layout)
+    };
     let found = &got.found;
 
     let mut text = String::new();
@@ -1256,13 +1305,43 @@ fn dump_positions_to(
         "entries_off_the_map": got.off_map,
         "table_entries": { "from_the_chain": from_chain, "added_by_table_option": added },
         "exact_positions": exact,
+        "layout": match layout {
+            crate::explore::Layout::Forward => "forward",
+            crate::explore::Layout::Backward => "backward",
+        },
+        "read": if partial { "what the table allows" } else { "whole payloads only" },
+        "entries_per_payload": if partial {
+            Some((got.depth * 100.0).round() / 100.0)
+        } else {
+            None
+        },
+        "partial_read_caveat": if partial {
+            Some(
+                "a partial table cannot make a whole payload parse, so this \
+                 walked from the first entry -- located by the net id bytes \
+                 the format fixes -- until an entry could not be sized. That \
+                 is weaker than the strict read: it cannot tell that it \
+                 stopped early for the wrong reason, and a wrong table shows \
+                 up as positions that are on the map but jump. Judge it with \
+                 scripts/check_1620_table.py, which compares a unit's step \
+                 against a patch that decodes.",
+            )
+        } else {
+            None
+        },
         "accuracy": "a position whose coordinate low bytes are in the table is \
                      exact; otherwise the low byte is taken as the middle of its \
                      range, so the position is within 256 map units of 15,000 \
                      across. Which one each is, each line says.",
-        "check": "a payload has to parse to exactly its own length or it \
-                  contributes nothing, so a wrong table yields no positions \
-                  rather than wrong ones",
+        "check": if partial {
+            "the first entry is located rather than searched for, and the walk \
+             stops where an entry cannot be sized -- so a payload contributes \
+             what it could, not all or nothing"
+        } else {
+            "a payload has to parse to exactly its own length or it \
+             contributes nothing, so a wrong table yields no positions \
+             rather than wrong ones"
+        },
     })))
 }
 

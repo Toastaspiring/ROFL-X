@@ -189,6 +189,11 @@ def main() -> int:
                     help="the lowest pattern count to consider; the solver "
                          "sweeps down to it from 40, because a group settled "
                          "on a busy pattern is what makes a quiet one forced")
+    ap.add_argument("--min-speed-weight", type=int, default=1,
+                    help="drop candidate speeds the known patch reports "
+                         "fewer times than this. More replays give a richer "
+                         "candidate set but a weaker solver, because a "
+                         "pattern is only usable when ONE candidate fits")
     ap.add_argument("--seed", default="",
                     help="groups argued outside the solver, as g:v,g:v. "
                          "L(22)=22 is the one worth seeding; the module "
@@ -199,13 +204,19 @@ def main() -> int:
     T = {int(k, 16): int(v, 16)
          for k, v in json.load(open(args.known_table, encoding="utf-8")).items()}
     P = {c: p for p, c in T.items()}
-    cands = {}
+    cands, dropped = {}, 0
     for cipher, k in first_speeds(args.known, False,
                                   T[0x00], T[0x40], T[0x02]).items():
         b = [P.get(c) for c in cipher]
-        if None not in b:
-            cands[struct.unpack("<f", bytes(b))[0]] = (bytes(b), k)
-    print(f"candidate speeds measured on the known patch: {len(cands)}")
+        if None in b:
+            continue
+        if k < args.min_speed_weight:
+            dropped += 1
+            continue
+        cands[struct.unpack("<f", bytes(b))[0]] = (bytes(b), k)
+    print(f"candidate speeds measured on the known patch: {len(cands)}"
+          + (f" ({dropped} dropped below weight {args.min_speed_weight})"
+             if dropped else ""))
     lead = sorted(cands.items(), key=lambda kv: -kv[1][1])[:3]
     for s, (_, k) in lead:
         print(f"   {s:9.3f} u/s, {k} first entries")
@@ -218,11 +229,20 @@ def main() -> int:
     for p in pays:
         present.update(set(p))
         overall.update(p)
-    both = sorted((b for b, k in present.items() if k == len(pays)),
+    # Present in *almost* every block, not quite every one. Pooling two
+    # games is enough for one of them to hold a block without a zero net
+    # id byte, and on a single game the third-placed byte sits at 98.4%,
+    # so 99% separates the two that matter without being brittle.
+    floor = len(pays) * 0.99
+    both = sorted((b for b, k in present.items() if k >= floor),
                   key=lambda b: -overall[b])
-    if len(both) != 2:
-        print(f"!! {len(both)} bytes present in every block, expected two")
+    if len(both) < 2:
+        print(f"!! {len(both)} bytes in 99% of blocks, expected two")
         return 1
+    if len(both) > 2:
+        print(f"   {len(both)} bytes clear 99% of blocks; taking the two "
+              f"commonest: {[hex(b) for b in both[:2]]}")
+        both = both[:2]
     zero, top = both
     L = dict(FIRM)
     for item in filter(None, args.seed.split(",")):

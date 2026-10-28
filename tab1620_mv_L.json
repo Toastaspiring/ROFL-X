@@ -1,31 +1,27 @@
 {
  "law": "cipher = (low3(p + 4) << 5) | L[high5(p + 4)]",
- "groups_known": 21,
+ "groups_known": 16,
  "groups_total": 32,
  "L": {
   "0": 0,
   "1": 3,
   "2": 2,
-  "3": 17,
   "6": 6,
   "7": 11,
   "8": 8,
   "14": 14,
-  "15": 5,
   "16": 18,
-  "18": 31,
-  "19": 24,
   "21": 23,
   "22": 22,
   "23": 25,
   "24": 27,
   "25": 29,
   "27": 26,
-  "29": 4,
   "30": 30,
   "31": 1
  },
  "open": [
+  3,
   4,
   5,
   9,
@@ -33,9 +29,21 @@
   11,
   12,
   13,
+  15,
   17,
+  18,
+  19,
   20,
   26,
-  28
- ]
+  28,
+  29
+ ],
+ "rejected": {
+  "3": 17,
+  "15": 5,
+  "18": 31,
+  "19": 24,
+  "29": 4
+ },
+ "rejected_why": "proposed by the move-speed solver and refused by scripts/check_1620_table.py: each lifted the 90th percentile of a unit's half-second step far above the yardstick a decodable patch gives at the same coverage. on-map cannot detect this, because a wrong low byte moves a unit at most 510 map units and it stays on the Rift"
 }

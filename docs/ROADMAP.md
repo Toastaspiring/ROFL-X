@@ -492,18 +492,32 @@ candidates measured off 16.19 rather than invented, and L(22)=22 argued
 from a minion's 350 u/s, propagation reaches 19 of 32 groups; scoring
 the open pairs on whether they make speeds come out whole adds two more.
 
-**21 of 32, and 16.20 positions now read.** The check is positions,
-which the speed solver never saw: 73,209 of 167,293 coordinates read
-fully and 73,144 of them land on Summoner's Rift -- 99.91%, against
-96.00% for 16.19's solved table and 6.4% for the bare rotation. 4,271
-units, and half-second steps with a median of 51 map units where a
-champion walking 350 covers 175.
+**16 of 32, and 16.20 positions now read.** The solver first proposed 21
+groups and the on-map share seemed to confirm them: 99.91% of what it
+read landed on the Rift. That check was wrong, and the mistake is worth
+keeping. On-map tests a coordinate's *high* byte -- a wrong one puts a
+unit nowhere near the map -- while a wrong *low* byte moves it at most
+510 map units and it stays on. The high bytes use only the groups the
+chain had already settled, so on-map could not see any group the speeds
+added.
 
-Eleven groups stay open (4, 5, 9, 10, 11, 12, 13, 17, 20, 26, 28), which
-is why 43.8% of coordinates read rather than all. The table is in
-tab1620_mv.json. Two things would close the rest: speeds that 16.19 does
-not happen to contain, which more 16.20 replays would supply by giving
-more patterns; and reading every entry in a block rather than the first,
-which needs most of L to work and is now within reach. Which class is which transfers between patches, and a layout
+The test that can is the tail of a unit's half-second step, against a
+decodable patch crippled to the same coverage: 16.19 gives a 90th
+percentile of 121.1 map units whole, 129.1 at 66% of its alphabet. The
+21-group table gave 330.5. Adding groups back one at a time found the
+damage -- L(18)=31 lifted it by 143, L(29)=4 by 93, L(15)=5 by 32 -- and
+two more came from the same speed pattern as L(18), so five went.
+
+Sixteen groups survive, and they hold: 78,628 coordinates over two
+games, 99.98% on the Rift, 7,057 units, 90th percentile 134.5 and 99th
+213.9 against the yardstick's 129.1 and 221.1. tab1620_mv.json holds the
+128 entries that follow, and scripts/check_1620_table.py is the test.
+
+Sixteen groups stay open (3, 4, 5, 9, 10, 11, 12, 13, 15, 17, 18, 19,
+20, 26, 28, 29). More 16.20 replays would help, but not by widening the
+candidate speeds: all twenty 16.19 replays raise that set from 292
+values to 7,686 and make the solver worse, since a pattern is only
+usable when exactly one candidate fits. What helps is more 16.20
+patterns at the same candidate set. Which class is which transfers between patches, and a layout
 can be won back from the format's constraints -- but it is won back, not
 inherited.

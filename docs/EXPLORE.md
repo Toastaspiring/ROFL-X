@@ -2471,28 +2471,76 @@ patterns they unlock come out whole: `L(7) = 11` at 94 % of 217 entries
 with a margin of 0.77, and `L(29) = 4` at 54 % with a margin of 0.25,
 which is thin and is marked as such. **21 of 32.**
 
-The check is positions, which the speed solver never looked at:
+The check was positions — and **getting that check wrong is the most
+instructive thing in this section.**
 
-| | 16.19, solved table | 16.20, 21 groups |
+The first reading of it was that the table was confirmed: 73,209
+coordinates read and 99.91 % of them on Summoner's Rift, against 96.00 %
+for 16.19's solved table and 6.4 % for the bare rotation. That figure is
+real and it means nothing for the groups in question. **On-map tests the
+high byte, not the low one.** A coordinate is two bytes scaled onto a
+15,000-unit square: a wrong high byte puts a unit nowhere near the Rift,
+which is what sank the rotation, but a wrong *low* byte moves it at most
+510 map units and it stays on the map. The five groups the chain had
+already settled are the ones the high bytes use. Every group the speed
+solver added touches low bytes, so on-map could not see them at all.
+
+What does see them is the step between consecutive sightings of one
+unit, and the tail of it rather than the middle. The yardstick has to
+come from a patch that decodes **and be crippled to the same coverage
+first**, because a partial table samples a unit sparsely, so two
+readable positions sit further apart in time and the step over 0.4 s is
+naturally larger than one over 0.05 s. Measured on 16.19 that turns out
+not to matter much — the 90th percentile is 121.1 map units on the whole
+table, 129.1 keeping 66 % of the alphabet, 106.3 keeping 45 % — so it is
+a usable yardstick.
+
+The 21-group table gave a 90th percentile of **330.5**, two and a half
+times that. Dropping any single group left it between 236 and 340, so
+more than one was wrong. Adding them back one at a time says which:
+
+| added | 90th percentile | |
 | --- | --- | --- |
-| coordinates read | 87,977 entries | 73,209 of 167,293 (43.8 %) |
-| **on Summoner's Rift** | **96.00 %** | **99.91 %** (65 off) |
-| distinct units | 3,316 | 4,271 |
-| step within half a second | — | median 51, 75th 187, 90th 333 |
-| steps over 600 units | — | 0.64 % |
+| the firm six | 50.0 | |
+| `L(22) = 22`, `L(3) = 17` | 48.1, 51.3 | |
+| **`L(18) = 31`** | **194.0** | **+142.7** |
+| `L(19)`, `L(6)`, `L(27)`, `L(23)`, `L(16)` | 194 → 211 | |
+| **`L(15) = 5`** | **243.4** | **+31.9** |
+| `L(25)`, `L(21)`, `L(14)`, `L(24)`, `L(7)` | 243 → 233 | |
+| **`L(29) = 4`** | **326.8** | **+93.4** |
 
-A coordinate is two bytes scaled onto a 15,000-unit square, so a wrong
-table does not give slightly wrong positions — the bare rotation put
-6.4 % on the map. Reading 73,144 of 73,209 onto it, with half-second
-steps whose median is 51 map units where a champion walking 350 covers
-175, is not something a wrong table does.
+`L(29)` was the one already flagged thin, at a margin of 0.25. `L(18)`
+came from the pattern `d8319fe8`, read as 288.169 u/s, and `L(3)` and
+`L(19)` came from that same pattern — so a misread speed there poisons
+all three, and all three went.
 
-So **16.20 positions are read**, on a patch whose client ships packed,
-with a table recovered from the format and the game's own published
-speeds. Eleven groups remain open — 4, 5, 9, 10, 11, 12, 13, 17, 20, 26,
-28 — which is why 43.8 % of coordinates read rather than all of them.
-The table is in `tab1620_mv.json`, 168 of 256 entries, with the group
-structure in `tab1620_mv_L.json`.
+What survives is **16 of 32 groups**, and it holds up:
+
+| | 16.19, solved | 16.19, 66 % of alphabet | 16.20, 16 groups |
+| --- | --- | --- | --- |
+| coordinates read | 104,543 | 37,096 | 78,628 |
+| on the Rift | 98.68 % | 99.12 % | **99.98 %** |
+| units | 3,399 | 2,535 | 7,057 (two games) |
+| half-second step, 90th | 121.1 | 129.1 | **134.5** |
+| 99th | 202.5 | 221.1 | **213.9** |
+
+So **16.20 positions are read** — 78,628 of them across two games, on a
+patch whose client ships packed, from the format's own constraints and
+the game's published speeds, with nothing unpacked. But the table is
+128 of 256 entries, not 168, and sixteen groups are open: 3, 4, 5, 9,
+10, 11, 12, 13, 15, 17, 18, 19, 20, 26, 28, 29.
+
+`scripts/check_1620_table.py` is the test, and it exists because on-map
+was trusted when it could not answer. It also runs incrementally, which
+is how the three bad groups were found.
+
+One more thing learned from widening the inputs. Using all twenty 16.19
+replays for candidate speeds raises the set from 292 values to 7,686,
+and that makes the solver **worse**, not better: a pattern is only usable
+when exactly one candidate fits it, so a richer candidate set leaves
+more patterns ambiguous. Hence `--min-speed-weight`, which keeps only
+speeds the known patch reports often enough to be structural.
+
 
 #### Four more routes to `L`, and why each is closed
 

@@ -345,6 +345,35 @@ which one class of 23 has. The next boundary is reached when some
 other source of known plaintext appears, or when the remaining error
 is shown to be irreducible from the file alone.
 
+## The corpus, and why it is the one irreplaceable thing
+
+Riot announced **League of Legends: New Dawn** for 2027 on 14 November
+2026 -- a new client and a refreshed Summoner's Rift, the first
+architecture overhaul since 2016, with a fuller reveal due in January.
+
+It will break payload layouts. So does every patch: 16.20 reversed its
+entry buffer, 16.21 grew the chunk record by a byte and moved movement
+from one batched class to a block per unit, and the substitution table
+is regenerated per class per patch. Four patches, four different kinds
+of break, four recoveries -- that is the project's ordinary work rather
+than a crisis.
+
+What cannot be recovered is a replay nobody kept. The client prunes its
+own Replays folder, and a replay stops being watchable after a patch
+while staying perfectly readable by this parser, so the window to
+collect one closes quietly. The whole corpus is 470 MB.
+
+docs/CORPUS.json records every replay with its patch, size and SHA-256,
+and a copy lives outside League's folder. The 16.9 control deserves
+special mention: it decodes fully, it is what every other patch is
+checked against, and its archive and unpacked binary are already local
+-- so that ground truth is held, not borrowed.
+
+Where the corpus is thin is where the work is blocked. 16.20 has two
+replays, and the move-speed solver is limited by how many speed patterns
+appear often enough to be forced -- which is exactly why 16 of L's 32
+groups are still open. More 16.20 replays would move that directly.
+
 ## Phase 8, what is left on 16.19, in the order it is worth doing
 
 Measured on the sample replay: **49.1 %** of its 1,140,285 blocks are

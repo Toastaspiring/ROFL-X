@@ -1,0 +1,242 @@
+{
+ "note": "The corpus this project's findings rest on. Replays cannot be re-collected once the client prunes them, and a replay stays readable by rofl-x long after it stops being watchable in game. Copy kept at C:/Users/louis/Documents/PERSONNEL/rofl-corpus, outside League's own folder.",
+ "replays": 38,
+ "bytes": 468275688,
+ "by_patch": {
+  "16.19": 20,
+  "16.20": 2,
+  "16.21": 10,
+  "16.7": 1,
+  "16.9": 5
+ },
+ "files": [
+  {
+   "replay": "EUW1-7811790972.rofl",
+   "patch": "16.7",
+   "bytes": 10093515,
+   "sha256": "106cee0323fda95c1131162f998bab788cf809448d18b0828dea99e7d946e39f"
+  },
+  {
+   "replay": "EUW1-7841223050.rofl",
+   "patch": "16.9",
+   "bytes": 18373791,
+   "sha256": "28235410cdcb750c2e0fae327d45211657645934f027f17f7432a3fff97d62c0"
+  },
+  {
+   "replay": "EUW1-7841288585.rofl",
+   "patch": "16.9",
+   "bytes": 22389568,
+   "sha256": "43ec9ea74a8b71b08be2a4ea07859aad00c2f6e42d2d271d503f86fe081809f3"
+  },
+  {
+   "replay": "EUW1-7841358769.rofl",
+   "patch": "16.9",
+   "bytes": 10502112,
+   "sha256": "82f694dbdbb5c50916c529b42a96c745fbb56122834a127fc7ee1d38562c5801"
+  },
+  {
+   "replay": "EUW1-7841558966.rofl",
+   "patch": "16.9",
+   "bytes": 12605128,
+   "sha256": "25da1cdec7d9687e74ba59c37eabc337c6170cb0ad2f98409a76c0fe40f690d2"
+  },
+  {
+   "replay": "EUW1-7841615094.rofl",
+   "patch": "16.9",
+   "bytes": 7268278,
+   "sha256": "b6e0089abcd1b04ab6d120e054dfd135844384700afecda41f25aebf37940eb7"
+  },
+  {
+   "replay": "EUW1-7994709075.rofl",
+   "patch": "16.19",
+   "bytes": 7174520,
+   "sha256": "2ca3fd4870456c75d3165d8c17102f5cf633f005c0197e8d97a9d880b1d606be"
+  },
+  {
+   "replay": "EUW1-7995130183.rofl",
+   "patch": "16.19",
+   "bytes": 7168524,
+   "sha256": "4d011764f3be297b3c1dfcc39ce06425d33503cf59539a5b63db52590b146aa4"
+  },
+  {
+   "replay": "EUW1-7996686835.rofl",
+   "patch": "16.19",
+   "bytes": 9455989,
+   "sha256": "edb2b8da6328c02b9c406b316d17f5b0678a42ce0076dd0070a2329570401d75"
+  },
+  {
+   "replay": "EUW1-7996719949.rofl",
+   "patch": "16.19",
+   "bytes": 7925652,
+   "sha256": "80a98729ee446bc6ade73a929a072ec76a560dbb72932ce58f30b56898abc9f7"
+  },
+  {
+   "replay": "EUW1-7996755342.rofl",
+   "patch": "16.19",
+   "bytes": 12293015,
+   "sha256": "5070b618ab6cc4eb8141cfecf33b6336c4a4783939fb1d1c158af6a0fd777935"
+  },
+  {
+   "replay": "EUW1-7996806773.rofl",
+   "patch": "16.19",
+   "bytes": 9726611,
+   "sha256": "5c0d01ccbc17d9886a6fd038a2efbf5eb5eedc038db4dfa1c54600b820b4dae5"
+  },
+  {
+   "replay": "EUW1-7998016558.rofl",
+   "patch": "16.19",
+   "bytes": 12442273,
+   "sha256": "fd2caa3ec31dd3b86c7492fede6322999569b5449f5fb1526094a838fec8c726"
+  },
+  {
+   "replay": "EUW1-7998065554.rofl",
+   "patch": "16.19",
+   "bytes": 380168,
+   "sha256": "17f31489ce2c9835ff06f1e9f3a8c07602fc9855e65d7c18994fe313cd7cab9a"
+  },
+  {
+   "replay": "EUW1-7998072762.rofl",
+   "patch": "16.19",
+   "bytes": 11126624,
+   "sha256": "eecec5297469ef637465c472613ad315b105e0d928831bce7da798fe905d3975"
+  },
+  {
+   "replay": "EUW1-7998107224.rofl",
+   "patch": "16.19",
+   "bytes": 13629689,
+   "sha256": "a9898cc5d006275e6561bf30fa73001b1370ad8020a250239a9c2df23298ac5e"
+  },
+  {
+   "replay": "EUW1-7998163928.rofl",
+   "patch": "16.19",
+   "bytes": 11683836,
+   "sha256": "1a38cf8a7175490a298a3a9de147f7e90d272dd4a915416552d80439d5977b6e"
+  },
+  {
+   "replay": "EUW1-7999023383.rofl",
+   "patch": "16.19",
+   "bytes": 7673588,
+   "sha256": "0ec897ec8d2eee2ce0c249b2cf84d11c38b256bb5e115e3977baffbbcc2671ee"
+  },
+  {
+   "replay": "EUW1-7999061043.rofl",
+   "patch": "16.19",
+   "bytes": 3516289,
+   "sha256": "6aa3b3a7913babf359d9749e7a8a98b73f1b027cfe0ab2cb5111173187145ce3"
+  },
+  {
+   "replay": "EUW1-7999076215.rofl",
+   "patch": "16.19",
+   "bytes": 15036281,
+   "sha256": "195126265fac2d22938e58910ec80e80783833f240027ea5484efe0d55898c82"
+  },
+  {
+   "replay": "EUW1-7999152503.rofl",
+   "patch": "16.19",
+   "bytes": 6934974,
+   "sha256": "0e7238f7b23330524dbf16fb7c8311d68b657b01cb4af51cfb8fbff32f5a14e3"
+  },
+  {
+   "replay": "EUW1-7999162346.rofl",
+   "patch": "16.19",
+   "bytes": 6048509,
+   "sha256": "9c7727cacd5a4a154c3bef4afc0ae4455f9426b19dfde2ff902b6e73c59c49a0"
+  },
+  {
+   "replay": "EUW1-7999191706.rofl",
+   "patch": "16.19",
+   "bytes": 11032926,
+   "sha256": "44338358dc01a7e21964f3ad9e9438a5b200afc4784d8a254508b081e4d393c7"
+  },
+  {
+   "replay": "EUW1-7999213846.rofl",
+   "patch": "16.19",
+   "bytes": 10101658,
+   "sha256": "a1a708344fd1c5b798444258e0f1aca98c64702b70cb273278cb8217eb511ae0"
+  },
+  {
+   "replay": "EUW1-7999226411.rofl",
+   "patch": "16.19",
+   "bytes": 7856683,
+   "sha256": "b952b12e0e04818aa277238ddd42a3a758f433ed8703b6a1b0a1e51793b4bf47"
+  },
+  {
+   "replay": "EUW1-7999250910.rofl",
+   "patch": "16.19",
+   "bytes": 10287620,
+   "sha256": "53d644a945731fca356b0457e607691b7cfdf89175eb589562c26a6baf0faec2"
+  },
+  {
+   "replay": "EUW1-8010666236.rofl",
+   "patch": "16.20",
+   "bytes": 19047126,
+   "sha256": "ae0dc9fb4e39eb1765f74194bc2b889db7147ba6683332ce1ea0f7378ecf0b2c"
+  },
+  {
+   "replay": "EUW1-8010731213.rofl",
+   "patch": "16.20",
+   "bytes": 15797849,
+   "sha256": "b6eb1e1478f0bd85eeae5baec4c0f705179cfa8e6461981199e85a7b8f60211f"
+  },
+  {
+   "replay": "EUW1-8026527994.rofl",
+   "patch": "16.21",
+   "bytes": 16494232,
+   "sha256": "2259fe63496071f8473a8b7cd297091a71af3a081e1a3083dfcf71a8b0d046f0"
+  },
+  {
+   "replay": "EUW1-8026586918.rofl",
+   "patch": "16.21",
+   "bytes": 17144468,
+   "sha256": "8a225c158ba9ddcf2be8e770383ddd958a2d0f8dedc61834ccbffd00e3a8d454"
+  },
+  {
+   "replay": "EUW1-8026632444.rofl",
+   "patch": "16.21",
+   "bytes": 18720487,
+   "sha256": "97db94aae56f8f07f97f2e8cafdc1062005a92fca2da0fbc528c442b104736e4"
+  },
+  {
+   "replay": "EUW1-8026698475.rofl",
+   "patch": "16.21",
+   "bytes": 15458117,
+   "sha256": "0a472633316f974f0e2125a60d7403ab7fc16c670861871978dc3f12414c3d07"
+  },
+  {
+   "replay": "EUW1-8027272310.rofl",
+   "patch": "16.21",
+   "bytes": 11420920,
+   "sha256": "b1857dd6b2be05c9376b4306818c6e17bd48a01a8fb651f31dcf213c91b3e16c"
+  },
+  {
+   "replay": "EUW1-8027315863.rofl",
+   "patch": "16.21",
+   "bytes": 13500286,
+   "sha256": "8d27c272ea5febab38a622972d64812a816b19588ecc222786a1979ad743be2f"
+  },
+  {
+   "replay": "EUW1-8027497568.rofl",
+   "patch": "16.21",
+   "bytes": 17439485,
+   "sha256": "f66dd15e8f3ee98eda2cc6e2740061785f6242215bb047dbb34d32a2773d25c9"
+  },
+  {
+   "replay": "EUW1-8027557157.rofl",
+   "patch": "16.21",
+   "bytes": 19164705,
+   "sha256": "bf570df344acbf025db8107cc2fcfdf18a7af45544f794e3c715cdb9b7c7a335"
+  },
+  {
+   "replay": "EUW1-8027639296.rofl",
+   "patch": "16.21",
+   "bytes": 18754320,
+   "sha256": "711f3ac7d4983208bac0981ab89a27c9ca3f16f67b2c4e47d4319d9f5000cc9c"
+  },
+  {
+   "replay": "EUW1-8027708911.rofl",
+   "patch": "16.21",
+   "bytes": 22605872,
+   "sha256": "9b65199b59f4f38ae06d5a3b4f5399fddc8e0f93f2096c33c3658f04bc7cf365"
+  }
+ ]
+}

@@ -32,3 +32,7 @@ Thumbs.db
 
 # Per-user Claude Code settings (not project source)
 .claude/
+
+# The replay corpus itself is not in git -- 470 MB of binaries, and they
+# are the user's own game files. docs/CORPUS.json records what it is.
+*.rofl
